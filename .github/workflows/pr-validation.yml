@@ -1,0 +1,86 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: 🔍 Lint check
+      run: |
+        echo "Running ESLint..."
+        npm run lint
+        echo "✅ Linting passed!"
+    
+    - name: 🧪 Test check  
+      run: |
+        echo "Running tests..."
+        npm test
+        echo "✅ All tests passed!"
+    
+    - name: 🏗️ Build check
+      run: |
+        echo "Building project..."
+        npm run build
+        echo "✅ Build successful!"
+    
+    - name: 📊 Test coverage
+      run: |
+        echo "Generating test coverage..."
+        npm test -- --coverage
+    
+    - name: 🔒 Security check
+      run: |
+        echo "Running security audit..."
+        npm audit --audit-level=moderate
+        echo "✅ Security check passed!"
+    
+    - name: ✅ All checks passed
+      run: |
+        echo "🎉 All validation checks passed!"
+        echo "PR is ready for review and merge."
+
+  size-check:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build and check bundle size
+      run: |
+        npm run build
+        echo "📦 Checking bundle size..."
+        du -sh lib/
+        
+    - name: Package size check
+      run: |
+        npm pack --dry-run
+        echo "✅ Package size check complete!"
