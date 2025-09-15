@@ -1,0 +1,23 @@
+# Build outputs
+lib/
+dist/
+build/
+coverage/
+
+# Dependencies
+node_modules/
+
+# Configuration files
+jest.config.js
+.eslintrc.js
+
+# Generated files
+*.d.ts
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db

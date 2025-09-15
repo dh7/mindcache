@@ -1,0 +1,43 @@
+# Source files (only ship compiled lib)
+src/
+tsconfig.json
+
+# Development files
+.eslintrc.*
+jest.config.*
+.github/
+scripts/
+docs/
+examples/
+
+# Tests
+tests/
+**/*.test.*
+**/*.spec.*
+coverage/
+
+# Development dependencies
+node_modules/
+
+# Build artifacts
+*.tsbuildinfo
+.nyc_output
+
+# Editor files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env*
+
+# Temporary files
+tmp/
+temp/

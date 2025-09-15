@@ -1,0 +1,72 @@
+{
+  "name": "mindcache",
+  "version": "0.1.0",
+  "description": "A TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "prepublishOnly": "npm run build",
+    "dev": "tsc --watch",
+    "clean": "rimraf lib"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "memory",
+    "agent",
+    "typescript",
+    "vercel-ai-sdk",
+    "nextjs",
+    "key-value",
+    "storage",
+    "context"
+  ],
+  "author": "MindCache Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/mindcache.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/mindcache/issues"
+  },
+  "homepage": "https://github.com/your-username/mindcache#readme",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "audit-ci": "^7.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-standard": "^17.1.0",
+    "jest": "^29.5.0",
+    "rimraf": "^5.0.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "ai": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
