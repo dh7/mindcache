@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindCache - AI Agent Memory Management</title>
+    <meta name="description" content="A TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="nav-icon">🧠</span>
+                <span class="nav-title">MindCache</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#quickstart">Quick Start</a>
+                <a href="#examples">Examples</a>
+                <a href="#docs">Docs</a>
+                <a href="https://github.com/dh7/mindcache" target="_blank" class="github-link">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span>🚀 Now Available on npm</span>
+                </div>
+                <h1 class="hero-title">
+                    AI Agent Memory<br>
+                    <span class="gradient-text">Made Simple</span>
+                </h1>
+                <p class="hero-description">
+                    MindCache is a TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository. Perfect for chatbots, AI assistants, and intelligent workflows.
+                </p>
+                <div class="hero-actions">
+                    <button class="btn-primary" onclick="copyInstallCommand()">
+                        <span>npm install mindcache</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="m5 15-4-4 4-4"></path>
+                        </svg>
+                    </button>
+                    <a href="#quickstart" class="btn-secondary">Get Started</a>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat">
+                        <span class="stat-number">100%</span>
+                        <span class="stat-label">Test Coverage</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">5.4kB</span>
+                        <span class="stat-label">Bundle Size</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-number">TypeScript</span>
+                        <span class="stat-label">First</span>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-demo">
+                <div class="demo-window">
+                    <div class="demo-header">
+                        <div class="demo-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <span class="demo-title">Live Demo</span>
+                    </div>
+                    <div class="demo-content">
+                        <div class="demo-code">
+                            <pre><code id="demo-code">import { mindcache } from 'mindcache';
+
+// Set user context
+mindcache.set('user', 'Alice');
+mindcache.set('mood', 'excited');
+mindcache.set('task', 'planning vacation');
+
+// Template injection for AI prompts
+const prompt = mindcache.injectSTM(
+  'User {user} is {mood} about {task}'
+);
+
+console.log(prompt);
+// "User Alice is excited about planning vacation"</code></pre>
+                        </div>
+                        <div class="demo-output">
+                            <div class="output-line">
+                                <span class="output-prompt">></span>
+                                <span id="demo-output">User Alice is excited about planning vacation</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2>Why MindCache?</h2>
+                <p>Built specifically for AI agents and LLM integration</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>LLM-Optimized</h3>
+                    <p>Data formats designed for optimal AI agent comprehension and reasoning</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Template Injection</h3>
+                    <p>Dynamic placeholder replacement perfect for generating context-aware AI prompts</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔄</div>
+                    <h3>Reactive Updates</h3>
+                    <p>Event-driven system with listeners for real-time memory state changes</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🕒</div>
+                    <h3>Temporal Context</h3>
+                    <p>Built-in $date and $time values automatically available in all operations</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛠️</div>
+                    <h3>Tool Integration</h3>
+                    <p>Direct integration with LLM tool calling systems and Vercel AI SDK</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📝</div>
+                    <h3>TypeScript First</h3>
+                    <p>Full type safety with excellent developer experience and IntelliSense</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section id="quickstart" class="quickstart">
+        <div class="container">
+            <div class="section-header">
+                <h2>Quick Start</h2>
+                <p>Get up and running in minutes</p>
+            </div>
+            <div class="quickstart-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Install</h3>
+                        <div class="code-block">
+                            <code>npm install mindcache</code>
+                            <button class="copy-btn" onclick="copyToClipboard('npm install mindcache')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="m5 15-4-4 4-4"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Import</h3>
+                        <div class="code-block">
+                            <code>import { mindcache } from 'mindcache';</code>
+                            <button class="copy-btn" onclick="copyToClipboard('import { mindcache } from \'mindcache\';')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="m5 15-4-4 4-4"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Use</h3>
+                        <div class="code-block">
+                            <code>mindcache.set('user', 'Alice');<br>mindcache.get('user'); // 'Alice'</code>
+                            <button class="copy-btn" onclick="copyToClipboard('mindcache.set(\'user\', \'Alice\');\nmindcache.get(\'user\'); // \'Alice\'')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="m5 15-4-4 4-4"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Examples Section -->
+    <section id="examples" class="examples">
+        <div class="container">
+            <div class="section-header">
+                <h2>Examples</h2>
+                <p>Real-world use cases for AI agents</p>
+            </div>
+            <div class="examples-tabs">
+                <button class="tab-btn active" onclick="showExample('chatbot')">Chatbot Memory</button>
+                <button class="tab-btn" onclick="showExample('prompt')">Dynamic Prompts</button>
+                <button class="tab-btn" onclick="showExample('workflow')">Agent Workflow</button>
+            </div>
+            <div class="example-content">
+                <div id="example-chatbot" class="example active">
+                    <div class="example-code">
+                        <pre><code>// Chatbot with conversation memory
+import { mindcache } from 'mindcache';
+
+// Store conversation context
+mindcache.update({
+  userName: 'Alice',
+  lastTopic: 'travel planning',
+  userPreferences: { destination: 'Japan', budget: 5000 },
+  conversationStage: 'gathering requirements'
+});
+
+// Generate contextual response
+const context = mindcache.getSTM();
+const systemPrompt = `You are a travel assistant. Context: ${context}`;
+
+// Use template injection
+const greeting = mindcache.injectSTM(
+  'Hello {userName}! Let\'s continue planning your trip to {userPreferences.destination}'
+);</code></pre>
+                    </div>
+                    <div class="example-description">
+                        <h4>Persistent Conversation Memory</h4>
+                        <p>Keep track of user context, preferences, and conversation state across multiple interactions.</p>
+                    </div>
+                </div>
+                <div id="example-prompt" class="example">
+                    <div class="example-code">
+                        <pre><code>// Dynamic AI prompt generation
+import { mindcache } from 'mindcache';
+
+// Set current context
+mindcache.set('userMood', 'frustrated');
+mindcache.set('issueType', 'billing');
+mindcache.set('priority', 'high');
+
+// Generate dynamic system prompt
+const systemPrompt = mindcache.injectSTM(`
+  You are a customer service AI. The user is {userMood} about a {issueType} issue.
+  Priority level: {priority}. Today is {$date} at {$time}.
+  
+  Respond with empathy and urgency appropriate to the situation.
+`);
+
+console.log(systemPrompt);</code></pre>
+                    </div>
+                    <div class="example-description">
+                        <h4>Context-Aware Prompts</h4>
+                        <p>Generate dynamic AI prompts that adapt to current context and temporal information.</p>
+                    </div>
+                </div>
+                <div id="example-workflow" class="example">
+                    <div class="example-code">
+                        <pre><code>// Multi-step AI agent workflow
+import { mindcache } from 'mindcache';
+
+// Track workflow state
+mindcache.update({
+  workflowId: 'order-processing',
+  currentStep: 'payment-verification',
+  stepProgress: 3,
+  totalSteps: 5,
+  userEmail: 'alice@example.com',
+  orderAmount: 299.99
+});
+
+// Listen for state changes
+mindcache.subscribeToAll(() => {
+  const progress = mindcache.get('stepProgress');
+  const total = mindcache.get('totalSteps');
+  console.log(`Workflow progress: ${progress}/${total}`);
+  
+  if (progress === total) {
+    console.log('Workflow completed!');
+  }
+});</code></pre>
+                    </div>
+                    <div class="example-description">
+                        <h4>Agent Workflow Management</h4>
+                        <p>Manage complex multi-step workflows with state tracking and event-driven updates.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation Section -->
+    <section id="docs" class="docs">
+        <div class="container">
+            <div class="section-header">
+                <h2>Documentation</h2>
+                <p>Complete API reference and guides</p>
+            </div>
+            <div class="docs-grid">
+                <a href="https://github.com/your-username/mindcache#api" class="doc-card">
+                    <div class="doc-icon">📚</div>
+                    <h3>API Reference</h3>
+                    <p>Complete documentation of all methods and types</p>
+                </a>
+                <a href="https://github.com/your-username/mindcache/tree/main/examples" class="doc-card">
+                    <div class="doc-icon">💡</div>
+                    <h3>Examples</h3>
+                    <p>Real-world examples and integration patterns</p>
+                </a>
+                <a href="https://github.com/your-username/mindcache#vercel-ai-sdk" class="doc-card">
+                    <div class="doc-icon">🔗</div>
+                    <h3>Vercel AI SDK</h3>
+                    <p>Integration guide for Vercel AI SDK and Next.js</p>
+                </a>
+                <a href="https://github.com/your-username/mindcache/blob/main/CONTRIBUTING.md" class="doc-card">
+                    <div class="doc-icon">🤝</div>
+                    <h3>Contributing</h3>
+                    <p>How to contribute to the MindCache project</p>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="footer-icon">🧠</span>
+                    <span class="footer-title">MindCache</span>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/your-username/mindcache">GitHub</a>
+                    <a href="https://www.npmjs.com/package/mindcache">npm</a>
+                    <a href="https://github.com/your-username/mindcache/issues">Issues</a>
+                    <a href="https://github.com/your-username/mindcache/blob/main/LICENSE">License</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 MindCache. Released under the MIT License.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <span id="toast-message">Copied to clipboard!</span>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
