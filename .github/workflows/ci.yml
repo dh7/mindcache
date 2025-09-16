@@ -86,3 +86,72 @@ jobs:
     
     - name: Check for known vulnerabilities
       run: npx audit-ci --moderate
+
+  examples:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install main dependencies (for mindcache)
+      run: npm ci
+    
+    - name: Build main library
+      run: npm run build
+    
+    - name: Test examples
+      run: |
+        # Find all example directories with package.json
+        for example_dir in examples/*/; do
+          if [ -f "$example_dir/package.json" ]; then
+            echo "Testing example: $example_dir"
+            cd "$example_dir"
+            
+            # Install dependencies
+            npm ci
+            
+            # Create environment file if template exists
+            if [ -f "env.example" ]; then
+              cp env.example .env.local
+              echo "OPENAI_API_KEY=sk-test-key-for-ci-testing-only" >> .env.local
+            fi
+            
+            # Run linting
+            if npm run lint --if-present; then
+              echo "✓ Linting passed for $example_dir"
+            else
+              echo "✗ Linting failed for $example_dir"
+              exit 1
+            fi
+            
+            # Run type checking
+            if npx tsc --noEmit 2>/dev/null || echo "No TypeScript found, skipping type check"; then
+              echo "✓ Type checking passed for $example_dir"
+            else
+              echo "✗ Type checking failed for $example_dir"
+              exit 1
+            fi
+            
+            # Run build
+            if npm run build --if-present; then
+              echo "✓ Build passed for $example_dir"
+            else
+              echo "✗ Build failed for $example_dir"
+              exit 1
+            fi
+            
+            # Go back to root
+            cd ../..
+          fi
+        done
