@@ -1,0 +1,16 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "indent": "off",
+    "@typescript-eslint/indent": "off",
+    "semi": "off",
+    "quotes": "off",
+    "comma-dangle": "off",
+    "no-trailing-spaces": "off",
+    "max-len": "off",
+    "no-console": "warn",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "no-undef": "off",
+    "eol-last": "off"
+  }
+}
