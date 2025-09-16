@@ -173,6 +173,110 @@ class MindCache {
       .join(', ');
   }
 
+  // Generate tools for Vercel AI SDK to write STM values
+  get_aisdk_tools(): Record<string, any> {
+    const tools: Record<string, any> = {};
+    
+    // Get all current keys (excluding built-in $date and $time)
+    const keys = Object.keys(this.stm);
+    
+    // Create a write tool for each key
+    keys.forEach(key => {
+      const toolName = `write_${key}`;
+      tools[toolName] = {
+        description: `Write a value to the STM key: ${key}`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            value: {
+              type: 'string',
+              description: `The value to write to ${key}`
+            }
+          },
+          required: ['value']
+        },
+        execute: async (input: { value: any }) => {
+          this.set(key, input.value);
+          return {
+            result: `Successfully wrote "${input.value}" to ${key}`,
+            key: key,
+            value: input.value
+          };
+        }
+      };
+    });
+
+    // If no keys exist yet, return an empty object
+    if (keys.length === 0) {
+      return {};
+    }
+
+    return tools;
+  }
+
+  // Generate tools for Vercel AI SDK with the ability to create new keys
+  get_aisdk_tools_with_dynamic_keys(): Record<string, any> {
+    const tools: Record<string, any> = {};
+    
+    // Get all current keys (excluding built-in $date and $time)
+    const keys = Object.keys(this.stm);
+    
+    // Create a write tool for each existing key
+    keys.forEach(key => {
+      const toolName = `write_${key}`;
+      tools[toolName] = {
+        description: `Write a value to the STM key: ${key}`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            value: {
+              type: 'string',
+              description: `The value to write to ${key}`
+            }
+          },
+          required: ['value']
+        },
+        execute: async (input: { value: any }) => {
+          this.set(key, input.value);
+          return {
+            result: `Successfully wrote "${input.value}" to ${key}`,
+            key: key,
+            value: input.value
+          };
+        }
+      };
+    });
+
+    // Add a generic tool to create and write new keys
+    tools['write_stm_key'] = {
+      description: 'Write a value to any STM key (creates the key if it doesn\'t exist)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          key: {
+            type: 'string',
+            description: 'The STM key to write to'
+          },
+          value: {
+            type: 'string',
+            description: 'The value to write to the specified key'
+          }
+        },
+        required: ['key', 'value']
+      },
+      execute: async (input: { key: string; value: any }) => {
+        this.set(input.key, input.value);
+        return {
+          result: `Successfully wrote "${input.value}" to ${input.key}`,
+          key: input.key,
+          value: input.value
+        };
+      }
+    };
+
+    return tools;
+  }
+
 }
 
 // Create and export a single instance of MindCache
