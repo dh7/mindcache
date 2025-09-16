@@ -10,6 +10,7 @@
     "max-len": "off",
     "no-console": "warn",
     "@typescript-eslint/no-explicit-any": "warn",
-    "no-undef": "off"
+    "no-undef": "off",
+    "eol-last": "off"
   }
 }
