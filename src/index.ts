@@ -178,11 +178,10 @@ class MindCache {
   // Generate tools for Vercel AI SDK to write STM values
   get_aisdk_tools(): Record<string, any> {
     const tools: Record<string, any> = {};
-    
+
     // Get all current keys (excluding built-in $date and $time)
     const keys = Object.keys(this.stm);
-    console.log('🔍 get_aisdk_tools called - STM keys found:', keys);
-    
+
     // Create a write tool for each key
     keys.forEach(key => {
       const toolName = `write_${key}`;
@@ -200,16 +199,13 @@ class MindCache {
           };
         }
       };
-      console.log(`🛠️ Generated tool: ${toolName} for key: ${key}`);
     });
 
     // If no keys exist yet, return an empty object
     if (keys.length === 0) {
-      console.log('⚠️ No STM keys found, returning empty tools object');
       return {};
     }
 
-    console.log('🎯 get_aisdk_tools result:', Object.keys(tools));
     return tools;
   }
 

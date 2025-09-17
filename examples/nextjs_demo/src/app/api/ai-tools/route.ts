@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
-import { z } from 'zod/v3'
 import { mindcache } from 'mindcache'
 
 export async function POST(request: Request) {
@@ -29,23 +28,25 @@ export async function POST(request: Request) {
     console.log('🧪 Server STM initialized:', mindcache.getSTM())
 
     // Store tool results for later extraction
-    const toolResults: Record<string, any> = {}
+    const toolResults: Record<string, unknown> = {}
     
     // Get dynamically generated tools from MindCache
     const dynamicTools = mindcache.get_aisdk_tools()
     console.log('🔧 Generated dynamic tools:', Object.keys(dynamicTools))
 
     // Wrap MindCache tools to add result storage and client instruction format
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tools: Record<string, any> = {}
-    Object.entries(dynamicTools).forEach(([toolName, tool]: [string, any]) => {
+    Object.entries(dynamicTools).forEach(([toolName, tool]: [string, unknown]) => {
+      const typedTool = tool as { description: string; inputSchema: unknown; execute: (input: { value: string }) => Promise<{ result: string; key: string; value: string }> }
       tools[toolName] = {
-        description: tool.description,
-        inputSchema: tool.inputSchema,
+        description: typedTool.description,
+        inputSchema: typedTool.inputSchema,
         execute: async ({ value }: { value: string }) => {
           console.log(`🔧 ${toolName} tool called with value:`, value)
           
           // Execute the original MindCache tool
-          const originalResult = await tool.execute({ value })
+          const originalResult = await typedTool.execute({ value })
           
           // Convert result to client instruction format
           const result = {
@@ -80,7 +81,7 @@ Please extract any personal information from the user's message and update the S
     // Extract tool calls for client execution using stored results
     const toolCalls = result.toolCalls?.map(call => {
       console.log('🔍 Processing tool call:', call)
-      const callAny = call as any
+      const callAny = call as { input?: unknown; args?: unknown }
       const storedResult = toolResults[call.toolName] || {}
       return {
         toolName: call.toolName,

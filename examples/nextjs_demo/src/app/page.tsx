@@ -1,9 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Brain, Github, Sparkles, Settings } from 'lucide-react'
+import { Brain, Sparkles, Settings } from 'lucide-react'
 import TemplatedPromptDemo from '@/components/TemplatedPromptDemo'
 import AIToolsDemo from '@/components/AIToolsDemo'
 
