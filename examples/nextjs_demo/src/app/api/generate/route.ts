@@ -1,102 +1,52 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    // Check if API key is configured
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please add OPENAI_API_KEY to your .env.local file.' },
-        { status: 500 }
-      )
-    }
-
-    // Parse request body
-    const body = await request.json()
-    const { prompt } = body
+    const { prompt } = await request.json()
 
     if (!prompt) {
-      return NextResponse.json(
+      return Response.json(
         { error: 'Prompt is required' },
         { status: 400 }
       )
     }
 
-    // Get configuration from environment variables with defaults
-    const model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
-    const maxTokens = parseInt(process.env.OPENAI_MAX_TOKENS || '500')
-    const temperature = parseFloat(process.env.OPENAI_TEMPERATURE || '0.7')
-
-    // Make request to OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: maxTokens,
-        temperature
-      })
+    // Generate response using AI SDK
+    const result = await generateText({
+      model: openai('gpt-4o-mini'),
+      prompt: prompt,
     })
 
-    if (!response.ok) {
-      const errorData = await response.json()
-      console.error('OpenAI API Error:', errorData)
-      
-      // Return user-friendly error messages
-      if (response.status === 401) {
-        return NextResponse.json(
-          { error: 'Invalid OpenAI API key. Please check your .env.local configuration.' },
-          { status: 401 }
-        )
-      } else if (response.status === 429) {
-        return NextResponse.json(
-          { error: 'OpenAI API rate limit exceeded. Please try again later.' },
+    return Response.json({
+      content: result.text,
+      usage: result.usage
+    })
+
+  } catch (error: unknown) {
+    // eslint-disable-next-line no-console
+    console.error('API Error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    
+    // Handle specific OpenAI API errors
+    if (error && typeof error === 'object' && 'code' in error) {
+      if (error.code === 'insufficient_quota') {
+        return Response.json(
+          { error: 'OpenAI API quota exceeded. Please check your API key and billing.' },
           { status: 429 }
         )
-      } else if (response.status === 400) {
-        return NextResponse.json(
-          { error: errorData.error?.message || 'Bad request to OpenAI API' },
-          { status: 400 }
-        )
-      } else {
-        return NextResponse.json(
-          { error: 'OpenAI API request failed. Please try again.' },
-          { status: response.status }
+      }
+      
+      if (error.code === 'invalid_api_key') {
+        return Response.json(
+          { error: 'Invalid OpenAI API key. Please check your environment variables.' },
+          { status: 401 }
         )
       }
     }
 
-    const data = await response.json()
-    
-    // Extract the generated content
-    const content = data.choices?.[0]?.message?.content
-    if (!content) {
-      return NextResponse.json(
-        { error: 'No content generated from OpenAI API' },
-        { status: 500 }
-      )
-    }
-
-    // Return the generated content
-    return NextResponse.json({
-      content,
-      model,
-      usage: data.usage
-    })
-
-  } catch (error) {
-    console.error('API Route Error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error. Please try again.' },
+    return Response.json(
+      { error: errorMessage || 'An unexpected error occurred' },
       { status: 500 }
     )
   }

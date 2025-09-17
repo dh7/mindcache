@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { z } from 'zod';
+
 type STM = {
   [key: string]: any;
 };
@@ -172,6 +174,41 @@ class MindCache {
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
   }
+
+  // Generate tools for Vercel AI SDK to write STM values
+  get_aisdk_tools(): Record<string, any> {
+    const tools: Record<string, any> = {};
+
+    // Get all current keys (excluding built-in $date and $time)
+    const keys = Object.keys(this.stm);
+
+    // Create a write tool for each key
+    keys.forEach(key => {
+      const toolName = `write_${key}`;
+      tools[toolName] = {
+        description: `Write a value to the STM key: ${key}`,
+        inputSchema: z.object({
+          value: z.string().describe(`The value to write to ${key}`)
+        }),
+        execute: async (input: { value: any }) => {
+          this.set(key, input.value);
+          return {
+            result: `Successfully wrote "${input.value}" to ${key}`,
+            key: key,
+            value: input.value
+          };
+        }
+      };
+    });
+
+    // If no keys exist yet, return an empty object
+    if (keys.length === 0) {
+      return {};
+    }
+
+    return tools;
+  }
+
 
 }
 
