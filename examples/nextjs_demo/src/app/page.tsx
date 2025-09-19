@@ -2,11 +2,12 @@
 
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Brain, Sparkles, Settings } from 'lucide-react'
+import { Brain, Sparkles, Settings, MessageSquare } from 'lucide-react'
 import TemplatedPromptDemo from '@/components/TemplatedPromptDemo'
 import AIToolsDemo from '@/components/AIToolsDemo'
+import TypeSafeChatDemo from '@/components/ChatDemo'
 
-type DemoType = 'templated-prompt' | 'ai-tools'
+type DemoType = 'templated-prompt' | 'ai-tools' | 'type-safe-chat'
 
 export default function Home() {
   const [activeDemo, setActiveDemo] = useState<DemoType>('templated-prompt')
@@ -23,6 +24,12 @@ export default function Home() {
       title: 'Writing to STM with Tools',
       description: 'AI updates STM using dynamic tools',
       icon: Settings
+    },
+    {
+      id: 'type-safe-chat' as DemoType,
+      title: 'AI SDK v5 Chat',
+      description: 'Full-stack with agentic loops',
+      icon: MessageSquare
     }
   ]
 
@@ -104,6 +111,7 @@ export default function Home() {
             {/* Demo Content */}
             {activeDemo === 'templated-prompt' && <TemplatedPromptDemo />}
             {activeDemo === 'ai-tools' && <AIToolsDemo />}
+            {activeDemo === 'type-safe-chat' && <TypeSafeChatDemo />}
           </div>
         </div>
       </div>
