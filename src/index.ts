@@ -192,7 +192,6 @@ class MindCache {
       if (typeof data === 'object' && data !== null) {
         // Clear existing STM (except system keys)
         this.stm = {};
-        
         // Set new values (skip system keys as they're computed)
         Object.entries(data).forEach(([key, value]) => {
           if (!key.startsWith('$')) {
@@ -201,6 +200,7 @@ class MindCache {
         });
       }
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('MindCache: Failed to deserialize JSON:', error);
     }
   }
@@ -215,7 +215,6 @@ class MindCache {
     if (typeof data === 'object' && data !== null) {
       // Clear existing STM (except system keys)
       this.stm = {};
-      
       // Set new values (skip system keys as they're computed)
       Object.entries(data).forEach(([key, value]) => {
         if (!key.startsWith('$')) {
