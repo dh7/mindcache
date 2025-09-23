@@ -1,6 +1,6 @@
 # MindCache Next.js + Shadcn/ui Example
 
-A beautiful, modern implementation of the MindCache templated prompt example built with Next.js 14, TypeScript, and Shadcn/ui components.
+A beautiful, modern implementation showcasing MindCache integration with AI SDK v5. Features templated prompts, AI tools, and type-safe chat with agentic loop control, built with Next.js 14, TypeScript, and Shadcn/ui components.
 
 ![MindCache Next.js Example](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript)
@@ -8,14 +8,17 @@ A beautiful, modern implementation of the MindCache templated prompt example bui
 
 ## ✨ Features
 
-- **🧠 MindCache Integration**: Full STM (Short-Term Memory) functionality
+- **🧠 MindCache Integration**: Full STM (Short-Term Memory) functionality with persistent storage
 - **🎨 Beautiful UI**: Modern design with Shadcn/ui components
-- **⚡ Real-time Updates**: STM display updates automatically as you type
+- **⚡ Real-time Updates**: STM display updates automatically as you interact
 - **🔒 Secure**: API keys are stored server-side in environment variables
 - **📱 Responsive**: Works perfectly on desktop and mobile
 - **🌈 Gradient Design**: Beautiful gradients and modern styling
 - **🔄 Template Processing**: Live STM injection with `{key}` syntax
-- **🤖 OpenAI Integration**: Generate personalized content with GPT-3.5-turbo
+- **🤖 AI SDK v5 Integration**: Type-safe chat with agentic loop control
+- **🛠️ Dynamic Tools**: AI can use tools to update memory and fetch data
+- **📊 Data Parts**: Structured data streaming with real-time updates
+- **🔁 Agentic Loops**: Multi-step reasoning with configurable stopping conditions
 
 ## 🚀 Quick Start
 
@@ -61,11 +64,27 @@ A beautiful, modern implementation of the MindCache templated prompt example bui
 
 ## 🎯 How to Use
 
-1. **Fill out the form** with your personal information
-2. **Watch the STM update** in real-time as you type
-3. **Customize the template** using `{key}` syntax for STM injection
-4. **Process the template** to see STM values injected
-5. **Generate content** with OpenAI to see personalized results
+### Demo Options
+The app includes three different demos showcasing various MindCache and AI SDK v5 features:
+
+1. **Templated Prompt Demo**:
+   - Fill out the form with your personal information
+   - Watch the STM update in real-time as you type
+   - Customize the template using `{key}` syntax for STM injection
+   - Process the template to see STM values injected
+   - Generate content with OpenAI to see personalized results
+
+2. **AI Tools Demo**:
+   - Enter natural language describing yourself
+   - Watch AI use tools to extract and store information in STM
+   - See real-time tool execution and memory updates
+
+3. **AI SDK v5 Type-Safe Chat Demo**:
+   - Experience full type safety from server to client
+   - Try weather queries: "What's the weather in Tokyo?"
+   - Store memories: "Remember that I'm a developer"
+   - Enable agentic mode for multi-step reasoning
+   - See real-time data parts and structured responses
 
 ## 🧠 STM Template Syntax
 
@@ -84,6 +103,35 @@ Use these placeholders in your templates:
 Create a personalized introduction for {firstName} {lastName}, who is {age} years old and identifies as {gender}. The introduction should be warm, professional, and suitable for a networking event. Include some interesting conversation starters based on their demographic. Write it in a friendly, engaging tone. Today's date is {$date} and the current time is {$time}.
 ```
 
+## 🚀 AI SDK v5 Features
+
+The new Type-Safe Chat demo showcases cutting-edge AI SDK v5 capabilities:
+
+### 🎯 Full Type Safety
+- **Custom Message Types**: Define your own `UIMessage` types with specific metadata and data parts
+- **End-to-End Types**: Complete type safety from API routes to React components
+- **Tool Type Safety**: Fully typed tool inputs and outputs with automatic validation
+
+### 📊 Data Parts
+- **Structured Streaming**: Stream typed data alongside text responses
+- **Real-time Updates**: Update the same data part by ID for live status changes
+- **Transient Parts**: Send notifications that don't persist in chat history
+
+### 🤖 Agentic Loop Control
+- **stopWhen Conditions**: Define when multi-step reasoning should stop
+- **prepareStep Hooks**: Customize model parameters for each reasoning step
+- **Step Notifications**: Real-time feedback on agent progress
+- **Context Management**: Automatic context compression for long conversations
+
+### Example Conversations
+```
+User: "What's the weather in London and remember my favorite city is Paris"
+Assistant: [Step 1: Get weather, Step 2: Store memory, combines results with data parts]
+
+User: "Find my stored preferences and get weather for my favorite city"
+Assistant: [Step 1: Search memory, Step 2: Get weather for Paris, structured response]
+```
+
 ## 🛠 Tech Stack
 
 - **[Next.js 14](https://nextjs.org/)** - React framework with App Router
@@ -91,7 +139,9 @@ Create a personalized introduction for {firstName} {lastName}, who is {age} year
 - **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS
 - **[Shadcn/ui](https://ui.shadcn.com/)** - Beautiful, accessible components
 - **[Lucide React](https://lucide.dev/)** - Beautiful icons
+- **[AI SDK v5](https://sdk.vercel.ai/)** - Type-safe AI application framework
 - **[MindCache](https://www.npmjs.com/package/mindcache)** - STM management
+- **[Zod v4](https://zod.dev/)** - TypeScript-first schema validation
 
 ## 📁 Project Structure
 

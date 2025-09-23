@@ -319,6 +319,224 @@ describe('MindCache', () => {
     });
   });
 
+  describe('Serialization/Deserialization', () => {
+    test('should serialize STM to object format', () => {
+      cache.set('name', 'Alice');
+      cache.set('age', 30);
+      cache.set('preferences', { theme: 'dark' });
+      
+      const serialized = cache.serialize();
+      
+      expect(typeof serialized).toBe('object');
+      expect(serialized.name).toBe('Alice');
+      expect(serialized.age).toBe(30);
+      expect(serialized.preferences).toEqual({ theme: 'dark' });
+      expect(serialized.$date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(serialized.$time).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    });
+
+    test('should serialize empty STM with only temporal keys', () => {
+      const serialized = cache.serialize();
+      
+      expect(Object.keys(serialized)).toHaveLength(2);
+      expect(serialized.$date).toBeDefined();
+      expect(serialized.$time).toBeDefined();
+    });
+
+    test('should deserialize object data correctly', () => {
+      const testData = {
+        name: 'Bob',
+        age: 25,
+        settings: { notifications: true },
+        $date: '2024-01-01', // Should be ignored
+        $time: '12:00:00'   // Should be ignored
+      };
+      
+      cache.deserialize(testData);
+      
+      expect(cache.get('name')).toBe('Bob');
+      expect(cache.get('age')).toBe(25);
+      expect(cache.get('settings')).toEqual({ notifications: true });
+      
+      // System keys should be current, not from deserialized data
+      expect(cache.get('$date')).not.toBe('2024-01-01');
+      expect(cache.get('$time')).not.toBe('12:00:00');
+      expect(cache.get('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(cache.get('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    });
+
+    test('should clear existing data before deserializing', () => {
+      // Set initial data
+      cache.set('existing', 'old');
+      cache.set('toBeRemoved', 'value');
+      
+      // Deserialize new data (without toBeRemoved)
+      cache.deserialize({
+        existing: 'new',
+        newKey: 'newValue'
+      });
+      
+      expect(cache.get('existing')).toBe('new');
+      expect(cache.get('newKey')).toBe('newValue');
+      expect(cache.get('toBeRemoved')).toBeUndefined();
+    });
+
+    test('should handle null/undefined in deserialize gracefully', () => {
+      cache.set('existing', 'value');
+      
+      cache.deserialize(null as any);
+      expect(cache.get('existing')).toBe('value'); // Should remain unchanged
+      
+      cache.deserialize(undefined as any);
+      expect(cache.get('existing')).toBe('value'); // Should remain unchanged
+    });
+
+    test('should serialize to JSON string', () => {
+      cache.set('name', 'Charlie');
+      cache.set('count', 42);
+      
+      const jsonString = cache.toJSON();
+      
+      expect(typeof jsonString).toBe('string');
+      
+      const parsed = JSON.parse(jsonString);
+      expect(parsed.name).toBe('Charlie');
+      expect(parsed.count).toBe(42);
+      expect(parsed.$date).toBeDefined();
+      expect(parsed.$time).toBeDefined();
+    });
+
+    test('should deserialize from JSON string', () => {
+      const testData = {
+        name: 'David',
+        active: true,
+        metadata: { version: 1 }
+      };
+      
+      const jsonString = JSON.stringify(testData);
+      cache.fromJSON(jsonString);
+      
+      expect(cache.get('name')).toBe('David');
+      expect(cache.get('active')).toBe(true);
+      expect(cache.get('metadata')).toEqual({ version: 1 });
+    });
+
+    test('should handle invalid JSON gracefully', () => {
+      cache.set('existing', 'value');
+      
+      // Mock console.error to avoid test output pollution
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      
+      cache.fromJSON('invalid json {');
+      
+      // Should not crash and existing data should remain
+      expect(cache.get('existing')).toBe('value');
+      expect(consoleSpy).toHaveBeenCalled();
+      
+      consoleSpy.mockRestore();
+    });
+
+    test('should roundtrip serialize/deserialize correctly', () => {
+      // Set up test data
+      cache.set('name', 'Eve');
+      cache.set('age', 28);
+      cache.set('preferences', { theme: 'light', lang: 'es' });
+      cache.set('tags', ['developer', 'designer']);
+      
+      // Serialize
+      const serialized = cache.serialize();
+      
+      // Create new cache and deserialize
+      const newCache = new MindCache();
+      newCache.deserialize(serialized);
+      
+      // Verify all data transferred correctly (except temporal keys)
+      expect(newCache.get('name')).toBe('Eve');
+      expect(newCache.get('age')).toBe(28);
+      expect(newCache.get('preferences')).toEqual({ theme: 'light', lang: 'es' });
+      expect(newCache.get('tags')).toEqual(['developer', 'designer']);
+      
+      // Temporal keys should be current, not from original
+      expect(newCache.get('$date')).toBeDefined();
+      expect(newCache.get('$time')).toBeDefined();
+    });
+
+    test('should roundtrip JSON serialize/deserialize correctly', () => {
+      // Set up test data
+      cache.set('user', 'Frank');
+      cache.set('score', 95);
+      cache.set('config', { debug: false });
+      
+      // JSON serialize
+      const jsonString = cache.toJSON();
+      
+      // Create new cache and JSON deserialize
+      const newCache = new MindCache();
+      newCache.fromJSON(jsonString);
+      
+      // Verify all data transferred correctly
+      expect(newCache.get('user')).toBe('Frank');
+      expect(newCache.get('score')).toBe(95);
+      expect(newCache.get('config')).toEqual({ debug: false });
+    });
+
+    test('should preserve data types during serialization', () => {
+      cache.set('string', 'text');
+      cache.set('number', 123);
+      cache.set('boolean', true);
+      cache.set('null', null);
+      cache.set('undefined', undefined);
+      cache.set('array', [1, 2, 3]);
+      cache.set('object', { key: 'value' });
+      
+      const serialized = cache.serialize();
+      
+      expect(typeof serialized.string).toBe('string');
+      expect(typeof serialized.number).toBe('number');
+      expect(typeof serialized.boolean).toBe('boolean');
+      expect(serialized.null).toBeNull();
+      expect(serialized.undefined).toBeUndefined();
+      expect(Array.isArray(serialized.array)).toBe(true);
+      expect(typeof serialized.object).toBe('object');
+    });
+
+    test('should handle complex nested structures', () => {
+      const complexData = {
+        user: {
+          profile: {
+            name: 'Grace',
+            contacts: ['email@example.com', 'phone'],
+            settings: {
+              notifications: true,
+              privacy: { level: 'high' }
+            }
+          }
+        },
+        sessions: [
+          { id: 1, active: true },
+          { id: 2, active: false }
+        ]
+      };
+      
+      cache.set('complex', complexData);
+      
+      const serialized = cache.serialize();
+      const newCache = new MindCache();
+      newCache.deserialize(serialized);
+      
+      expect(newCache.get('complex')).toEqual(complexData);
+    });
+
+    test('should getSTMObject return same as serialize', () => {
+      cache.set('test', 'value');
+      
+      const serialized = cache.serialize();
+      const stmObject = cache.getSTMObject();
+      
+      expect(serialized).toEqual(stmObject);
+    });
+  });
+
   describe('Edge Cases', () => {
     test('should handle null and undefined values', () => {
       cache.set('nullValue', null);

@@ -175,6 +175,55 @@ class MindCache {
       .join(', ');
   }
 
+  // Get STM as a proper object (alias for getAll for clarity)
+  getSTMObject(): STM {
+    return this.getAll();
+  }
+
+  // Serialize STM to JSON string
+  toJSON(): string {
+    return JSON.stringify(this.getAll());
+  }
+
+  // Deserialize from JSON string and update STM
+  fromJSON(jsonString: string): void {
+    try {
+      const data = JSON.parse(jsonString);
+      if (typeof data === 'object' && data !== null) {
+        // Clear existing STM (except system keys)
+        this.stm = {};
+        // Set new values (skip system keys as they're computed)
+        Object.entries(data).forEach(([key, value]) => {
+          if (!key.startsWith('$')) {
+            this.set(key, value);
+          }
+        });
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('MindCache: Failed to deserialize JSON:', error);
+    }
+  }
+
+  // Create a serializable representation for network transmission
+  serialize(): Record<string, any> {
+    return this.getAll();
+  }
+
+  // Restore from serialized data
+  deserialize(data: Record<string, any>): void {
+    if (typeof data === 'object' && data !== null) {
+      // Clear existing STM (except system keys)
+      this.stm = {};
+      // Set new values (skip system keys as they're computed)
+      Object.entries(data).forEach(([key, value]) => {
+        if (!key.startsWith('$')) {
+          this.set(key, value);
+        }
+      });
+    }
+  }
+
   // Generate tools for Vercel AI SDK to write STM values
   get_aisdk_tools(): Record<string, any> {
     const tools: Record<string, any> = {};
