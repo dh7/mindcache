@@ -97,6 +97,36 @@ describe('MindCache Key Properties', () => {
       expect(dateResult).toBe(false);
       expect(timeResult).toBe(false);
     });
+
+    test('should not allow modifying system property via set_attributes', () => {
+      cache.set_value('test_key', 'test_value', { system: false });
+      
+      // Verify initial system property
+      const initialAttrs = cache.get_attributes('test_key');
+      expect(initialAttrs?.system).toBe(false);
+      
+      // Try to modify system property
+      const result = cache.set_attributes('test_key', { system: true, readonly: true });
+      
+      // Should return true (operation succeeded) but system property should remain unchanged
+      expect(result).toBe(true);
+      
+      const finalAttrs = cache.get_attributes('test_key');
+      expect(finalAttrs?.system).toBe(false); // System property should not change
+      expect(finalAttrs?.readonly).toBe(true); // Other properties should change
+    });
+
+    test('should not allow creating keys with system=true via set_value', () => {
+      cache.set_value('user_key', 'value', { system: true });
+      
+      const attributes = cache.get_attributes('user_key');
+      expect(attributes?.system).toBe(true); // This should work for initial creation
+      
+      // But trying to modify it later should not work
+      cache.set_attributes('user_key', { system: false });
+      const updatedAttributes = cache.get_attributes('user_key');
+      expect(updatedAttributes?.system).toBe(true); // Should remain true
+    });
   });
 
   describe('Readonly Property', () => {

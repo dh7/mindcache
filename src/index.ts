@@ -119,7 +119,10 @@ class MindCache {
       return false;
     }
 
-    entry.attributes = { ...entry.attributes, ...attributes };
+    // Create a copy of attributes, excluding the system property to prevent modification
+    const { system, ...allowedAttributes } = attributes;
+    
+    entry.attributes = { ...entry.attributes, ...allowedAttributes };
     this.notifyGlobalListeners();
     return true;
   }
