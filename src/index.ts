@@ -440,6 +440,36 @@ class MindCache {
     }
   }
 
+  // Generate system prompt from all visible STM keys
+  get_system_prompt(): string {
+    const now = new Date();
+    const promptLines: string[] = [];
+    
+    // Add visible regular STM entries
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      if (entry.attributes.visible) {
+        const value = this.get_value(key);
+        const formattedValue = typeof value === 'object' && value !== null 
+          ? JSON.stringify(value) 
+          : String(value);
+        
+        if (entry.attributes.readonly) {
+          // Readonly keys: just show the key-value pair
+          promptLines.push(`${key}: ${formattedValue}`);
+        } else {
+          // Writable keys: show value and mention the tool
+          promptLines.push(`${key}: ${formattedValue}. You can update ${key} by using the write_${key} tool`);
+        }
+      }
+    });
+    
+    // Add system keys (always visible and readonly)
+    promptLines.push(`$date: ${now.toISOString().split('T')[0]}`);
+    promptLines.push(`$time: ${now.toTimeString().split(' ')[0]}`);
+    
+    return promptLines.join('\n');
+  }
+
   // Generate tools for Vercel AI SDK to write STM values (excludes readonly keys)
   get_aisdk_tools(): Record<string, any> {
     const tools: Record<string, any> = {};
