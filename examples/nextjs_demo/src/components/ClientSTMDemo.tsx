@@ -102,7 +102,7 @@ export default function ClientSTMDemo() {
     readonly: false,
     visible: true,
     default: '',
-    system: false,
+    hardcoded: false,
     template: false
   });
 
@@ -180,7 +180,7 @@ export default function ClientSTMDemo() {
         readonly: false,
         visible: true,
         default: '',
-        system: false,
+        hardcoded: false,
         template: false
       });
     }
@@ -296,13 +296,13 @@ export default function ClientSTMDemo() {
                     indicators.push('R');
                   }
                   if (!attributes.visible) {
-                    indicators.push('H');
+                    indicators.push('V');
                   }
                   if (attributes.template) {
                     indicators.push('T');
                   }
-                  if (attributes.system || isSystemKey) {
-                    indicators.push('S');
+                  if (attributes.hardcoded || isSystemKey) {
+                    indicators.push('H');
                   }
                   if (attributes.default !== '') {
                     indicators.push('D');
@@ -389,9 +389,9 @@ export default function ClientSTMDemo() {
           <div className="text-gray-400 mb-1">Property Indicators:</div>
           <div className="text-gray-500 space-y-0.5">
             <div><span className="text-yellow-400">[R]</span> Readonly</div>
-            <div><span className="text-yellow-400">[H]</span> Hidden</div>
+            <div><span className="text-yellow-400">[V]</span> Hidden (not Visible)</div>
             <div><span className="text-yellow-400">[T]</span> Template</div>
-            <div><span className="text-yellow-400">[S]</span> System</div>
+            <div><span className="text-yellow-400">[H]</span> Hardcoded</div>
             <div><span className="text-yellow-400">[D]</span> Has Default</div>
           </div>
         </div>
@@ -432,7 +432,7 @@ export default function ClientSTMDemo() {
               {/* Readonly */}
               <div className="flex items-center justify-between">
                 <label className="text-gray-400 font-mono">readonly:</label>
-                {attributesForm.system ? (
+                {attributesForm.hardcoded ? (
                   <span className="text-gray-500 font-mono px-2 py-1">
                     {attributesForm.readonly ? 'true' : 'false'}
                   </span>
@@ -460,7 +460,7 @@ export default function ClientSTMDemo() {
               {/* Template */}
               <div className="flex items-center justify-between">
                 <label className="text-gray-400 font-mono">template:</label>
-                {attributesForm.system ? (
+                {attributesForm.hardcoded ? (
                   <span className="text-gray-500 font-mono px-2 py-1">
                     {attributesForm.template ? 'true' : 'false'}
                   </span>
@@ -474,16 +474,16 @@ export default function ClientSTMDemo() {
                 )}
               </div>
 
-              {/* System */}
+              {/* Hardcoded */}
               <div className="flex items-center justify-between">
-                <label className="text-gray-400 font-mono">system:</label>
+                <label className="text-gray-400 font-mono">hardcoded:</label>
                 <span className="text-gray-500 font-mono px-2 py-1">
-                  {attributesForm.system ? 'true' : 'false'}
+                  {attributesForm.hardcoded ? 'true' : 'false'}
                 </span>
               </div>
 
-              {/* Default - only show if not a system property */}
-              {!attributesForm.system && (
+              {/* Default - only show if not a hardcoded property */}
+              {!attributesForm.hardcoded && (
                 <div className="flex flex-col space-y-2">
                   <label className="text-gray-400 font-mono">default:</label>
                   <textarea
@@ -499,10 +499,10 @@ export default function ClientSTMDemo() {
 
             {/* Property Descriptions */}
             <div className="mt-6 p-3 border border-gray-600 rounded text-xs text-gray-500 space-y-1">
-              <div><span className="text-green-400">readonly:</span> If true, won&apos;t appear in AI tools{attributesForm.system && ' (always true for system keys)'}</div>
+              <div><span className="text-green-400">readonly:</span> If true, won&apos;t appear in AI tools{attributesForm.hardcoded && ' (always true for hardcoded keys)'}</div>
               <div><span className="text-green-400">visible:</span> If false, hidden from injectSTM/getSTM</div>
-              <div><span className="text-green-400">template:</span> Process with injectSTM on get{attributesForm.system && ' (always false for system keys)'}</div>
-              {!attributesForm.system && (
+              <div><span className="text-green-400">template:</span> Process with injectSTM on get{attributesForm.hardcoded && ' (always false for hardcoded keys)'}</div>
+              {!attributesForm.hardcoded && (
                 <div><span className="text-green-400">default:</span> Value restored on clear()</div>
               )}
             </div>

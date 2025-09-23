@@ -5,7 +5,7 @@ interface KeyAttributes {
   readonly: boolean;
   visible: boolean;
   default: string;
-  system: boolean;
+  hardcoded: boolean;
   template: boolean;
 }
 
@@ -70,7 +70,7 @@ class MindCache {
         readonly: true,
         visible: true,
         default: '',
-        system: true,
+        hardcoded: true,
         template: false
       };
     }
@@ -81,7 +81,7 @@ class MindCache {
 
   // Set a value in the STM with default attributes
   set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
-    // Don't allow setting system keys
+    // Don't allow setting hardcoded system keys
     if (key === '$date' || key === '$time') {
       return;
     }
@@ -90,14 +90,14 @@ class MindCache {
       readonly: false,
       visible: true,
       default: '',
-      system: false,
+      hardcoded: false,
       template: false
     };
 
     const finalAttributes = attributes ? { ...defaultAttributes, ...attributes } : defaultAttributes;
 
-    // If system is true, force readonly to true and template to false
-    if (finalAttributes.system) {
+    // If hardcoded is true, force readonly to true and template to false
+    if (finalAttributes.hardcoded) {
       finalAttributes.readonly = true;
       finalAttributes.template = false;
     }
@@ -115,7 +115,7 @@ class MindCache {
 
   // Set attributes for an existing key
   set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
-    // Don't allow setting attributes for system keys
+    // Don't allow setting attributes for hardcoded system keys
     if (key === '$date' || key === '$time') {
       return false;
     }
@@ -125,14 +125,14 @@ class MindCache {
       return false;
     }
 
-    // Create a copy of attributes, excluding the system property to prevent modification
-    const { system, ...allowedAttributes } = attributes;
+    // Create a copy of attributes, excluding the hardcoded property to prevent modification
+    const { hardcoded, ...allowedAttributes } = attributes;
     
     // Apply the allowed attributes
     entry.attributes = { ...entry.attributes, ...allowedAttributes };
     
-    // If this is a system key, ensure readonly is always true and template is always false
-    if (entry.attributes.system) {
+    // If this is a hardcoded key, ensure readonly is always true and template is always false
+    if (entry.attributes.hardcoded) {
       entry.attributes.readonly = true;
       entry.attributes.template = false;
     }
@@ -157,7 +157,7 @@ class MindCache {
   // Delete a key-value pair from the STM
   delete(key: string): boolean {
     if (key === '$date' || key === '$time') {
-      return false; // Can't delete system keys
+      return false; // Can't delete hardcoded system keys
     }
     if (!(key in this.stm)) {
       return false;
@@ -259,7 +259,7 @@ class MindCache {
           readonly: false,
           visible: true,
           default: '',
-          system: false,
+          hardcoded: false,
           template: false
         };
 
@@ -393,9 +393,9 @@ class MindCache {
     try {
       const data = JSON.parse(jsonString);
       if (typeof data === 'object' && data !== null) {
-        // Clear existing STM (except system keys)
+        // Clear existing STM (except hardcoded system keys)
         this.clear();
-        // Set new values (skip system keys as they're computed)
+        // Set new values (skip hardcoded system keys as they're computed)
         Object.entries(data).forEach(([key, value]) => {
           if (!key.startsWith('$')) {
             this.set_value(key, value);
