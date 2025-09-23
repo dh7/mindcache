@@ -1,8 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from 'zod';
 
+interface KeyAttributes {
+  readonly: boolean;
+  visible: boolean;
+  default: string;
+  system: boolean;
+  template: boolean;
+}
+
+interface STMEntry {
+  value: any;
+  attributes: KeyAttributes;
+}
+
 type STM = {
-  [key: string]: any;
+  [key: string]: STMEntry;
 };
 
 type Listener = () => void;
@@ -12,8 +25,14 @@ class MindCache {
   private listeners: { [key: string]: Listener[] } = {};
   private globalListeners: Listener[] = [];
 
-  // Get a value from the STM
+  // Get a value from the STM (deprecated - use get_value instead)
+  /** @deprecated Use get_value instead */
   get(key: string): any {
+    return this.get_value(key);
+  }
+
+  // Get a value from the STM with template processing if enabled
+  get_value(key: string, _processingStack?: Set<string>): any {
     if (key === '$date') {
       const today = new Date();
       return today.toISOString().split('T')[0];
@@ -22,17 +41,92 @@ class MindCache {
       const now = new Date();
       return now.toTimeString().split(' ')[0];
     }
-    return this.stm[key];
+    
+    const entry = this.stm[key];
+    if (!entry) {
+      return undefined;
+    }
+    
+    // If template is enabled, process the value through injectSTM
+    if (entry.attributes.template) {
+      // Prevent circular references
+      const processingStack = _processingStack || new Set<string>();
+      if (processingStack.has(key)) {
+        return entry.value; // Return raw value to break circular reference
+      }
+      processingStack.add(key);
+      const result = this.injectSTM(entry.value, processingStack);
+      processingStack.delete(key);
+      return result;
+    }
+    
+    return entry.value;
   }
 
-  // Set a value in the STM
-  set(key: string, value: any): void {
-    //console.log('Setting STM:', key, value);
-    this.stm[key] = value;
+  // Get attributes for a key
+  get_attributes(key: string): KeyAttributes | undefined {
+    if (key === '$date' || key === '$time') {
+      return {
+        readonly: true,
+        visible: true,
+        default: '',
+        system: true,
+        template: false
+      };
+    }
+    
+    const entry = this.stm[key];
+    return entry ? entry.attributes : undefined;
+  }
+
+  // Set a value in the STM with default attributes
+  set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
+    // Don't allow setting system keys
+    if (key === '$date' || key === '$time') {
+      return;
+    }
+
+    const defaultAttributes: KeyAttributes = {
+      readonly: false,
+      visible: true,
+      default: '',
+      system: false,
+      template: false
+    };
+
+    const finalAttributes = attributes ? { ...defaultAttributes, ...attributes } : defaultAttributes;
+
+    this.stm[key] = {
+      value,
+      attributes: finalAttributes
+    };
+
     if (this.listeners[key]) {
       this.listeners[key].forEach(listener => listener());
     }
     this.notifyGlobalListeners();
+  }
+
+  // Set attributes for an existing key
+  set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
+    // Don't allow setting attributes for system keys
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    if (!entry) {
+      return false;
+    }
+
+    entry.attributes = { ...entry.attributes, ...attributes };
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  // Set a value in the STM (uses default attributes)
+  set(key: string, value: any): void {
+    this.set_value(key, value);
   }
 
   // Check if a key exists in the STM
@@ -45,6 +139,9 @@ class MindCache {
 
   // Delete a key-value pair from the STM
   delete(key: string): boolean {
+    if (key === '$date' || key === '$time') {
+      return false; // Can't delete system keys
+    }
     if (!(key in this.stm)) {
       return false;
     }
@@ -58,9 +155,32 @@ class MindCache {
     return deleted;
   }
 
-  // Clear the entire STM
+  // Clear the entire STM and restore default values
   clear(): void {
+    // Store keys that have default values
+    const keysWithDefaults: Array<{key: string, defaultValue: string, attributes: KeyAttributes}> = [];
+    
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      if (entry.attributes.default !== '') {
+        keysWithDefaults.push({
+          key,
+          defaultValue: entry.attributes.default,
+          attributes: entry.attributes
+        });
+      }
+    });
+
+    // Clear the STM
     this.stm = {};
+    
+    // Restore default values
+    keysWithDefaults.forEach(({key, defaultValue, attributes}) => {
+      this.stm[key] = {
+        value: defaultValue,
+        attributes
+      };
+    });
+
     this.notifyGlobalListeners();
   }
 
@@ -72,8 +192,9 @@ class MindCache {
   // Get all values in the STM
   values(): any[] {
     const now = new Date();
+    const stmValues = Object.values(this.stm).map(entry => entry.value);
     return [
-      ...Object.values(this.stm),
+      ...stmValues,
       now.toISOString().split('T')[0],
       now.toTimeString().split(' ')[0]
     ];
@@ -82,8 +203,9 @@ class MindCache {
   // Get all entries (key-value pairs) in the STM
   entries(): [string, any][] {
     const now = new Date();
+    const stmEntries = Object.entries(this.stm).map(([key, entry]) => [key, entry.value] as [string, any]);
     return [
-      ...Object.entries(this.stm),
+      ...stmEntries,
       ['$date', now.toISOString().split('T')[0]],
       ['$time', now.toTimeString().split(' ')[0]]
     ];
@@ -94,19 +216,48 @@ class MindCache {
     return Object.keys(this.stm).length + 2; // +2 for $date and $time
   }
 
-  // Get a copy of the entire STM object
-  getAll(): STM {
+  // Get a copy of the entire STM object (returns values only for backward compatibility)
+  getAll(): Record<string, any> {
     const now = new Date();
-    return {
-      ...this.stm,
-      '$date': now.toISOString().split('T')[0],
-      '$time': now.toTimeString().split(' ')[0]
-    };
+    const result: Record<string, any> = {};
+    
+    // Add regular STM values
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      result[key] = entry.value;
+    });
+    
+    // Add system values
+    result['$date'] = now.toISOString().split('T')[0];
+    result['$time'] = now.toTimeString().split(' ')[0];
+    
+    return result;
   }
 
-  // Update the STM with multiple key-value pairs
-  update(newSTM: STM): void {
-    this.stm = { ...this.stm, ...newSTM };
+  // Update the STM with multiple key-value pairs (uses default attributes)
+  update(newValues: Record<string, any>): void {
+    Object.entries(newValues).forEach(([key, value]) => {
+      if (key !== '$date' && key !== '$time') {
+        // Set value without triggering individual notifications
+        const defaultAttributes: KeyAttributes = {
+          readonly: false,
+          visible: true,
+          default: '',
+          system: false,
+          template: false
+        };
+
+        this.stm[key] = {
+          value,
+          attributes: defaultAttributes
+        };
+
+        // Trigger key-specific listeners
+        if (this.listeners[key]) {
+          this.listeners[key].forEach(listener => listener());
+        }
+      }
+    });
+    // Trigger global listeners only once at the end
     this.notifyGlobalListeners();
   }
 
@@ -140,43 +291,78 @@ class MindCache {
     this.globalListeners.forEach(listener => listener());
   }
 
-  // Replace placeholders in a string with STM values
-  injectSTM(template: string): string {
+  // Replace placeholders in a string with STM values (only uses visible keys for public injectSTM calls)
+  injectSTM(template: string, _processingStack?: Set<string>): string {
+    // Handle null/undefined templates
+    if (template == null) {
+      return String(template);
+    }
+    
+    // Convert to string if not already
+    const templateStr = String(template);
+    
     // find all the keys in the template
-    const keys = template.match(/\{([$\w]+)\}/g);
+    const keys = templateStr.match(/\{([$\w]+)\}/g);
 
     if (!keys) {
-      return template;
+      return templateStr;
     }
 
     // Extract the actual key names without the curly braces
     const cleanKeys = keys.map(key => key.replace(/[{}]/g, ''));
 
     // Build inputValues with the clean keys
-    const inputValues: Record<string, string> = cleanKeys.reduce((acc, key) => ({
-      ...acc,
-      [key]: this.get(key)
-    }), {});
+    const inputValues: Record<string, string> = cleanKeys.reduce((acc, key) => {
+      // Always allow system keys
+      if (key === '$date' || key === '$time') {
+        return {
+          ...acc,
+          [key]: this.get_value(key, _processingStack)
+        };
+      }
+      
+      // If this is internal processing (from template), allow all keys
+      // If this is external call, only allow visible keys
+      const attributes = this.get_attributes(key);
+      if (_processingStack || (attributes && attributes.visible)) {
+        return {
+          ...acc,
+          [key]: this.get_value(key, _processingStack)
+        };
+      }
+      
+      // If key doesn't exist or is not visible (for external calls), don't include it
+      return acc;
+    }, {});
 
     // Replace the placeholders with actual values
-    return template.replace(/\{([$\w]+)\}/g, (match, key) => inputValues[key] || '');
+    return templateStr.replace(/\{([$\w]+)\}/g, (match, key) => inputValues[key] || '');
   }
 
-  // Get a formatted string of all STM key-value pairs
+  // Get a formatted string of all visible STM key-value pairs
   getSTM(): string {
     const now = new Date();
-    const stmWithDateTime = {
-      ...this.stm,
-      '$date': now.toISOString().split('T')[0],
-      '$time': now.toTimeString().split(' ')[0]
-    };
-    return Object.entries(stmWithDateTime)
+    const entries: Array<[string, any]> = [];
+    
+    // Add visible regular STM entries
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      if (entry.attributes.visible) {
+        // Use get_value to handle template processing
+        entries.push([key, this.get_value(key)]);
+      }
+    });
+    
+    // Add system keys (always visible)
+    entries.push(['$date', now.toISOString().split('T')[0]]);
+    entries.push(['$time', now.toTimeString().split(' ')[0]]);
+    
+    return entries
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
   }
 
   // Get STM as a proper object (alias for getAll for clarity)
-  getSTMObject(): STM {
+  getSTMObject(): Record<string, any> {
     return this.getAll();
   }
 
@@ -191,11 +377,11 @@ class MindCache {
       const data = JSON.parse(jsonString);
       if (typeof data === 'object' && data !== null) {
         // Clear existing STM (except system keys)
-        this.stm = {};
+        this.clear();
         // Set new values (skip system keys as they're computed)
         Object.entries(data).forEach(([key, value]) => {
           if (!key.startsWith('$')) {
-            this.set(key, value);
+            this.set_value(key, value);
           }
         });
       }
@@ -214,25 +400,27 @@ class MindCache {
   deserialize(data: Record<string, any>): void {
     if (typeof data === 'object' && data !== null) {
       // Clear existing STM (except system keys)
-      this.stm = {};
+      this.clear();
       // Set new values (skip system keys as they're computed)
       Object.entries(data).forEach(([key, value]) => {
         if (!key.startsWith('$')) {
-          this.set(key, value);
+          this.set_value(key, value);
         }
       });
     }
   }
 
-  // Generate tools for Vercel AI SDK to write STM values
+  // Generate tools for Vercel AI SDK to write STM values (excludes readonly keys)
   get_aisdk_tools(): Record<string, any> {
     const tools: Record<string, any> = {};
 
-    // Get all current keys (excluding built-in $date and $time)
-    const keys = Object.keys(this.stm);
+    // Get all current keys (excluding built-in $date and $time and readonly keys)
+    const writableKeys = Object.entries(this.stm)
+      .filter(([, entry]) => !entry.attributes.readonly)
+      .map(([key]) => key);
 
-    // Create a write tool for each key
-    keys.forEach(key => {
+    // Create a write tool for each writable key
+    writableKeys.forEach(key => {
       const toolName = `write_${key}`;
       tools[toolName] = {
         description: `Write a value to the STM key: ${key}`,
@@ -240,7 +428,7 @@ class MindCache {
           value: z.string().describe(`The value to write to ${key}`)
         }),
         execute: async (input: { value: any }) => {
-          this.set(key, input.value);
+          this.set_value(key, input.value);
           return {
             result: `Successfully wrote "${input.value}" to ${key}`,
             key: key,
@@ -250,8 +438,8 @@ class MindCache {
       };
     });
 
-    // If no keys exist yet, return an empty object
-    if (keys.length === 0) {
+    // If no writable keys exist yet, return an empty object
+    if (writableKeys.length === 0) {
       return {};
     }
 
@@ -268,4 +456,4 @@ export const mindcache = new MindCache();
 export { MindCache };
 
 // Export types for TypeScript users
-export type { STM, Listener };
+export type { STM, STMEntry, KeyAttributes, Listener };
