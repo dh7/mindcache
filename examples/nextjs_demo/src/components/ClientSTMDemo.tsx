@@ -95,6 +95,8 @@ export default function ClientSTMDemo() {
   });
 
   const [input, setInput] = useState('');
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
 
   // Generate tool schemas (without execute functions) for the server
   function getToolSchemas() {
@@ -120,6 +122,43 @@ export default function ClientSTMDemo() {
     if (key && !mindcacheRef.current.has(key)) {
       mindcacheRef.current.set(key, '');
     }
+  };
+
+  // Delete an STM key
+  const deleteSTMKey = (key: string) => {
+    mindcacheRef.current.delete(key);
+  };
+
+  // Start editing a field
+  const startEditing = (key: string, currentValue: any) => {
+    setEditingKey(key);
+    setEditingValue(typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : String(currentValue));
+  };
+
+  // Save edited value
+  const saveEdit = () => {
+    if (editingKey) {
+      try {
+        // Try to parse as JSON first, fall back to string
+        let parsedValue;
+        try {
+          parsedValue = JSON.parse(editingValue);
+        } catch {
+          parsedValue = editingValue;
+        }
+        mindcacheRef.current.set(editingKey, parsedValue);
+        setEditingKey(null);
+        setEditingValue('');
+      } catch (error) {
+        console.error('Error saving edit:', error);
+      }
+    }
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingKey(null);
+    setEditingValue('');
   };
 
   return (
@@ -205,14 +244,55 @@ export default function ClientSTMDemo() {
             <div className="text-gray-500">No STM data yet. Add a key above or chat to create memories.</div>
           ) : (
             <div className="space-y-2">
-              {Object.entries(stmState).map(([key, value]) => (
-                <div key={key} className="border-b border-green-800 pb-2">
-                  <div className="text-green-300 text-sm">{key}:</div>
-                  <div className="text-green-400 ml-2 break-words">
-                    {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+              {Object.entries(stmState).map(([key, value]) => {
+                const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
+                const displayValue = isEmpty ? '_______' : (typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value));
+                
+                return (
+                  <div key={key} className="relative">
+                    <div className="flex items-start justify-between">
+                      <div className="text-gray-400 font-mono">{key}:</div>
+                      <button
+                        onClick={() => deleteSTMKey(key)}
+                        className="text-green-600 hover:text-red-400 font-mono leading-none"
+                        title="Delete"
+                      >
+                        X
+                      </button>
+                    </div>
+                    
+                    {editingKey === key ? (
+                      <div className="mt-1">
+                        <textarea
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="w-full bg-black text-green-400 font-mono px-2 py-1 focus:outline-none resize-none"
+                          rows={Math.max(2, editingValue.split('\n').length)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && e.ctrlKey) {
+                              saveEdit();
+                            } else if (e.key === 'Escape') {
+                              cancelEdit();
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          Ctrl+Enter to save, Esc to cancel
+                        </div>
+                      </div>
+                    ) : (
+                      <div 
+                        className={`break-words whitespace-pre-wrap cursor-pointer hover:bg-green-900 hover:bg-opacity-20 p-1 -m-1 font-mono ${isEmpty ? 'text-gray-500' : 'text-green-400'}`}
+                        onClick={() => startEditing(key, value)}
+                        title="Click to edit"
+                      >
+                        <span className="text-gray-400">{'>'}</span> {displayValue}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
