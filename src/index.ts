@@ -383,47 +383,56 @@ class MindCache {
     return this.getAll();
   }
 
-  // Serialize STM to JSON string
+  // Serialize STM to JSON string (complete state)
   toJSON(): string {
-    return JSON.stringify(this.getAll());
+    return JSON.stringify(this.serialize());
   }
 
-  // Deserialize from JSON string and update STM
+  // Deserialize from JSON string and update STM (complete state)
   fromJSON(jsonString: string): void {
     try {
       const data = JSON.parse(jsonString);
-      if (typeof data === 'object' && data !== null) {
-        // Clear existing STM (except hardcoded system keys)
-        this.clear();
-        // Set new values (skip hardcoded system keys as they're computed)
-        Object.entries(data).forEach(([key, value]) => {
-          if (!key.startsWith('$')) {
-            this.set_value(key, value);
-          }
-        });
-      }
+      this.deserialize(data);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('MindCache: Failed to deserialize JSON:', error);
     }
   }
 
-  // Create a serializable representation for network transmission
-  serialize(): Record<string, any> {
-    return this.getAll();
+  // Serialize complete state (values + attributes, excluding hardcoded keys)
+  serialize(): Record<string, STMEntry> {
+    const result: Record<string, STMEntry> = {};
+    
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      // Only serialize non-hardcoded entries
+      if (!entry.attributes.hardcoded) {
+        result[key] = {
+          value: entry.value,
+          attributes: { ...entry.attributes }
+        };
+      }
+    });
+    
+    return result;
   }
 
-  // Restore from serialized data
-  deserialize(data: Record<string, any>): void {
+  // Deserialize complete state (values + attributes)
+  deserialize(data: Record<string, STMEntry>): void {
     if (typeof data === 'object' && data !== null) {
-      // Clear existing STM (except system keys)
+      // Clear existing STM (preserves hardcoded keys via clear())
       this.clear();
-      // Set new values (skip system keys as they're computed)
-      Object.entries(data).forEach(([key, value]) => {
-        if (!key.startsWith('$')) {
-          this.set_value(key, value);
+      
+      // Restore entries with their complete state
+      Object.entries(data).forEach(([key, entry]) => {
+        if (entry && typeof entry === 'object' && 'value' in entry && 'attributes' in entry) {
+          this.stm[key] = {
+            value: entry.value,
+            attributes: { ...entry.attributes }
+          };
         }
       });
+      
+      this.notifyGlobalListeners();
     }
   }
 
