@@ -27,13 +27,22 @@ describe('MindCache Key Properties', () => {
         visible: false,
         default: 'default_value',
         system: true,
-        template: true
+        template: true // This will be forced to false because system=true
       };
       
       cache.set_value('custom_key', 'custom_value', customAttributes);
       const attributes = cache.get_attributes('custom_key');
       
-      expect(attributes).toEqual(customAttributes);
+      // System keys force readonly=true and template=false
+      const expectedAttributes = {
+        readonly: true,
+        visible: false,
+        default: 'default_value',
+        system: true,
+        template: false // System keys cannot be templates
+      };
+      
+      expect(attributes).toEqual(expectedAttributes);
     });
 
     test('should set partial attributes', () => {
@@ -116,16 +125,44 @@ describe('MindCache Key Properties', () => {
       expect(finalAttrs?.readonly).toBe(true); // Other properties should change
     });
 
-    test('should not allow creating keys with system=true via set_value', () => {
+    test('system keys should always be readonly', () => {
       cache.set_value('user_key', 'value', { system: true });
       
       const attributes = cache.get_attributes('user_key');
       expect(attributes?.system).toBe(true); // This should work for initial creation
+      expect(attributes?.readonly).toBe(true); // Should automatically be readonly
       
       // But trying to modify it later should not work
       cache.set_attributes('user_key', { system: false });
       const updatedAttributes = cache.get_attributes('user_key');
       expect(updatedAttributes?.system).toBe(true); // Should remain true
+      expect(updatedAttributes?.readonly).toBe(true); // Should remain readonly
+    });
+
+    test('system keys cannot be made non-readonly', () => {
+      cache.set_value('system_key', 'value', { system: true, readonly: false });
+      
+      const attributes = cache.get_attributes('system_key');
+      expect(attributes?.system).toBe(true);
+      expect(attributes?.readonly).toBe(true); // Should be forced to true
+      
+      // Try to set readonly to false
+      cache.set_attributes('system_key', { readonly: false });
+      const updatedAttributes = cache.get_attributes('system_key');
+      expect(updatedAttributes?.readonly).toBe(true); // Should remain true
+    });
+
+    test('system keys cannot be templates', () => {
+      cache.set_value('system_key', 'value', { system: true, template: true });
+      
+      const attributes = cache.get_attributes('system_key');
+      expect(attributes?.system).toBe(true);
+      expect(attributes?.template).toBe(false); // Should be forced to false
+      
+      // Try to set template to true
+      cache.set_attributes('system_key', { template: true });
+      const updatedAttributes = cache.get_attributes('system_key');
+      expect(updatedAttributes?.template).toBe(false); // Should remain false
     });
   });
 
@@ -455,6 +492,25 @@ describe('MindCache Key Properties', () => {
       
       const stmString = cache.getSTM();
       expect(stmString).toContain('old_key: old_value');
+    });
+
+    test('system keys are always readonly and never templates', () => {
+      // Create a system key that tries to be non-readonly and template
+      cache.set_value('system_tracker', 'tracking_value', { 
+        system: true, 
+        readonly: false, // This should be ignored
+        template: true, // This should be ignored
+        visible: true 
+      });
+      
+      const attributes = cache.get_attributes('system_tracker');
+      expect(attributes?.system).toBe(true);
+      expect(attributes?.readonly).toBe(true); // Should be forced to true
+      expect(attributes?.template).toBe(false); // Should be forced to false
+      
+      // System keys should not appear in AI tools
+      const tools = cache.get_aisdk_tools();
+      expect(Object.keys(tools)).not.toContain('write_system_tracker');
     });
   });
 

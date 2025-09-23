@@ -96,6 +96,12 @@ class MindCache {
 
     const finalAttributes = attributes ? { ...defaultAttributes, ...attributes } : defaultAttributes;
 
+    // If system is true, force readonly to true and template to false
+    if (finalAttributes.system) {
+      finalAttributes.readonly = true;
+      finalAttributes.template = false;
+    }
+
     this.stm[key] = {
       value,
       attributes: finalAttributes
@@ -122,7 +128,15 @@ class MindCache {
     // Create a copy of attributes, excluding the system property to prevent modification
     const { system, ...allowedAttributes } = attributes;
     
+    // Apply the allowed attributes
     entry.attributes = { ...entry.attributes, ...allowedAttributes };
+    
+    // If this is a system key, ensure readonly is always true and template is always false
+    if (entry.attributes.system) {
+      entry.attributes.readonly = true;
+      entry.attributes.template = false;
+    }
+    
     this.notifyGlobalListeners();
     return true;
   }

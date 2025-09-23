@@ -432,12 +432,18 @@ export default function ClientSTMDemo() {
               {/* Readonly */}
               <div className="flex items-center justify-between">
                 <label className="text-gray-400 font-mono">readonly:</label>
-                <button
-                  onClick={() => setAttributesForm({ ...attributesForm, readonly: !attributesForm.readonly })}
-                  className="text-green-400 font-mono hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                >
-                  {attributesForm.readonly ? 'true' : 'false'}
-                </button>
+                {attributesForm.system ? (
+                  <span className="text-gray-500 font-mono px-2 py-1">
+                    {attributesForm.readonly ? 'true' : 'false'}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setAttributesForm({ ...attributesForm, readonly: !attributesForm.readonly })}
+                    className="text-green-400 font-mono hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                  >
+                    {attributesForm.readonly ? 'true' : 'false'}
+                  </button>
+                )}
               </div>
 
               {/* Visible */}
@@ -454,12 +460,18 @@ export default function ClientSTMDemo() {
               {/* Template */}
               <div className="flex items-center justify-between">
                 <label className="text-gray-400 font-mono">template:</label>
-                <button
-                  onClick={() => setAttributesForm({ ...attributesForm, template: !attributesForm.template })}
-                  className="text-green-400 font-mono hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                >
-                  {attributesForm.template ? 'true' : 'false'}
-                </button>
+                {attributesForm.system ? (
+                  <span className="text-gray-500 font-mono px-2 py-1">
+                    {attributesForm.template ? 'true' : 'false'}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setAttributesForm({ ...attributesForm, template: !attributesForm.template })}
+                    className="text-green-400 font-mono hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                  >
+                    {attributesForm.template ? 'true' : 'false'}
+                  </button>
+                )}
               </div>
 
               {/* System */}
@@ -487,9 +499,9 @@ export default function ClientSTMDemo() {
 
             {/* Property Descriptions */}
             <div className="mt-6 p-3 border border-gray-600 rounded text-xs text-gray-500 space-y-1">
-              <div><span className="text-green-400">readonly:</span> If true, won&apos;t appear in AI tools</div>
+              <div><span className="text-green-400">readonly:</span> If true, won&apos;t appear in AI tools{attributesForm.system && ' (always true for system keys)'}</div>
               <div><span className="text-green-400">visible:</span> If false, hidden from injectSTM/getSTM</div>
-              <div><span className="text-green-400">template:</span> Process with injectSTM on get</div>
+              <div><span className="text-green-400">template:</span> Process with injectSTM on get{attributesForm.system && ' (always false for system keys)'}</div>
               {!attributesForm.system && (
                 <div><span className="text-green-400">default:</span> Value restored on clear()</div>
               )}
