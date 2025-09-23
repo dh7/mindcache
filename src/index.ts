@@ -94,7 +94,11 @@ class MindCache {
       template: false
     };
 
-    const finalAttributes = attributes ? { ...defaultAttributes, ...attributes } : defaultAttributes;
+    // If key exists, preserve existing attributes unless explicitly overridden
+    const existingEntry = this.stm[key];
+    const baseAttributes = existingEntry ? existingEntry.attributes : defaultAttributes;
+    
+    const finalAttributes = attributes ? { ...baseAttributes, ...attributes } : baseAttributes;
 
     // If hardcoded is true, force readonly to true and template to false
     if (finalAttributes.hardcoded) {

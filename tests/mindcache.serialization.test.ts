@@ -271,6 +271,94 @@ describe('MindCache Complete Serialization', () => {
   });
 
   describe('Default value preservation', () => {
+    test('should serialize default values in attributes', () => {
+      // Set up data with defaults
+      cache.set_value('setting1', 'custom', { default: 'default1' });
+      cache.set_value('setting2', 'another', { default: 'default2' });
+
+      const serialized = cache.serialize();
+      
+      // Verify defaults are in serialized data
+      expect(serialized.setting1.attributes.default).toBe('default1');
+      expect(serialized.setting2.attributes.default).toBe('default2');
+    });
+
+    test('should preserve default values when updating existing keys', () => {
+      // Create key with default value
+      cache.set_value('name', 'Anonymous User', { default: 'Anonymous User' });
+      
+      // Verify initial state
+      expect(cache.get_value('name')).toBe('Anonymous User');
+      expect(cache.get_attributes('name')?.default).toBe('Anonymous User');
+      
+      // Update value without specifying attributes (this was the bug)
+      cache.set_value('name', 'John Doe');
+      
+      // Default should still be preserved
+      expect(cache.get_value('name')).toBe('John Doe');
+      expect(cache.get_attributes('name')?.default).toBe('Anonymous User');
+      
+      // Clear should restore the default
+      cache.clear();
+      expect(cache.get_value('name')).toBe('Anonymous User');
+    });
+
+    test('should preserve all existing attributes when updating value only', () => {
+      // Create key with complex attributes
+      cache.set_value('config', 'initial', { 
+        readonly: true, 
+        visible: false, 
+        default: 'fallback',
+        template: true
+      });
+      
+      // Verify initial state
+      const initialAttrs = cache.get_attributes('config');
+      expect(initialAttrs).toEqual({
+        readonly: true,
+        visible: false,
+        default: 'fallback',
+        hardcoded: false,
+        template: true
+      });
+      
+      // Update value only (should preserve all attributes)
+      cache.set_value('config', 'updated');
+      
+      // All attributes should be preserved
+      expect(cache.get_value('config')).toBe('updated');
+      expect(cache.get_attributes('config')).toEqual({
+        readonly: true,
+        visible: false,
+        default: 'fallback',
+        hardcoded: false,
+        template: true
+      });
+    });
+
+    test('should allow partial attribute updates while preserving others', () => {
+      // Create key with defaults
+      cache.set_value('setting', 'value', { 
+        readonly: false,
+        visible: true,
+        default: 'default_val',
+        template: false
+      });
+      
+      // Update only one attribute
+      cache.set_value('setting', 'new_value', { readonly: true });
+      
+      // Should preserve other attributes while updating the specified one
+      expect(cache.get_value('setting')).toBe('new_value');
+      expect(cache.get_attributes('setting')).toEqual({
+        readonly: true,  // Updated
+        visible: true,   // Preserved
+        default: 'default_val', // Preserved
+        hardcoded: false, // Preserved
+        template: false  // Preserved
+      });
+    });
+
     test('should restore default values after clear during deserialization', () => {
       // Set up data with defaults
       cache.set_value('setting1', 'custom', { default: 'default1' });
@@ -290,6 +378,23 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.has('extra')).toBe(false);
       expect(cache.get_attributes('setting1')?.default).toBe('default1');
       expect(cache.get_attributes('setting2')?.default).toBe('default2');
+    });
+
+    test('should preserve defaults through JSON round-trip', () => {
+      cache.set_value('key1', 'value1', { default: 'fallback1' });
+      cache.set_value('key2', 'value2', { default: 'fallback2' });
+
+      const jsonString = cache.toJSON();
+      const newCache = new MindCache();
+      newCache.fromJSON(jsonString);
+
+      expect(newCache.get_attributes('key1')?.default).toBe('fallback1');
+      expect(newCache.get_attributes('key2')?.default).toBe('fallback2');
+      
+      // Test that clear restores defaults
+      newCache.clear();
+      expect(newCache.get_value('key1')).toBe('fallback1');
+      expect(newCache.get_value('key2')).toBe('fallback2');
     });
   });
 

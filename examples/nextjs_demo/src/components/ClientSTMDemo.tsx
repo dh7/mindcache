@@ -9,22 +9,31 @@ import { mindcache } from 'mindcache';
 export default function ClientSTMDemo() {
   const mindcacheRef = useRef(mindcache);
   
-  // Initialize with some default keys to ensure tools are available
+  // Initialize with auto-load and default keys
   useEffect(() => {
+    // Try to load from localStorage first
+    const saved = localStorage.getItem('mindcache_stm');
+    if (saved) {
+      try {
+        mindcacheRef.current.fromJSON(saved);
+        console.log('✅ Auto-loaded STM from localStorage');
+        setSTMState(mindcacheRef.current.getAll());
+        return;
+      } catch (error) {
+        console.error('❌ Failed to auto-load STM:', error);
+      }
+    }
+
+    // If no saved data, create default keys
     const currentKeys = Object.keys(mindcacheRef.current.getAll());
-    console.log('Current STM keys:', currentKeys);
-    
-    // Only count non-system keys (not starting with $)
     const userKeys = currentKeys.filter(key => !key.startsWith('$'));
-    console.log('User keys:', userKeys);
     
     if (userKeys.length === 0) {
       console.log('Creating default STM keys...');
-      mindcacheRef.current.set_value('name', '', { default: 'Anonymous User' });
-      mindcacheRef.current.set_value('preferences', '', { default: 'No preferences set' });
-      mindcacheRef.current.set_value('notes', '', { default: 'No notes' });
+      mindcacheRef.current.set_value('name', 'Anonymous User', { default: 'Anonymous User' });
+      mindcacheRef.current.set_value('preferences', 'No preferences set', { default: 'No preferences set' });
+      mindcacheRef.current.set_value('notes', 'No notes', { default: 'No notes' });
       console.log('Created keys:', Object.keys(mindcacheRef.current.getAll()));
-      // Force update the state
       setSTMState(mindcacheRef.current.getAll());
     }
   }, []);
@@ -41,6 +50,33 @@ export default function ClientSTMDemo() {
     mindcacheRef.current.subscribeToAll(updateSTMState);
     return () => mindcacheRef.current.unsubscribeFromAll(updateSTMState);
   }, [updateSTMState]);
+
+  // Global keyboard shortcuts for terminal commands
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 's':
+            e.preventDefault();
+            saveSTM();
+            break;
+          case 'l':
+            e.preventDefault();
+            loadSTM();
+            break;
+          case 'k':
+            e.preventDefault();
+            if (confirm('Clear STM? This will restore default values.')) {
+              clearSTM();
+            }
+            break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const { messages, sendMessage, status, addToolResult } = useChat({
     transport: new DefaultChatTransport({
@@ -105,6 +141,7 @@ export default function ClientSTMDemo() {
     hardcoded: false,
     template: false
   });
+  const [editingKeyName, setEditingKeyName] = useState('');
 
   // Generate tool schemas (without execute functions) for the server
   function getToolSchemas() {
@@ -185,26 +222,83 @@ export default function ClientSTMDemo() {
       });
     }
     setEditingAttributes(key);
+    setEditingKeyName(key);
   };
 
   // Save attributes
   const saveAttributes = () => {
     if (editingAttributes) {
-      mindcacheRef.current.set_attributes(editingAttributes, attributesForm);
+      const oldKey = editingAttributes;
+      const newKey = editingKeyName.trim();
+      
+      // If key name changed, we need to create new entry and delete old one
+      if (newKey && newKey !== oldKey) {
+        // Don't allow renaming to existing key or system keys
+        if (mindcacheRef.current.has(newKey) || newKey.startsWith('$')) {
+          alert(`Key "${newKey}" already exists or is a system key`);
+          return;
+        }
+        
+        // Get current value
+        const currentValue = mindcacheRef.current.get_value(oldKey);
+        
+        // Create new entry with new name
+        mindcacheRef.current.set_value(newKey, currentValue, attributesForm);
+        
+        // Delete old entry
+        mindcacheRef.current.delete(oldKey);
+      } else {
+        // Just update attributes
+        mindcacheRef.current.set_attributes(oldKey, attributesForm);
+      }
+      
       setEditingAttributes(null);
+      setEditingKeyName('');
     }
   };
 
   // Cancel attributes editing
   const cancelAttributes = () => {
     setEditingAttributes(null);
+    setEditingKeyName('');
+  };
+
+  // Save STM to localStorage
+  const saveSTM = () => {
+    try {
+      const serialized = mindcacheRef.current.toJSON();
+      localStorage.setItem('mindcache_stm', serialized);
+      console.log('✅ STM saved to localStorage');
+    } catch (error) {
+      console.error('❌ Failed to save STM:', error);
+    }
+  };
+
+  // Load STM from localStorage
+  const loadSTM = () => {
+    try {
+      const saved = localStorage.getItem('mindcache_stm');
+      if (saved) {
+        mindcacheRef.current.fromJSON(saved);
+        console.log('✅ STM loaded from localStorage');
+      } else {
+        console.log('ℹ️ No saved STM found');
+      }
+    } catch (error) {
+      console.error('❌ Failed to load STM:', error);
+    }
+  };
+
+  // Clear STM
+  const clearSTM = () => {
+    mindcacheRef.current.clear();
+    console.log('🗑️ STM cleared');
   };
 
   return (
     <div className="min-h-screen bg-black text-green-400 font-mono p-6 flex">
       {/* Chat Interface */}
       <div className="flex-1 flex flex-col mr-6">
-        <h2 className="text-xl mb-4 text-green-300">Client-Side STM Chat</h2>
         
         <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2">
           {messages.map((message) => (
@@ -261,26 +355,57 @@ export default function ClientSTMDemo() {
 
       {/* STM State Panel */}
       <div className="w-80 flex flex-col">
-        <h3 className="text-lg mb-4 text-green-300">STM State (Client-Side)</h3>
         
-        {/* Add new key */}
-        <div className="mb-4">
-          <input
-            className="w-full bg-black text-green-400 font-mono border border-green-400 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600"
-            placeholder="New STM key..."
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                addSTMKey(e.currentTarget.value.trim());
-                e.currentTarget.value = '';
-              }
-            }}
-          />
-        </div>
-
         {/* STM Display */}
         <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto">
+          {/* Terminal Commands */}
+          <div className="mb-4 pb-3 border-b border-green-400 font-mono text-sm">
+            <div className="flex space-x-4 mb-2">
+              <div 
+                className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+                onClick={() => {
+                  const key = prompt('Enter new STM key:');
+                  if (key && key.trim()) {
+                    addSTMKey(key.trim());
+                  }
+                }}
+                title="Add new STM key"
+              >
+                Add Key
+              </div>
+              <div 
+                className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+                onClick={loadSTM}
+                title="Load STM from localStorage (Ctrl+L)"
+              >
+                Load
+              </div>
+              <div 
+                className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+                onClick={saveSTM}
+                title="Save STM to localStorage (Ctrl+S)"
+              >
+                Save
+              </div>
+              <div 
+                className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+                onClick={() => {
+                  if (confirm('Clear STM? This will restore default values.')) {
+                    clearSTM();
+                  }
+                }}
+                title="Clear STM - keeps defaults (Ctrl+K)"
+              >
+                Clear
+              </div>
+            </div>
+            <div className="text-xs text-gray-500">
+              Auto-loads on page refresh • Ctrl+S/L/K shortcuts
+            </div>
+          </div>
+
           {Object.keys(stmState).length === 0 ? (
-            <div className="text-gray-500">No STM data yet. Add a key above or chat to create memories.</div>
+            <div className="text-gray-500">No STM data yet. Use "Add Key" above or chat to create memories.</div>
           ) : (
             <div className="space-y-2">
               {Object.entries(stmState).map(([key, value]) => {
@@ -419,7 +544,7 @@ export default function ClientSTMDemo() {
             tabIndex={0}
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-green-300 font-mono text-lg">Key Properties: {editingAttributes}</h3>
+              <h3 className="text-green-300 font-mono text-lg">Key Properties</h3>
               <button
                 onClick={cancelAttributes}
                 className="text-green-600 hover:text-red-400 font-mono text-xl leading-none"
@@ -429,6 +554,17 @@ export default function ClientSTMDemo() {
             </div>
             
             <div className="space-y-2">
+              {/* Key Name */}
+              <div className="flex flex-col space-y-2">
+                <label className="text-gray-400 font-mono">key name:</label>
+                <input
+                  type="text"
+                  value={editingKeyName}
+                  onChange={(e) => setEditingKeyName(e.target.value)}
+                  className="bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-green-400"
+                  placeholder="Key name..."
+                />
+              </div>
               {/* Readonly */}
               <div className="flex items-center justify-between">
                 <label className="text-gray-400 font-mono">readonly:</label>
