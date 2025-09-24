@@ -325,7 +325,7 @@ describe('MindCache', () => {
       cache.set('age', 30);
       cache.set('preferences', { theme: 'dark' });
       
-      const serialized = cache.serialize();
+      const serialized = cache.getAll(); // Use getAll() for values-only format
       
       expect(typeof serialized).toBe('object');
       expect(serialized.name).toBe('Alice');
@@ -336,7 +336,7 @@ describe('MindCache', () => {
     });
 
     test('should serialize empty STM with only temporal keys', () => {
-      const serialized = cache.serialize();
+      const serialized = cache.getAll(); // Use getAll() for values-only format
       
       expect(Object.keys(serialized)).toHaveLength(2);
       expect(serialized.$date).toBeDefined();
@@ -345,11 +345,18 @@ describe('MindCache', () => {
 
     test('should deserialize object data correctly', () => {
       const testData = {
-        name: 'Bob',
-        age: 25,
-        settings: { notifications: true },
-        $date: '2024-01-01', // Should be ignored
-        $time: '12:00:00'   // Should be ignored
+        name: {
+          value: 'Bob',
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        },
+        age: {
+          value: 25,
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        },
+        settings: {
+          value: { notifications: true },
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        }
       };
       
       cache.deserialize(testData);
@@ -358,9 +365,7 @@ describe('MindCache', () => {
       expect(cache.get('age')).toBe(25);
       expect(cache.get('settings')).toEqual({ notifications: true });
       
-      // System keys should be current, not from deserialized data
-      expect(cache.get('$date')).not.toBe('2024-01-01');
-      expect(cache.get('$time')).not.toBe('12:00:00');
+      // System keys should still be available
       expect(cache.get('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(cache.get('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     });
@@ -372,8 +377,14 @@ describe('MindCache', () => {
       
       // Deserialize new data (without toBeRemoved)
       cache.deserialize({
-        existing: 'new',
-        newKey: 'newValue'
+        existing: {
+          value: 'new',
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        },
+        newKey: {
+          value: 'newValue',
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        }
       });
       
       expect(cache.get('existing')).toBe('new');
@@ -400,17 +411,29 @@ describe('MindCache', () => {
       expect(typeof jsonString).toBe('string');
       
       const parsed = JSON.parse(jsonString);
-      expect(parsed.name).toBe('Charlie');
-      expect(parsed.count).toBe(42);
-      expect(parsed.$date).toBeDefined();
-      expect(parsed.$time).toBeDefined();
+      expect(parsed.name.value).toBe('Charlie');
+      expect(parsed.count.value).toBe(42);
+      expect(parsed.name.attributes).toBeDefined();
+      expect(parsed.count.attributes).toBeDefined();
+      // System keys are not included in serialize()
+      expect(parsed.$date).toBeUndefined();
+      expect(parsed.$time).toBeUndefined();
     });
 
     test('should deserialize from JSON string', () => {
       const testData = {
-        name: 'David',
-        active: true,
-        metadata: { version: 1 }
+        name: {
+          value: 'David',
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        },
+        active: {
+          value: true,
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        },
+        metadata: {
+          value: { version: 1 },
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+        }
       };
       
       const jsonString = JSON.stringify(testData);
@@ -491,13 +514,13 @@ describe('MindCache', () => {
       
       const serialized = cache.serialize();
       
-      expect(typeof serialized.string).toBe('string');
-      expect(typeof serialized.number).toBe('number');
-      expect(typeof serialized.boolean).toBe('boolean');
-      expect(serialized.null).toBeNull();
-      expect(serialized.undefined).toBeUndefined();
-      expect(Array.isArray(serialized.array)).toBe(true);
-      expect(typeof serialized.object).toBe('object');
+      expect(typeof serialized.string.value).toBe('string');
+      expect(typeof serialized.number.value).toBe('number');
+      expect(typeof serialized.boolean.value).toBe('boolean');
+      expect(serialized.null.value).toBeNull();
+      expect(serialized.undefined.value).toBeUndefined();
+      expect(Array.isArray(serialized.array.value)).toBe(true);
+      expect(typeof serialized.object.value).toBe('object');
     });
 
     test('should handle complex nested structures', () => {
@@ -527,13 +550,18 @@ describe('MindCache', () => {
       expect(newCache.get('complex')).toEqual(complexData);
     });
 
-    test('should getSTMObject return same as serialize', () => {
+    test('should getSTMObject return values format', () => {
       cache.set('test', 'value');
       
-      const serialized = cache.serialize();
-      const stmObject = cache.getSTMObject();
+      const serialized = cache.serialize(); // Complete format with attributes
+      const stmObject = cache.getSTMObject(); // Values-only format
       
-      expect(serialized).toEqual(stmObject);
+      // They should have different formats
+      expect(serialized.test.value).toBe('value');
+      expect(serialized.test.attributes).toBeDefined();
+      expect(stmObject.test).toBe('value');
+      expect(stmObject.$date).toBeDefined();
+      expect(stmObject.$time).toBeDefined();
     });
   });
 
