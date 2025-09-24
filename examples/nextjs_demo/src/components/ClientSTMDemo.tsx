@@ -405,7 +405,7 @@ export default function ClientSTMDemo() {
           </div>
 
           {Object.keys(stmState).length === 0 ? (
-            <div className="text-gray-500">No STM data yet. Use "Add Key" above or chat to create memories.</div>
+            <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>
           ) : (
             <div className="space-y-2">
               {Object.entries(stmState).map(([key, value]) => {
