@@ -84,8 +84,9 @@ export default function ClientSTMDemo() {
       fetch: async (input, init) => {
         try {
           const originalBody = init?.body ? JSON.parse(init.body as string) : {};
-          const nextBody = { ...originalBody, toolSchemas: getToolSchemas() };
-          console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}) });
+          const systemPrompt = mindcacheRef.current.get_system_prompt();
+          const nextBody = { ...originalBody, toolSchemas: getToolSchemas(), systemPrompt };
+          console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}), hasSystemPrompt: Boolean(systemPrompt) });
           return fetch(input, { ...init, body: JSON.stringify(nextBody) });
         } catch {
           return fetch(input, init);

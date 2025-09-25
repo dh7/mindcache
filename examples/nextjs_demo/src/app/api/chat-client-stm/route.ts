@@ -6,7 +6,7 @@ import { z } from 'zod';
 export const maxDuration = 30;
 
 export const POST = async (req: NextRequest) => {
-  const { messages, toolSchemas } = await req.json();
+  const { messages, toolSchemas, systemPrompt } = await req.json();
 
   // Convert client tool schemas to server tool definitions (schema only, no execute)
   const serverTools: Record<string, any> = {};
@@ -26,18 +26,18 @@ export const POST = async (req: NextRequest) => {
     });
   }
 
+  // Build the final system prompt, optionally combining client-provided content
+  const baseInstructions = `Here are some facts and instructions for you to follow.`;
+
+  const finalSystem = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
+    ? `${baseInstructions}\n\n${systemPrompt}`
+    : baseInstructions;
+
+  console.log('🔍 SERVER: Final system prompt:', finalSystem);
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToModelMessages(messages),
-    system: `You are a helpful assistant that can remember information about users using a client-side Short Term Memory (STM) system.
-
-The user has an STM system running in their browser that can store key-value pairs. You can write to existing STM keys using the available tools.
-
-Current STM tools available: ${Object.keys(serverTools).join(', ')}
-
-When users share information they want you to remember, use the appropriate write tools to store that information in their STM. The STM persists in their browser session.
-
-Be conversational and helpful. When you store something in STM, acknowledge what you've stored.`,
+    system: finalSystem,
     tools: serverTools,
     stopWhen: [stepCountIs(5)],
     // v5 API: Use onFinish instead of onStepFinish for logging
