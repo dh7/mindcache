@@ -213,6 +213,7 @@ describe('MindCache Key Properties', () => {
       // Should not have tool for readonly key
       expect(tools['write_locked']).toBeUndefined();
     });
+
   });
 
   describe('Visible Property', () => {

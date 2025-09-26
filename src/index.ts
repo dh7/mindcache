@@ -464,10 +464,13 @@ class MindCache {
           // Readonly keys: just show the key-value pair
           promptLines.push(`${key}: ${formattedValue}`);
         } else {
-          // Writable keys: show value and mention the tool
-          promptLines.push(
-            `${key}: ${formattedValue}. You can rewrite "${key}" by using the write_${key} tool. This tool DOES NOT append — start your response with the old value (${formattedValue})`
-          );
+          // Writable keys: show value and mention the tool (with sanitized tool name)
+          const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+          const toolInstruction =
+            `You can rewrite "${key}" by using the write_${sanitizedKey} tool. ` +
+            'This tool DOES NOT append — start your response with the old value ' +
+            `(${formattedValue})`;
+          promptLines.push(`${key}: ${formattedValue}. ${toolInstruction}`);
         }
       }
     });
@@ -477,6 +480,21 @@ class MindCache {
     promptLines.push(`$time: ${now.toTimeString().split(' ')[0]}`);
 
     return promptLines.join('\n');
+  }
+
+  // Helper method to find original key from sanitized tool name
+  private findKeyFromToolName(toolName: string): string | undefined {
+    if (!toolName.startsWith('write_')) {
+      return undefined;
+    }
+
+    const sanitizedKey = toolName.replace('write_', '');
+
+    // Find the original key by checking all keys and their sanitized versions
+    const allKeys = Object.keys(this.stm);
+    return allKeys.find(k =>
+      k.replace(/[^a-zA-Z0-9_-]/g, '_') === sanitizedKey
+    );
   }
 
   // Generate tools for Vercel AI SDK to write STM values (excludes readonly keys)
@@ -490,18 +508,23 @@ class MindCache {
 
     // Create a write tool for each writable key
     writableKeys.forEach(key => {
-      const toolName = `write_${key}`;
+      // Sanitize tool name to match OpenAI's pattern: ^[a-zA-Z0-9_-]+$
+      const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const toolName = `write_${sanitizedKey}`;
+
       tools[toolName] = {
         description: `Write a value to the STM key: ${key}`,
         inputSchema: z.object({
           value: z.string().describe(`The value to write to ${key}`)
         }),
         execute: async (input: { value: any }) => {
+          // Use the original key for setting the value
           this.set_value(key, input.value);
           return {
             result: `Successfully wrote "${input.value}" to ${key}`,
             key: key,
-            value: input.value
+            value: input.value,
+            sanitizedKey: sanitizedKey // Include both for client-side reference
           };
         }
       };
@@ -513,6 +536,30 @@ class MindCache {
     }
 
     return tools;
+  }
+
+  // Public method for client-side tool execution
+  executeToolCall(
+    toolName: string,
+    value: any
+  ): { result: string; key: string; value: any } | null {
+    const originalKey = this.findKeyFromToolName(toolName);
+    if (!originalKey) {
+      return null;
+    }
+
+    // Check if key is readonly
+    const entry = this.stm[originalKey];
+    if (entry && entry.attributes.readonly) {
+      return null;
+    }
+
+    this.set_value(originalKey, value);
+    return {
+      result: `Successfully wrote "${value}" to ${originalKey}`,
+      key: originalKey,
+      value: value
+    };
   }
 
 
