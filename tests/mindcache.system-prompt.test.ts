@@ -17,8 +17,8 @@ describe('MindCache System Prompt Generation', () => {
       const systemPrompt = cache.get_system_prompt();
 
       // Should include writable keys with tool mention
-      expect(systemPrompt).toContain('user_name: Alice. You can update user_name by using the write_user_name tool');
-      expect(systemPrompt).toContain('notes: Important info. You can update notes by using the write_notes tool');
+      expect(systemPrompt).toContain('user_name: Alice. You can rewrite "user_name" by using the write_user_name tool');
+      expect(systemPrompt).toContain('notes: Important info. You can rewrite "notes" by using the write_notes tool');
       
       // Should include readonly keys without tool mention
       expect(systemPrompt).toContain('config: production');
@@ -42,8 +42,8 @@ describe('MindCache System Prompt Generation', () => {
 
       // Templates should be processed
       expect(systemPrompt).toContain('greeting: Hello Bob!');
-      expect(systemPrompt).toContain('message: Welcome Bob to our system!. You can update message by using the write_message tool');
-      expect(systemPrompt).toContain('name: Bob. You can update name by using the write_name tool');
+      expect(systemPrompt).toContain('message: Welcome Bob to our system!. You can rewrite "message" by using the write_message tool');
+      expect(systemPrompt).toContain('name: Bob. You can rewrite "name" by using the write_name tool');
     });
 
     test('should handle nested template processing', () => {
@@ -56,7 +56,7 @@ describe('MindCache System Prompt Generation', () => {
       // Nested templates should be processed
       expect(systemPrompt).toContain('full_message: Hello Alice! Welcome to the system.');
       expect(systemPrompt).toContain('greeting: Hello Alice!');
-      expect(systemPrompt).toContain('user: Alice. You can update user by using the write_user tool');
+      expect(systemPrompt).toContain('user: Alice. You can rewrite "user" by using the write_user tool');
     });
 
     test('should return only system keys when no visible keys exist', () => {
@@ -83,7 +83,7 @@ describe('MindCache System Prompt Generation', () => {
       const writableLine = lines.find(line => line.startsWith('writable_setting:'));
 
       expect(readonlyLine).toBe('readonly_config: prod');
-      expect(writableLine).toBe('writable_setting: value. You can update writable_setting by using the write_writable_setting tool');
+      expect(writableLine).toBe('writable_setting: value. You can rewrite "writable_setting" by using the write_writable_setting tool. This tool DOES NOT append — start your response with the old value (value)');
     });
 
     test('should handle empty values correctly', () => {
@@ -93,7 +93,7 @@ describe('MindCache System Prompt Generation', () => {
       const systemPrompt = cache.get_system_prompt();
 
       expect(systemPrompt).toContain('empty_readonly: ');
-      expect(systemPrompt).toContain('empty_writable: . You can update empty_writable by using the write_empty_writable tool');
+      expect(systemPrompt).toContain('empty_writable: . You can rewrite "empty_writable" by using the write_empty_writable tool');
     });
 
     test('should handle complex object values', () => {
@@ -103,7 +103,7 @@ describe('MindCache System Prompt Generation', () => {
       const systemPrompt = cache.get_system_prompt();
 
       expect(systemPrompt).toContain('user_data: {"name":"Alice","age":30}');
-      expect(systemPrompt).toContain('settings: {"theme":"dark","notifications":true}. You can update settings by using the write_settings tool');
+      expect(systemPrompt).toContain('settings: {"theme":"dark","notifications":true}. You can rewrite "settings" by using the write_settings tool');
     });
 
     test('should respect visibility settings', () => {
@@ -116,7 +116,7 @@ describe('MindCache System Prompt Generation', () => {
 
       // Only visible keys should appear
       expect(systemPrompt).toContain('public_readonly: visible');
-      expect(systemPrompt).toContain('public_writable: visible. You can update public_writable by using the write_public_writable tool');
+      expect(systemPrompt).toContain('public_writable: visible. You can rewrite "public_writable" by using the write_public_writable tool');
       
       // Hidden keys should not appear
       expect(systemPrompt).not.toContain('private_readonly');

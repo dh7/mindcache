@@ -466,7 +466,7 @@ class MindCache {
         } else {
           // Writable keys: show value and mention the tool
           promptLines.push(
-            `${key}: ${formattedValue}. You can update ${key} by using the write_${key} tool`
+            `${key}: ${formattedValue}. You can rewrite "${key}" by using the write_${key} tool. This tool DOES NOT append — start your response with the old value (${formattedValue})`
           );
         }
       }
