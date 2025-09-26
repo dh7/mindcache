@@ -17,6 +17,7 @@ A beautiful, modern implementation showcasing MindCache integration with AI SDK 
 - **🔄 Template Processing**: Live STM injection with `{key}` syntax
 - **🤖 AI SDK v5 Integration**: Type-safe chat with agentic loop control
 - **🛠️ Dynamic Tools**: AI can use tools to update memory and fetch data
+- **🔍 Web Search**: OpenAI's built-in web search with citations and sources
 - **📊 Data Parts**: Structured data streaming with real-time updates
 - **🔁 Agentic Loops**: Multi-step reasoning with configurable stopping conditions
 
