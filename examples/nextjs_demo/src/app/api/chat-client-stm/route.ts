@@ -52,8 +52,8 @@ export const POST = async (req: NextRequest) => {
     tools: allTools,
     stopWhen: [stepCountIs(5)],
     // v5 API: Use onFinish instead of onStepFinish for logging
-    onFinish: ({ finishReason, usage, toolResults }) => {
-      //console.log('🔄 SERVER: Chat finished:', { finishReason, usage, toolResults });
+    onFinish: () => {
+      // Logging disabled for cleaner output
     },
   });
 
