@@ -464,9 +464,10 @@ class MindCache {
           // Readonly keys: just show the key-value pair
           promptLines.push(`${key}: ${formattedValue}`);
         } else {
-          // Writable keys: show value and mention the tool
+          // Writable keys: show value and mention the tool (with sanitized tool name)
+          const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
           promptLines.push(
-            `${key}: ${formattedValue}. You can rewrite "${key}" by using the write_${key} tool. This tool DOES NOT append — start your response with the old value (${formattedValue})`
+            `${key}: ${formattedValue}. You can rewrite "${key}" by using the write_${sanitizedKey} tool. This tool DOES NOT append — start your response with the old value (${formattedValue})`
           );
         }
       }
@@ -539,6 +540,12 @@ class MindCache {
   executeToolCall(toolName: string, value: any): { result: string; key: string; value: any } | null {
     const originalKey = this.findKeyFromToolName(toolName);
     if (!originalKey) {
+      return null;
+    }
+    
+    // Check if key is readonly
+    const entry = this.stm[originalKey];
+    if (entry && entry.attributes.readonly) {
       return null;
     }
     
