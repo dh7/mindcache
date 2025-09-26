@@ -33,12 +33,23 @@ export const POST = async (req: NextRequest) => {
     ? `${baseInstructions}\n\n${systemPrompt}`
     : baseInstructions;
 
+  // Add OpenAI's built-in web search tool
+  const webSearchTool = {
+    web_search: openai.tools.webSearch({
+      searchContextSize: 'high',
+      //userLocation: { type: 'approximate', city: 'Paris', region: 'Île-de-France' },
+    }),
+  };
+
+  // Combine client tools with web search
+  const allTools = { ...serverTools, ...webSearchTool };
+
   console.log('🔍 SERVER: Final system prompt:', finalSystem);
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToModelMessages(messages),
     system: finalSystem,
-    tools: serverTools,
+    tools: allTools,
     stopWhen: [stepCountIs(5)],
     // v5 API: Use onFinish instead of onStepFinish for logging
     onFinish: ({ finishReason, usage, toolResults }) => {
