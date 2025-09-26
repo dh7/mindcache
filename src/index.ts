@@ -466,9 +466,11 @@ class MindCache {
         } else {
           // Writable keys: show value and mention the tool (with sanitized tool name)
           const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
-          promptLines.push(
-            `${key}: ${formattedValue}. You can rewrite "${key}" by using the write_${sanitizedKey} tool. This tool DOES NOT append — start your response with the old value (${formattedValue})`
-          );
+          const toolInstruction =
+            `You can rewrite "${key}" by using the write_${sanitizedKey} tool. ` +
+            'This tool DOES NOT append — start your response with the old value ' +
+            `(${formattedValue})`;
+          promptLines.push(`${key}: ${formattedValue}. ${toolInstruction}`);
         }
       }
     });
@@ -485,12 +487,12 @@ class MindCache {
     if (!toolName.startsWith('write_')) {
       return undefined;
     }
-    
+
     const sanitizedKey = toolName.replace('write_', '');
-    
+
     // Find the original key by checking all keys and their sanitized versions
     const allKeys = Object.keys(this.stm);
-    return allKeys.find(k => 
+    return allKeys.find(k =>
       k.replace(/[^a-zA-Z0-9_-]/g, '_') === sanitizedKey
     );
   }
@@ -509,7 +511,7 @@ class MindCache {
       // Sanitize tool name to match OpenAI's pattern: ^[a-zA-Z0-9_-]+$
       const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
       const toolName = `write_${sanitizedKey}`;
-      
+
       tools[toolName] = {
         description: `Write a value to the STM key: ${key}`,
         inputSchema: z.object({
@@ -537,18 +539,21 @@ class MindCache {
   }
 
   // Public method for client-side tool execution
-  executeToolCall(toolName: string, value: any): { result: string; key: string; value: any } | null {
+  executeToolCall(
+    toolName: string,
+    value: any
+  ): { result: string; key: string; value: any } | null {
     const originalKey = this.findKeyFromToolName(toolName);
     if (!originalKey) {
       return null;
     }
-    
+
     // Check if key is readonly
     const entry = this.stm[originalKey];
     if (entry && entry.attributes.readonly) {
       return null;
     }
-    
+
     this.set_value(originalKey, value);
     return {
       result: `Successfully wrote "${value}" to ${originalKey}`,
