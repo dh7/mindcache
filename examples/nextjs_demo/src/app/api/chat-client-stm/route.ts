@@ -44,7 +44,7 @@ export const POST = async (req: NextRequest) => {
   // Combine client tools with web search
   const allTools = { ...serverTools, ...webSearchTool };
 
-  console.log('🔍 SERVER: Final system prompt:', finalSystem);
+  //console.log('🔍 SERVER: Final system prompt:', finalSystem);
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToModelMessages(messages),
@@ -53,7 +53,7 @@ export const POST = async (req: NextRequest) => {
     stopWhen: [stepCountIs(5)],
     // v5 API: Use onFinish instead of onStepFinish for logging
     onFinish: ({ finishReason, usage, toolResults }) => {
-      console.log('🔄 SERVER: Chat finished:', { finishReason, usage, toolResults });
+      //console.log('🔄 SERVER: Chat finished:', { finishReason, usage, toolResults });
     },
   });
 
