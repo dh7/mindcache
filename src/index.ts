@@ -1,12 +1,27 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from 'zod';
 
+// Browser environment type declarations
+declare const FileReader: {
+  prototype: FileReader;
+  new(): FileReader;
+} | undefined;
+
+interface FileReader {
+  onload: ((this: FileReader, ev: any) => any) | null;
+  onerror: ((this: FileReader, ev: any) => any) | null;
+  result: string | ArrayBuffer | null;
+  readAsDataURL(file: Blob): void;
+}
+
 interface KeyAttributes {
   readonly: boolean;
   visible: boolean;
   default: string;
   hardcoded: boolean;
   template: boolean;
+  type: 'text' | 'image' | 'file' | 'json';
+  contentType?: string; // MIME type for files/images
 }
 
 interface STMEntry {
@@ -24,6 +39,53 @@ class MindCache {
   private stm: STM = {};
   private listeners: { [key: string]: Listener[] } = {};
   private globalListeners: Listener[] = [];
+
+  // Helper method to encode file to base64
+  private encodeFileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      // Check if we're in a browser environment
+      if (typeof FileReader !== 'undefined') {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data URL prefix to get just the base64 data
+          const base64Data = result.split(',')[1];
+          resolve(base64Data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      } else {
+        // Node.js environment - reject with helpful error
+        reject(new Error('FileReader not available in Node.js environment. Use set_base64() method instead.'));
+      }
+    });
+  }
+
+  // Helper method to create data URL from base64 and content type
+  private createDataUrl(base64Data: string, contentType: string): string {
+    return `data:${contentType};base64,${base64Data}`;
+  }
+
+  // Helper method to validate content type for different STM types
+  private validateContentType(type: KeyAttributes['type'], contentType?: string): boolean {
+    if (type === 'text' || type === 'json') {
+      return true; // No content type validation needed for text/json
+    }
+    
+    if (!contentType) {
+      return false; // Files and images require content type
+    }
+
+    if (type === 'image') {
+      return contentType.startsWith('image/');
+    }
+
+    if (type === 'file') {
+      return true; // Any content type is valid for generic files
+    }
+
+    return false;
+  }
 
   // Get a value from the STM (deprecated - use get_value instead)
   /** @deprecated Use get_value instead */
@@ -71,7 +133,8 @@ class MindCache {
         visible: true,
         default: '',
         hardcoded: true,
-        template: false
+        template: false,
+        type: 'text'
       };
     }
 
@@ -91,7 +154,8 @@ class MindCache {
       visible: true,
       default: '',
       hardcoded: false,
-      template: false
+      template: false,
+      type: 'text'
     };
 
     // If key exists, preserve existing attributes unless explicitly overridden
@@ -149,6 +213,59 @@ class MindCache {
   // Set a value in the STM (uses default attributes)
   set(key: string, value: any): void {
     this.set_value(key, value);
+  }
+
+  // Set a file value in the STM with base64 encoding
+  async set_file(key: string, file: File, attributes?: Partial<KeyAttributes>): Promise<void> {
+    const base64Data = await this.encodeFileToBase64(file);
+    const contentType = file.type;
+    
+    const fileAttributes: Partial<KeyAttributes> = {
+      type: contentType.startsWith('image/') ? 'image' : 'file',
+      contentType,
+      ...attributes
+    };
+
+    this.set_value(key, base64Data, fileAttributes);
+  }
+
+  // Set a base64 encoded value with content type
+  set_base64(key: string, base64Data: string, contentType: string, type: 'image' | 'file' = 'file', attributes?: Partial<KeyAttributes>): void {
+    if (!this.validateContentType(type, contentType)) {
+      throw new Error(`Invalid content type ${contentType} for type ${type}`);
+    }
+
+    const fileAttributes: Partial<KeyAttributes> = {
+      type,
+      contentType,
+      ...attributes
+    };
+
+    this.set_value(key, base64Data, fileAttributes);
+  }
+
+  // Get a value as data URL (for files/images)
+  get_data_url(key: string): string | undefined {
+    const entry = this.stm[key];
+    if (!entry || (entry.attributes.type !== 'image' && entry.attributes.type !== 'file')) {
+      return undefined;
+    }
+
+    if (!entry.attributes.contentType) {
+      return undefined;
+    }
+
+    return this.createDataUrl(entry.value, entry.attributes.contentType);
+  }
+
+  // Get raw base64 data
+  get_base64(key: string): string | undefined {
+    const entry = this.stm[key];
+    if (!entry || (entry.attributes.type !== 'image' && entry.attributes.type !== 'file')) {
+      return undefined;
+    }
+
+    return entry.value;
   }
 
   // Check if a key exists in the STM
@@ -271,7 +388,8 @@ class MindCache {
           visible: true,
           default: '',
           hardcoded: false,
-          template: false
+          template: false,
+          type: 'text'
         };
 
         this.stm[key] = {
@@ -394,6 +512,41 @@ class MindCache {
     return this.getAll();
   }
 
+  // Get STM data formatted for API calls (multipart form data style)
+  getSTMForAPI(): Array<{key: string, value: any, type: string, contentType?: string}> {
+    const now = new Date();
+    const apiData: Array<{key: string, value: any, type: string, contentType?: string}> = [];
+
+    // Add visible regular STM entries
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      if (entry.attributes.visible) {
+        const processedValue = entry.attributes.template ? this.get_value(key) : entry.value;
+        
+        apiData.push({
+          key,
+          value: processedValue,
+          type: entry.attributes.type,
+          contentType: entry.attributes.contentType
+        });
+      }
+    });
+
+    // Add system keys (always visible)
+    apiData.push({
+      key: '$date',
+      value: now.toISOString().split('T')[0],
+      type: 'text'
+    });
+    
+    apiData.push({
+      key: '$time', 
+      value: now.toTimeString().split(' ')[0],
+      type: 'text'
+    });
+
+    return apiData;
+  }
+
   // Serialize STM to JSON string (complete state)
   toJSON(): string {
     return JSON.stringify(this.serialize());
@@ -512,19 +665,72 @@ class MindCache {
       const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
       const toolName = `write_${sanitizedKey}`;
 
+      const entry = this.stm[key];
+      const keyType = entry?.attributes.type || 'text';
+      
+      // Create appropriate schema based on the key's type
+      let inputSchema;
+      let description = `Write a value to the STM key: ${key}`;
+      
+      if (keyType === 'image' || keyType === 'file') {
+        description += ` (expects base64 encoded data)`;
+        inputSchema = z.object({
+          value: z.string().describe(`Base64 encoded data for ${key}`),
+          contentType: z.string().optional().describe(`MIME type for the ${keyType}`)
+        });
+      } else if (keyType === 'json') {
+        description += ` (expects JSON string)`;
+        inputSchema = z.object({
+          value: z.string().describe(`JSON string value for ${key}`)
+        });
+      } else {
+        inputSchema = z.object({
+          value: z.string().describe(`The text value to write to ${key}`)
+        });
+      }
+
       tools[toolName] = {
-        description: `Write a value to the STM key: ${key}`,
-        inputSchema: z.object({
-          value: z.string().describe(`The value to write to ${key}`)
-        }),
-        execute: async (input: { value: any }) => {
-          // Use the original key for setting the value
-          this.set_value(key, input.value);
+        description,
+        inputSchema,
+        execute: async (input: { value: any; contentType?: string }) => {
+          // Handle different types appropriately
+          if (keyType === 'image' || keyType === 'file') {
+            if (input.contentType) {
+              this.set_base64(key, input.value, input.contentType, keyType);
+            } else {
+              // Use existing content type if available
+              const existingContentType = entry?.attributes.contentType;
+              if (existingContentType) {
+                this.set_base64(key, input.value, existingContentType, keyType);
+              } else {
+                throw new Error(`Content type required for ${keyType} data`);
+              }
+            }
+          } else {
+            // For text and json, use regular set_value
+            this.set_value(key, input.value);
+          }
+          
+          // Create specialized success message based on type
+          let resultMessage: string;
+          if (keyType === 'image') {
+            resultMessage = `Successfully saved image to ${key}`;
+          } else if (keyType === 'file') {
+            resultMessage = `Successfully saved file to ${key}`;
+          } else if (keyType === 'json') {
+            resultMessage = `Successfully saved JSON data to ${key}`;
+          } else {
+            // For text type, include the actual value
+            resultMessage = `Successfully wrote "${input.value}" to ${key}`;
+          }
+
           return {
-            result: `Successfully wrote "${input.value}" to ${key}`,
+            result: resultMessage,
             key: key,
             value: input.value,
-            sanitizedKey: sanitizedKey // Include both for client-side reference
+            type: keyType,
+            contentType: input.contentType,
+            sanitizedKey: sanitizedKey
           };
         }
       };

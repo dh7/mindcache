@@ -29,7 +29,8 @@ describe('MindCache Complete Serialization', () => {
           visible: true,
           default: 'guest',
           hardcoded: false,
-          template: false
+          template: false,
+          type: 'text'
         }
       });
 
@@ -40,7 +41,8 @@ describe('MindCache Complete Serialization', () => {
           visible: false,
           default: 'dev',
           hardcoded: false,
-          template: false
+          template: false,
+          type: 'text'
         }
       });
 
@@ -51,7 +53,8 @@ describe('MindCache Complete Serialization', () => {
           visible: true,
           default: '',
           hardcoded: false,
-          template: true
+          template: true,
+          type: 'text'
         }
       });
     });
@@ -77,7 +80,8 @@ describe('MindCache Complete Serialization', () => {
             visible: true,
             default: 'anonymous',
             hardcoded: false,
-            template: false
+            template: false,
+            type: 'text' as const
           }
         },
         config: {
@@ -87,7 +91,8 @@ describe('MindCache Complete Serialization', () => {
             visible: false,
             default: 'development',
             hardcoded: false,
-            template: false
+            template: false,
+            type: 'text' as const
           }
         },
         greeting: {
@@ -97,7 +102,8 @@ describe('MindCache Complete Serialization', () => {
             visible: true,
             default: 'Hello!',
             hardcoded: false,
-            template: true
+            template: true,
+            type: 'text' as const
           }
         }
       };
@@ -115,7 +121,8 @@ describe('MindCache Complete Serialization', () => {
         visible: true,
         default: 'anonymous',
         hardcoded: false,
-        template: false
+        template: false,
+        type: 'text'
       });
 
       expect(cache.get_attributes('config')).toEqual({
@@ -123,7 +130,8 @@ describe('MindCache Complete Serialization', () => {
         visible: false,
         default: 'development',
         hardcoded: false,
-        template: false
+        template: false,
+        type: 'text'
       });
 
       expect(cache.get_attributes('greeting')).toEqual({
@@ -131,7 +139,8 @@ describe('MindCache Complete Serialization', () => {
         visible: true,
         default: 'Hello!',
         hardcoded: false,
-        template: true
+        template: true,
+        type: 'text'
       });
     });
 
@@ -144,7 +153,8 @@ describe('MindCache Complete Serialization', () => {
             visible: true,
             default: '',
             hardcoded: false,
-            template: false
+            template: false,
+            type: 'text' as const
           }
         }
       };
@@ -200,7 +210,8 @@ describe('MindCache Complete Serialization', () => {
           visible: false,
           default: 'default_val',
           hardcoded: false,
-          template: true
+          template: true,
+          type: 'text'
         }
       });
     });
@@ -319,7 +330,8 @@ describe('MindCache Complete Serialization', () => {
         visible: false,
         default: 'fallback',
         hardcoded: false,
-        template: true
+        template: true,
+        type: 'text'
       });
       
       // Update value only (should preserve all attributes)
@@ -332,7 +344,8 @@ describe('MindCache Complete Serialization', () => {
         visible: false,
         default: 'fallback',
         hardcoded: false,
-        template: true
+        template: true,
+        type: 'text'
       });
     });
 
@@ -355,7 +368,8 @@ describe('MindCache Complete Serialization', () => {
         visible: true,   // Preserved
         default: 'default_val', // Preserved
         hardcoded: false, // Preserved
-        template: false  // Preserved
+        template: false,  // Preserved
+        type: 'text'     // Preserved
       });
     });
 
@@ -403,15 +417,15 @@ describe('MindCache Complete Serialization', () => {
       const data = {
         name: {
           value: 'World',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         greeting: {
           value: 'Hello {name}!',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true, type: 'text' as const }
         },
         nested: {
           value: '{greeting} Welcome!',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true, type: 'text' as const }
         }
       };
 
