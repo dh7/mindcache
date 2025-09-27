@@ -10,6 +10,21 @@ export default function ClientSTMDemo() {
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
   const [isResizing, setIsResizing] = useState(false);
   
+  // Define initial assistant message
+  const initialMessages = [
+    {
+      id: 'welcome-message',
+      role: 'assistant' as const,
+      parts: [
+        {
+          type: 'text' as const,
+          text: 'Hello! I\'m your AI assistant with access to your short-term memory. I can help you manage your preferences, notes, and other information. What would you like to do today?'
+        }
+      ],
+      createdAt: new Date()
+    }
+  ];
+  
   // Initialize with auto-load and default keys
   useEffect(() => {
     // Try to load from localStorage first
@@ -48,10 +63,14 @@ export default function ClientSTMDemo() {
   }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
+    if (!isResizing) {
+      return;
+    }
     
     const containerRect = document.querySelector('.resize-container')?.getBoundingClientRect();
-    if (!containerRect) return;
+    if (!containerRect) {
+      return;
+    }
     
     const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
     // Constrain between 20% and 80%
@@ -87,7 +106,7 @@ export default function ClientSTMDemo() {
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <ChatInterface onToolCall={handleToolCall} />
+        <ChatInterface onToolCall={handleToolCall} initialMessages={initialMessages} />
       </div>
       
       {/* Resizer - invisible but functional */}

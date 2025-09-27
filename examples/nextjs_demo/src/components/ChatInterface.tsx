@@ -1,26 +1,61 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
+import { useChat, UIMessage } from '@ai-sdk/react';
 import { lastAssistantMessageIsCompleteWithToolCalls, DefaultChatTransport } from 'ai';
 import { useState, useRef } from 'react';
 import { mindcache } from 'mindcache';
 
-interface ChatInterfaceProps {
-  onToolCall?: (toolCall: any) => void;
+// Type definitions
+interface ToolCall {
+  toolCallId: string;
+  tool?: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
 }
 
-export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
+interface ToolSchema {
+  description: string;
+}
+
+interface MessagePart {
+  type: string;
+  text?: string;
+  tool?: string;
+  toolName?: string;
+  output?: unknown;
+  result?: unknown;
+}
+
+interface Message {
+  id: string;
+  role: string;
+  parts?: MessagePart[];
+}
+
+interface WebSearchSource {
+  url: string;
+  title?: string;
+  snippet?: string;
+}
+
+interface ChatInterfaceProps {
+  onToolCall?: (toolCall: ToolCall) => void;
+  initialMessages?: UIMessage[];
+}
+
+export default function ChatInterface({ onToolCall, initialMessages }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   // Generate tool schemas (without execute functions) for the server
-  function getToolSchemas() {
+  function getToolSchemas(): Record<string, ToolSchema> {
     const tools = mindcacheRef.current.get_aisdk_tools();
-    const schemas: Record<string, any> = {};
+    const schemas: Record<string, ToolSchema> = {};
     
     console.log('🔧 Generated tools on client:', Object.keys(tools));
     
     // Convert tools to schema-only format
-    Object.entries(tools).forEach(([toolName, tool]: [string, any]) => {
+    Object.entries(tools).forEach(([toolName, tool]: [string, { description: string }]) => {
       schemas[toolName] = {
         description: tool.description,
         // Server will recreate the Zod schema
@@ -32,6 +67,7 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
   }
 
   const { messages, sendMessage, status, addToolResult } = useChat({
+    messages: initialMessages,
     transport: new DefaultChatTransport({
       api: '/api/chat-client-stm',
       fetch: async (input, init) => {
