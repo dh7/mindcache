@@ -213,53 +213,55 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
 
   return (
     <div className="flex-1 flex flex-col pl-1 min-h-0">
-      {/* STM Display */}
-      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto min-h-0">
-        {/* Terminal Commands */}
-        <div className="mb-4 pb-3 border-b border-green-400 font-mono text-sm">
-          <div className="flex space-x-4 mb-2">
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={() => {
-                const key = prompt('Enter new STM key:');
-                if (key && key.trim()) {
-                  addSTMKey(key.trim());
-                }
-              }}
-              title="Add new STM key"
-            >
-              Add Key
-            </div>
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={loadSTM}
-              title="Load STM from localStorage (Ctrl+L)"
-            >
-              Load
-            </div>
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={saveSTM}
-              title="Save STM to localStorage (Ctrl+S)"
-            >
-              Save
-            </div>
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={() => {
-                if (confirm('Clear STM? This will restore default values.')) {
-                  clearSTM();
-                }
-              }}
-              title="Clear STM - keeps defaults (Ctrl+K)"
-            >
-              Clear
-            </div>
+      {/* Terminal Commands - Fixed Header */}
+      <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0">
+        <div className="flex space-x-4 mb-2">
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={() => {
+              const key = prompt('Enter new STM key:');
+              if (key && key.trim()) {
+                addSTMKey(key.trim());
+              }
+            }}
+            title="Add new STM key"
+          >
+            Add Key
           </div>
-          <div className="text-xs text-gray-500">
-            Auto-loads on page refresh • Ctrl+S/L/K shortcuts
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={loadSTM}
+            title="Load STM from localStorage (Ctrl+L)"
+          >
+            Load
+          </div>
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={saveSTM}
+            title="Save STM to localStorage (Ctrl+S)"
+          >
+            Save
+          </div>
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={() => {
+              if (confirm('Clear STM? This will restore default values.')) {
+                clearSTM();
+              }
+            }}
+            title="Clear STM - keeps defaults (Ctrl+K)"
+          >
+            Clear
           </div>
         </div>
+        <div className="text-xs text-gray-500 mb-4">
+          Auto-loads on page refresh • Ctrl+S/L/K shortcuts
+        </div>
+        <div className="border-b border-green-400"></div>
+      </div>
+
+      {/* STM Content - Scrollable */}
+      <div className="flex-1 border border-green-400 rounded-b p-4 overflow-y-auto min-h-0 border-t-0">
 
         {Object.keys(stmState).length === 0 ? (
           <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>
