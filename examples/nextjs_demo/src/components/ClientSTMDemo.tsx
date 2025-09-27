@@ -1,12 +1,14 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
 
 export default function ClientSTMDemo() {
   const mindcacheRef = useRef(mindcache);
+  const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
+  const [isResizing, setIsResizing] = useState(false);
   
   // Initialize with auto-load and default keys
   useEffect(() => {
@@ -39,10 +41,71 @@ export default function ClientSTMDemo() {
     console.log('🔧 Tool call executed:', toolCall);
   };
 
+  // Handle mouse events for resizing
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true);
+    e.preventDefault();
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const containerRect = document.querySelector('.resize-container')?.getBoundingClientRect();
+    if (!containerRect) return;
+    
+    const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    // Constrain between 20% and 80%
+    const constrainedWidth = Math.min(Math.max(newLeftWidth, 20), 80);
+    setLeftWidth(constrainedWidth);
+  }, [isResizing]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Add global mouse event listeners
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
   return (
-    <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden">
-      <ChatInterface onToolCall={handleToolCall} />
-      <STMEditor />
+    <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden resize-container">
+      {/* Left Panel - ChatInterface */}
+      <div 
+        style={{ width: `${leftWidth}%` }}
+        className="flex flex-col min-h-0"
+      >
+        <ChatInterface onToolCall={handleToolCall} />
+      </div>
+      
+      {/* Resizer - invisible but functional */}
+      <div
+        className={`w-1 bg-transparent hover:bg-green-400 hover:bg-opacity-30 cursor-col-resize transition-colors flex-shrink-0 ${
+          isResizing ? 'bg-green-400 bg-opacity-50' : ''
+        }`}
+        onMouseDown={handleMouseDown}
+        title="Drag to resize panels"
+      />
+      
+      {/* Right Panel - STMEditor */}
+      <div 
+        style={{ width: `${100 - leftWidth}%` }}
+        className="flex flex-col min-h-0"
+      >
+        <STMEditor />
+      </div>
     </div>
   );
 }

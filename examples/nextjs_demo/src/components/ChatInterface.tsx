@@ -126,7 +126,7 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col mr-6 min-h-0">
+    <div className="flex-1 flex flex-col pr-1 min-h-0">
       <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2 min-h-0">
         {messages.map((message) => {
           const { sources } = renderMessageContent(message);
@@ -136,14 +136,14 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
                 {message.role === 'user' ? '< ' : '> '}
                 {message.parts?.map((part: any, index: number) => {
                   if (part.type === 'text') {
-                    return <span key={index}>{part.text}</span>;
+                    return <span key={index} className="break-words">{part.text}</span>;
                   }
                   if (part.type === 'tool-call') {
                     const name = (part as any).tool ?? (part as any).toolName;
                     if (name === 'web_search') {
-                      return <div key={index} className="text-blue-400 text-sm">🔍 Searching the web...</div>;
+                      return <div key={index} className="text-blue-400 text-sm break-words">🔍 Searching...</div>;
                     }
-                    return <div key={index} className="text-yellow-400 text-sm">🔧 Tool: {name}</div>;
+                    return <div key={index} className="text-yellow-400 text-sm break-words">🔧 {name}</div>;
                   }
                   if (part.type === 'tool-result') {
                     const name = (part as any).toolName;
@@ -151,7 +151,8 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
                       return null; // Web search results are handled via sources
                     }
                     const result = (part as any).output ?? (part as any).result;
-                    return <div key={index} className="text-green-500 text-sm">✅ {JSON.stringify(result)}</div>;
+                    const resultText = JSON.stringify(result);
+                    return <div key={index} className="text-green-500 text-sm break-words">✅ {resultText.length > 50 ? resultText.substring(0, 50) + '...' : resultText}</div>;
                   }
                   return null;
                 })}
@@ -194,21 +195,21 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
             setInput('');
           }
         }}
-        className="flex gap-2"
+        className="flex gap-2 min-w-0"
       >
         <input
-          className="flex-1 bg-black text-green-400 font-mono border border-green-400 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50"
+          className="flex-1 min-w-0 bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50"
           value={input}
           onChange={e => setInput(e.target.value)}
           disabled={isLoading}
-          placeholder={isLoading ? "AI is thinking..." : "Ask something time-sensitive..."}
+          placeholder={isLoading ? "AI is thinking..." : "Ask something..."}
         />
         <button 
           type="submit"
           disabled={status !== 'ready' || !input.trim()}
-          className="bg-green-400 text-black font-mono px-4 py-2 rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="bg-green-400 text-black font-mono px-2 py-2 text-sm rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
         >
-          {isLoading ? ' ... ' : 'Send'}
+          {isLoading ? '...' : 'Send'}
         </button>
       </form>
       
