@@ -3,6 +3,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
+// Type definitions
+interface ToolSchema {
+  description: string;
+}
+
 interface STMEditorProps {
   onSTMChange?: () => void;
 }
@@ -64,12 +69,12 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   }, []);
 
   // Generate tool schemas (without execute functions) for display
-  function getToolSchemas() {
+  function getToolSchemas(): Record<string, ToolSchema> {
     const tools = mindcacheRef.current.get_aisdk_tools();
-    const schemas: Record<string, any> = {};
+    const schemas: Record<string, ToolSchema> = {};
     
     // Convert tools to schema-only format
-    Object.entries(tools).forEach(([toolName, tool]: [string, any]) => {
+    Object.entries(tools).forEach(([toolName, tool]: [string, { description: string }]) => {
       schemas[toolName] = {
         description: tool.description,
       };
@@ -91,7 +96,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   };
 
   // Start editing a field
-  const startEditing = (key: string, currentValue: any) => {
+  const startEditing = (key: string, currentValue: unknown) => {
     setEditingKey(key);
     setEditingValue(typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : String(currentValue));
   };

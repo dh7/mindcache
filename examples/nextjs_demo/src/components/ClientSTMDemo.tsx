@@ -5,6 +5,15 @@ import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
 
+// Type definitions
+interface ToolCall {
+  toolCallId: string;
+  tool?: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+}
+
 export default function ClientSTMDemo() {
   const mindcacheRef = useRef(mindcache);
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
@@ -52,7 +61,7 @@ export default function ClientSTMDemo() {
     }
   }, []);
 
-  const handleToolCall = (toolCall: any) => {
+  const handleToolCall = (toolCall: ToolCall) => {
     console.log('🔧 Tool call executed:', toolCall);
   };
 
