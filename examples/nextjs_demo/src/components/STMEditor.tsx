@@ -23,7 +23,9 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     visible: true,
     default: '',
     hardcoded: false,
-    template: false
+    template: false,
+    type: 'text' as 'text' | 'image' | 'file' | 'json',
+    contentType: ''
   });
   const [editingKeyName, setEditingKeyName] = useState('');
 
@@ -90,6 +92,36 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     }
   };
 
+  // Handle file upload
+  const handleFileUpload = async (key: string, file: File) => {
+    try {
+      await mindcacheRef.current.set_file(key, file);
+      console.log(`✅ File uploaded to ${key}:`, file.name);
+    } catch (error) {
+      console.error('❌ Failed to upload file:', error);
+      alert('Failed to upload file. Please try again.');
+    }
+  };
+
+  // Add a new key with file upload
+  const addFileKey = () => {
+    const key = prompt('Enter key name for file:');
+    if (key && key.trim() && !mindcacheRef.current.has(key.trim())) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,*/*';
+      input.onchange = (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) {
+          handleFileUpload(key.trim(), file);
+        }
+      };
+      input.click();
+    } else if (mindcacheRef.current.has(key?.trim() || '')) {
+      alert('Key already exists!');
+    }
+  };
+
   // Delete an STM key
   const deleteSTMKey = (key: string) => {
     mindcacheRef.current.delete(key);
@@ -131,7 +163,15 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   const startEditingAttributes = (key: string) => {
     const attributes = mindcacheRef.current.get_attributes(key);
     if (attributes) {
-      setAttributesForm(attributes);
+      setAttributesForm({
+        readonly: attributes.readonly,
+        visible: attributes.visible,
+        default: attributes.default,
+        hardcoded: attributes.hardcoded,
+        template: attributes.template,
+        type: attributes.type,
+        contentType: attributes.contentType || ''
+      });
     } else {
       // Default attributes for new keys
       setAttributesForm({
@@ -139,7 +179,9 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         visible: true,
         default: '',
         hardcoded: false,
-        template: false
+        template: false,
+        type: 'text',
+        contentType: ''
       });
     }
     setEditingAttributes(key);
@@ -274,13 +316,40 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
           <div className="space-y-2">
             {Object.entries(stmState).map(([key, value]) => {
               const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
-              const displayValue = isEmpty ? '_______' : (typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value));
               const attributes = mindcacheRef.current.get_attributes(key);
               const isSystemKey = key.startsWith('$');
+              const contentType = attributes?.type || 'text';
+              
+              // Handle different content types for display
+              let displayValue = '';
+              let isPreviewable = false;
+              
+              if (isEmpty) {
+                displayValue = '_______';
+              } else if (contentType === 'image') {
+                const dataUrl = mindcacheRef.current.get_data_url(key);
+                displayValue = `[IMAGE: ${attributes?.contentType || 'unknown'}]`;
+                isPreviewable = !!dataUrl;
+              } else if (contentType === 'file') {
+                displayValue = `[FILE: ${attributes?.contentType || 'unknown'}]`;
+                isPreviewable = false;
+              } else if (contentType === 'json') {
+                try {
+                  displayValue = typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2);
+                } catch {
+                  displayValue = String(value);
+                }
+              } else {
+                displayValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+              }
               
               // Create property indicators
               const indicators = [];
               if (attributes) {
+                // Add type indicator
+                if (contentType !== 'text') {
+                  indicators.push(contentType.toUpperCase().charAt(0));
+                }
                 if (attributes.readonly) {
                   indicators.push('R');
                 }
@@ -348,12 +417,49 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                       </div>
                     </div>
                   ) : (
-                    <div 
-                      className={`break-words whitespace-pre-wrap cursor-pointer hover:bg-green-900 hover:bg-opacity-20 p-1 -m-1 font-mono ${isEmpty ? 'text-gray-500' : 'text-green-400'}`}
-                      onClick={() => startEditing(key, value)}
-                      title="Click to edit"
-                    >
-                      <span className="text-gray-400">{'>'}</span> {displayValue}
+                    <div className="mt-1">
+                      <div 
+                        className={`break-words whitespace-pre-wrap cursor-pointer hover:bg-green-900 hover:bg-opacity-20 p-1 -m-1 font-mono ${isEmpty ? 'text-gray-500' : 'text-green-400'}`}
+                        onClick={() => {
+                          if (contentType === 'image' || contentType === 'file') {
+                            // Open file browser for image/file types
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = contentType === 'image' ? 'image/*' : '*/*';
+                            input.onchange = (e) => {
+                              const file = (e.target as HTMLInputElement).files?.[0];
+                              if (file) {
+                                handleFileUpload(key, file);
+                              }
+                            };
+                            input.click();
+                          } else {
+                            startEditing(key, value);
+                          }
+                        }}
+                        title={contentType === 'image' || contentType === 'file' ? 'Click to upload new file' : 'Click to edit'}
+                      >
+                        <span className="text-gray-400">{'>'}</span> {displayValue}
+                      </div>
+                      
+                      {/* Image preview */}
+                      {contentType === 'image' && isPreviewable && (
+                        <div className="mt-2 max-w-xs">
+                          <img 
+                            src={mindcacheRef.current.get_data_url(key)} 
+                            alt={`Preview of ${key}`}
+                            className="max-w-full h-auto border border-green-400 rounded"
+                            style={{ maxHeight: '200px' }}
+                          />
+                        </div>
+                      )}
+                      
+                      {/* File info */}
+                      {(contentType === 'file' || contentType === 'image') && attributes?.contentType && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Type: {attributes.contentType}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -417,6 +523,64 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                   placeholder="Key name..."
                 />
               </div>
+
+              {/* Type Selection */}
+              <div className="flex flex-col space-y-2">
+                <label className="text-gray-400 font-mono">type:</label>
+                <select
+                  value={attributesForm.type}
+                  onChange={(e) => setAttributesForm({ 
+                    ...attributesForm, 
+                    type: e.target.value as 'text' | 'image' | 'file' | 'json',
+                    // Clear contentType when switching to text/json
+                    contentType: (e.target.value === 'text' || e.target.value === 'json') ? '' : attributesForm.contentType
+                  })}
+                  className="bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-green-400"
+                >
+                  <option value="text">text</option>
+                  <option value="json">json</option>
+                  <option value="image">image</option>
+                  <option value="file">file</option>
+                </select>
+              </div>
+
+              {/* Upload Button - only for image/file */}
+              {(attributesForm.type === 'image' || attributesForm.type === 'file') && (
+                <div className="flex flex-col space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = attributesForm.type === 'image' ? 'image/*' : '*/*';
+                      input.onchange = async (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file && editingKeyName) {
+                          try {
+                            // Update content type from file
+                            setAttributesForm({ 
+                              ...attributesForm, 
+                              contentType: file.type,
+                              type: file.type.startsWith('image/') ? 'image' : 'file'
+                            });
+                            
+                            // Upload the file
+                            await handleFileUpload(editingKeyName, file);
+                            console.log(`✅ File uploaded via popup: ${file.name}`);
+                          } catch (error) {
+                            console.error('❌ Failed to upload file from popup:', error);
+                            alert('Failed to upload file. Please try again.');
+                          }
+                        }
+                      };
+                      input.click();
+                    }}
+                    className="border border-green-400 text-green-400 font-mono px-3 py-2 rounded hover:bg-green-900 hover:bg-opacity-20 transition-colors"
+                  >
+                    Upload {attributesForm.type === 'image' ? 'Image' : 'File'}
+                  </button>
+                </div>
+              )}
               {/* Readonly */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono">
