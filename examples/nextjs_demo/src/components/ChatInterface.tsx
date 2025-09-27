@@ -5,14 +5,8 @@ import { lastAssistantMessageIsCompleteWithToolCalls, DefaultChatTransport } fro
 import { useState, useRef } from 'react';
 import { mindcache } from 'mindcache';
 
-// Type definitions
-interface ToolCall {
-  toolCallId: string;
-  tool?: string;
-  toolName?: string;
-  input?: Record<string, unknown>;
-  args?: Record<string, unknown>;
-}
+// Import official types from AI SDK
+import type { TypedToolCall, ToolSet } from 'ai';
 
 interface ToolSchema {
   description: string;
@@ -40,7 +34,7 @@ interface WebSearchSource {
 }
 
 interface ChatInterfaceProps {
-  onToolCall?: (toolCall: ToolCall) => void;
+  onToolCall?: (toolCall: TypedToolCall<ToolSet>) => void;
   initialMessages?: UIMessage[];
 }
 
@@ -101,9 +95,9 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
     },
     async onToolCall({ toolCall }) {
        console.log('🔧 Client intercepted tool call:', toolCall);
-       const typedToolCall = toolCall as ToolCall;
-       const toolName = typedToolCall.tool ?? typedToolCall.toolName;
-       const toolInput = typedToolCall.input ?? typedToolCall.args;
+       const typedToolCall = toolCall as TypedToolCall<ToolSet>;
+       const toolName = typedToolCall.toolName;
+       const toolInput = typedToolCall.input;
 
        console.log('🔧 Extracted:', { toolName, toolInput });
       

@@ -5,14 +5,8 @@ import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
 
-// Type definitions
-interface ToolCall {
-  toolCallId: string;
-  tool?: string;
-  toolName?: string;
-  input?: Record<string, unknown>;
-  args?: Record<string, unknown>;
-}
+// Import official types from AI SDK
+import type { TypedToolCall, ToolSet } from 'ai';
 
 export default function ClientSTMDemo() {
   const mindcacheRef = useRef(mindcache);
@@ -61,7 +55,7 @@ export default function ClientSTMDemo() {
     }
   }, []);
 
-  const handleToolCall = (toolCall: ToolCall) => {
+  const handleToolCall = (toolCall: TypedToolCall<ToolSet>) => {
     console.log('🔧 Tool call executed:', toolCall);
   };
 
