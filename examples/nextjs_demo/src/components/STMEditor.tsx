@@ -212,9 +212,9 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   };
 
   return (
-    <div className="w-80 flex flex-col">
+    <div className="w-80 flex flex-col min-h-0">
       {/* STM Display */}
-      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto">
+      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto min-h-0">
         {/* Terminal Commands */}
         <div className="mb-4 pb-3 border-b border-green-400 font-mono text-sm">
           <div className="flex space-x-4 mb-2">

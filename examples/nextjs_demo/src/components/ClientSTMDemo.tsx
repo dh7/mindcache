@@ -40,7 +40,7 @@ export default function ClientSTMDemo() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-green-400 font-mono p-6 flex">
+    <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden">
       <ChatInterface onToolCall={handleToolCall} />
       <STMEditor />
     </div>
