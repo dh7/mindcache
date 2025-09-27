@@ -3,6 +3,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
+// Type definitions
+interface ToolSchema {
+  description: string;
+}
+
 interface STMEditorProps {
   onSTMChange?: () => void;
 }
@@ -64,12 +69,12 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   }, []);
 
   // Generate tool schemas (without execute functions) for display
-  function getToolSchemas() {
+  function getToolSchemas(): Record<string, ToolSchema> {
     const tools = mindcacheRef.current.get_aisdk_tools();
-    const schemas: Record<string, any> = {};
+    const schemas: Record<string, ToolSchema> = {};
     
     // Convert tools to schema-only format
-    Object.entries(tools).forEach(([toolName, tool]: [string, any]) => {
+    Object.entries(tools).forEach(([toolName, tool]: [string, { description: string }]) => {
       schemas[toolName] = {
         description: tool.description,
       };
@@ -91,7 +96,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   };
 
   // Start editing a field
-  const startEditing = (key: string, currentValue: any) => {
+  const startEditing = (key: string, currentValue: unknown) => {
     setEditingKey(key);
     setEditingValue(typeof currentValue === 'object' ? JSON.stringify(currentValue, null, 2) : String(currentValue));
   };
@@ -212,54 +217,56 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   };
 
   return (
-    <div className="w-80 flex flex-col">
-      {/* STM Display */}
-      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto">
-        {/* Terminal Commands */}
-        <div className="mb-4 pb-3 border-b border-green-400 font-mono text-sm">
-          <div className="flex space-x-4 mb-2">
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={() => {
-                const key = prompt('Enter new STM key:');
-                if (key && key.trim()) {
-                  addSTMKey(key.trim());
-                }
-              }}
-              title="Add new STM key"
-            >
-              Add Key
-            </div>
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={loadSTM}
-              title="Load STM from localStorage (Ctrl+L)"
-            >
-              Load
-            </div>
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={saveSTM}
-              title="Save STM to localStorage (Ctrl+S)"
-            >
-              Save
-            </div>
-            <div 
-              className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-              onClick={() => {
-                if (confirm('Clear STM? This will restore default values.')) {
-                  clearSTM();
-                }
-              }}
-              title="Clear STM - keeps defaults (Ctrl+K)"
-            >
-              Clear
-            </div>
+    <div className="flex-1 flex flex-col pl-1 min-h-0">
+      {/* Terminal Commands - Fixed Header */}
+      <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0">
+        <div className="flex space-x-4 mb-2">
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={() => {
+              const key = prompt('Enter new STM key:');
+              if (key && key.trim()) {
+                addSTMKey(key.trim());
+              }
+            }}
+            title="Add new STM key"
+          >
+            Add Key
           </div>
-          <div className="text-xs text-gray-500">
-            Auto-loads on page refresh • Ctrl+S/L/K shortcuts
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={loadSTM}
+            title="Load STM from localStorage (Ctrl+L)"
+          >
+            Load
+          </div>
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={saveSTM}
+            title="Save STM to localStorage (Ctrl+S)"
+          >
+            Save
+          </div>
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={() => {
+              if (confirm('Clear STM? This will restore default values.')) {
+                clearSTM();
+              }
+            }}
+            title="Clear STM - keeps defaults (Ctrl+K)"
+          >
+            Clear
           </div>
         </div>
+        <div className="text-xs text-gray-500 mb-4">
+          Auto-loads on page refresh • Ctrl+S/L/K shortcuts
+        </div>
+        <div className="border-b border-green-400"></div>
+      </div>
+
+      {/* STM Content - Scrollable */}
+      <div className="flex-1 border border-green-400 rounded-b p-4 overflow-y-auto min-h-0 border-t-0">
 
         {Object.keys(stmState).length === 0 ? (
           <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>
@@ -366,17 +373,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         </div>
       </div>
 
-      {/* Property Indicators Legend */}
-      <div className="mt-2 p-2 border border-gray-600 rounded text-xs">
-        <div className="text-gray-400 mb-1">Property Indicators:</div>
-        <div className="text-gray-500 space-y-0.5">
-          <div><span className="text-yellow-400">[R]</span> Readonly</div>
-          <div><span className="text-yellow-400">[V]</span> Hidden (not Visible)</div>
-          <div><span className="text-yellow-400">[T]</span> Template</div>
-          <div><span className="text-yellow-400">[H]</span> Hardcoded</div>
-          <div><span className="text-yellow-400">[D]</span> Has Default</div>
-        </div>
-      </div>
 
       {/* Attributes Editor Popup */}
       {editingAttributes && (
@@ -423,7 +419,10 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
               </div>
               {/* Readonly */}
               <div className="flex items-center justify-between">
-                <label className="text-gray-400 font-mono">readonly:</label>
+                <div className="text-gray-400 font-mono">
+                  <span className="text-yellow-400">[R]</span> readonly:
+                  <div className="text-xs text-gray-500 mt-1">If true, won&apos;t appear in AI tools</div>
+                </div>
                 {attributesForm.hardcoded ? (
                   <span className="text-gray-500 font-mono px-2 py-1">
                     {attributesForm.readonly ? 'true' : 'false'}
@@ -440,7 +439,10 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
 
               {/* Visible */}
               <div className="flex items-center justify-between">
-                <label className="text-gray-400 font-mono">visible:</label>
+                <div className="text-gray-400 font-mono">
+                  <span className="text-yellow-400">[V]</span> visible:
+                  <div className="text-xs text-gray-500 mt-1">If false, hidden from injectSTM/getSTM</div>
+                </div>
                 <button
                   onClick={() => setAttributesForm({ ...attributesForm, visible: !attributesForm.visible })}
                   className="text-green-400 font-mono hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
@@ -451,7 +453,10 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
 
               {/* Template */}
               <div className="flex items-center justify-between">
-                <label className="text-gray-400 font-mono">template:</label>
+                <div className="text-gray-400 font-mono">
+                  <span className="text-yellow-400">[T]</span> template:
+                  <div className="text-xs text-gray-500 mt-1">Process with injectSTM on get</div>
+                </div>
                 {attributesForm.hardcoded ? (
                   <span className="text-gray-500 font-mono px-2 py-1">
                     {attributesForm.template ? 'true' : 'false'}
@@ -468,7 +473,9 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
 
               {/* Hardcoded */}
               <div className="flex items-center justify-between">
-                <label className="text-gray-400 font-mono">hardcoded:</label>
+                <div className="text-gray-400 font-mono">
+                  <span className="text-yellow-400">[H]</span> hardcoded:
+                </div>
                 <span className="text-gray-500 font-mono px-2 py-1">
                   {attributesForm.hardcoded ? 'true' : 'false'}
                 </span>
@@ -477,7 +484,10 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
               {/* Default - only show if not a hardcoded property */}
               {!attributesForm.hardcoded && (
                 <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 font-mono">default:</label>
+                  <div className="text-gray-400 font-mono">
+                    <span className="text-yellow-400">[D]</span> default:
+                    <div className="text-xs text-gray-500 mt-1">Value restored on clear()</div>
+                  </div>
                   <textarea
                     value={attributesForm.default}
                     onChange={(e) => setAttributesForm({ ...attributesForm, default: e.target.value })}
@@ -489,15 +499,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
               )}
             </div>
 
-            {/* Property Descriptions */}
-            <div className="mt-6 p-3 border border-gray-600 rounded text-xs text-gray-500 space-y-1">
-              <div><span className="text-green-400">readonly:</span> If true, won&apos;t appear in AI tools{attributesForm.hardcoded && ' (always true for hardcoded keys)'}</div>
-              <div><span className="text-green-400">visible:</span> If false, hidden from injectSTM/getSTM</div>
-              <div><span className="text-green-400">template:</span> Process with injectSTM on get{attributesForm.hardcoded && ' (always false for hardcoded keys)'}</div>
-              {!attributesForm.hardcoded && (
-                <div><span className="text-green-400">default:</span> Value restored on clear()</div>
-              )}
-            </div>
 
             {/* Action Buttons */}
             <div className="flex gap-2 mt-6">

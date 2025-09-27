@@ -1,18 +1,22 @@
 import { NextRequest } from 'next/server';
-import { streamText, tool, convertToModelMessages, stepCountIs } from 'ai';
+import { streamText, tool, convertToModelMessages, stepCountIs, UIMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 
 export const maxDuration = 30;
 
 export const POST = async (req: NextRequest) => {
-  const { messages, toolSchemas, systemPrompt } = await req.json();
+  const { messages, toolSchemas, systemPrompt }: {
+    messages: UIMessage[];
+    toolSchemas?: Record<string, { description: string }>;
+    systemPrompt?: string;
+  } = await req.json();
 
   // Convert client tool schemas to server tool definitions (schema only, no execute)
-  const serverTools: Record<string, any> = {};
+  const serverTools: Record<string, unknown> = {};
   
   if (toolSchemas && typeof toolSchemas === 'object') {
-    Object.entries(toolSchemas).forEach(([toolName, schema]: [string, any]) => {
+    Object.entries(toolSchemas).forEach(([toolName, schema]: [string, { description: string }]) => {
       // Recreate the Zod schema on the server side
       const zodSchema = z.object({
         value: z.string().describe(`The value to write to ${toolName.replace('write_', '')}`)
@@ -42,7 +46,7 @@ export const POST = async (req: NextRequest) => {
   };
 
   // Combine client tools with web search
-  const allTools = { ...serverTools, ...webSearchTool };
+  const allTools = { ...serverTools, ...webSearchTool } as any;
 
   //console.log('🔍 SERVER: Final system prompt:', finalSystem);
   const result = await streamText({

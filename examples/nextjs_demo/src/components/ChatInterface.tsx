@@ -1,26 +1,55 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
+import { useChat, UIMessage } from '@ai-sdk/react';
 import { lastAssistantMessageIsCompleteWithToolCalls, DefaultChatTransport } from 'ai';
 import { useState, useRef } from 'react';
 import { mindcache } from 'mindcache';
 
-interface ChatInterfaceProps {
-  onToolCall?: (toolCall: any) => void;
+// Import official types from AI SDK
+import type { TypedToolCall, ToolSet } from 'ai';
+
+interface ToolSchema {
+  description: string;
 }
 
-export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
+interface MessagePart {
+  type: string;
+  text?: string;
+  tool?: string;
+  toolName?: string;
+  output?: unknown;
+  result?: unknown;
+}
+
+interface Message {
+  id: string;
+  role: string;
+  parts?: MessagePart[];
+}
+
+interface WebSearchSource {
+  url: string;
+  title?: string;
+  snippet?: string;
+}
+
+interface ChatInterfaceProps {
+  onToolCall?: (toolCall: TypedToolCall<ToolSet>) => void;
+  initialMessages?: UIMessage[];
+}
+
+export default function ChatInterface({ onToolCall, initialMessages }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   // Generate tool schemas (without execute functions) for the server
-  function getToolSchemas() {
+  function getToolSchemas(): Record<string, ToolSchema> {
     const tools = mindcacheRef.current.get_aisdk_tools();
-    const schemas: Record<string, any> = {};
+    const schemas: Record<string, ToolSchema> = {};
     
     console.log('🔧 Generated tools on client:', Object.keys(tools));
     
     // Convert tools to schema-only format
-    Object.entries(tools).forEach(([toolName, tool]: [string, any]) => {
+    Object.entries(tools).forEach(([toolName, tool]: [string, { description: string }]) => {
       schemas[toolName] = {
         description: tool.description,
         // Server will recreate the Zod schema
@@ -32,6 +61,7 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
   }
 
   const { messages, sendMessage, status, addToolResult } = useChat({
+    messages: initialMessages,
     transport: new DefaultChatTransport({
       api: '/api/chat-client-stm',
       fetch: async (input, init) => {
@@ -50,43 +80,44 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     onFinish: ({ message }) => {
       console.log('🏁 Message finished:', message);
-      console.log('🏁 Message parts:', (message as any).parts);
+      console.log('🏁 Message parts:', (message as Message).parts);
       
       // Extract and log sources from web search results
-      const parts = (message as any).parts || [];
-      const toolResults = parts.filter((part: any) => part.type === 'tool-result');
-      const webSearchResults = toolResults.filter((result: any) => 
-        result.toolName === 'web_search' && result.result?.sources
+      const parts = (message as Message).parts || [];
+      const toolResults = parts.filter((part: MessagePart) => part.type === 'tool-result');
+      const webSearchResults = toolResults.filter((result: MessagePart) => 
+        result.toolName === 'web_search' && (result.result as { sources?: WebSearchSource[] })?.sources
       );
       
       if (webSearchResults.length > 0) {
-        console.log('🔍 Web search sources:', webSearchResults.map((r: any) => r.result.sources));
+        console.log('🔍 Web search sources:', webSearchResults.map((r: MessagePart) => (r.result as { sources: WebSearchSource[] }).sources));
       }
     },
     async onToolCall({ toolCall }) {
        console.log('🔧 Client intercepted tool call:', toolCall);
-       const toolName = (toolCall as any).tool ?? (toolCall as any).toolName;
-       const toolInput = (toolCall as any).input ?? (toolCall as any).args;
+       const typedToolCall = toolCall as TypedToolCall<ToolSet>;
+       const toolName = typedToolCall.toolName;
+       const toolInput = typedToolCall.input;
 
        console.log('🔧 Extracted:', { toolName, toolInput });
       
       // Execute tools client-side to maintain STM state
       if (typeof toolName === 'string' && toolName.startsWith('write_')) {
-        const value = (toolInput as any)?.value as string;
+        const value = (toolInput as Record<string, unknown>)?.value as string;
         
         // Execute the tool call using the centralized method
         const result = mindcacheRef.current.executeToolCall(toolName, value);
         
         // Notify parent component of tool call
         if (onToolCall) {
-          onToolCall(toolCall);
+          onToolCall(typedToolCall);
         }
         
         // v5 API: add tool result with 'output'
         if (result) {
           addToolResult({
             tool: toolName,
-            toolCallId: (toolCall as any).toolCallId,
+            toolCallId: typedToolCall.toolCallId,
             output: result
           });
         } else {
@@ -106,18 +137,19 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
   const isLoading = status !== 'ready';
 
   // Helper function to render message with citations
-  const renderMessageContent = (message: any) => {
+  const renderMessageContent = (message: Message) => {
     const parts = message.parts || [];
     let content = '';
-    let sources: any[] = [];
+    let sources: WebSearchSource[] = [];
 
     // Extract text content and sources
-    parts.forEach((part: any) => {
+    parts.forEach((part: MessagePart) => {
       if (part.type === 'text') {
-        content += part.text;
+        content += part.text || '';
       } else if (part.type === 'tool-result' && part.toolName === 'web_search') {
-        if (part.result?.sources) {
-          sources = [...sources, ...part.result.sources];
+        const result = part.result as { sources?: WebSearchSource[] };
+        if (result?.sources) {
+          sources = [...sources, ...result.sources];
         }
       }
     });
@@ -126,32 +158,35 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col mr-6">
-      <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2">
+    <div className="flex-1 flex flex-col pr-1 min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2 min-h-0">
         {messages.map((message) => {
           const { sources } = renderMessageContent(message);
           return (
             <div key={message.id} className="whitespace-pre-wrap mb-4">
               <div className={`ml-2 ${message.role === 'user' ? 'text-green-400' : 'text-gray-400'}`}>
                 {message.role === 'user' ? '< ' : '> '}
-                {message.parts?.map((part: any, index: number) => {
+                {message.parts?.map((part: MessagePart, index: number) => {
                   if (part.type === 'text') {
-                    return <span key={index}>{part.text}</span>;
+                    return <span key={index} className="break-words">{part.text}</span>;
                   }
                   if (part.type === 'tool-call') {
-                    const name = (part as any).tool ?? (part as any).toolName;
+                    const toolPart = part as MessagePart & { tool?: string; toolName?: string };
+                    const name = toolPart.tool ?? toolPart.toolName;
                     if (name === 'web_search') {
-                      return <div key={index} className="text-blue-400 text-sm">🔍 Searching the web...</div>;
+                      return <div key={index} className="text-blue-400 text-sm break-words">🔍 Searching...</div>;
                     }
-                    return <div key={index} className="text-yellow-400 text-sm">🔧 Tool: {name}</div>;
+                    return <div key={index} className="text-yellow-400 text-sm break-words">🔧 {name}</div>;
                   }
                   if (part.type === 'tool-result') {
-                    const name = (part as any).toolName;
+                    const resultPart = part as MessagePart & { toolName?: string; output?: unknown; result?: unknown };
+                    const name = resultPart.toolName;
                     if (name === 'web_search') {
                       return null; // Web search results are handled via sources
                     }
-                    const result = (part as any).output ?? (part as any).result;
-                    return <div key={index} className="text-green-500 text-sm">✅ {JSON.stringify(result)}</div>;
+                    const result = resultPart.output ?? resultPart.result;
+                    const resultText = JSON.stringify(result);
+                    return <div key={index} className="text-green-500 text-sm break-words">✅ {resultText.length > 50 ? resultText.substring(0, 50) + '...' : resultText}</div>;
                   }
                   return null;
                 })}
@@ -160,7 +195,7 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
                 {sources.length > 0 && (
                   <div className="mt-3 pt-2 border-t border-green-600">
                     <div className="text-green-300 text-sm font-semibold mb-2">📚 Sources:</div>
-                    {sources.map((source: any, index: number) => (
+                    {sources.map((source: WebSearchSource, index: number) => (
                       <div key={index} className="text-green-500 text-xs mb-2">
                         <span className="text-green-300">[{index + 1}]</span>{' '}
                         <a 
@@ -194,21 +229,21 @@ export default function ChatInterface({ onToolCall }: ChatInterfaceProps) {
             setInput('');
           }
         }}
-        className="flex gap-2"
+        className="flex gap-2 min-w-0"
       >
         <input
-          className="flex-1 bg-black text-green-400 font-mono border border-green-400 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50"
+          className="flex-1 min-w-0 bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50"
           value={input}
           onChange={e => setInput(e.target.value)}
           disabled={isLoading}
-          placeholder={isLoading ? "AI is thinking..." : "Ask something time-sensitive..."}
+          placeholder={isLoading ? "AI is thinking..." : "Ask something..."}
         />
         <button 
           type="submit"
           disabled={status !== 'ready' || !input.trim()}
-          className="bg-green-400 text-black font-mono px-4 py-2 rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="bg-green-400 text-black font-mono px-2 py-2 text-sm rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
         >
-          {isLoading ? ' ... ' : 'Send'}
+          {isLoading ? '...' : 'Send'}
         </button>
       </form>
       
