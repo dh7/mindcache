@@ -244,6 +244,21 @@ class MindCache {
     this.set_value(key, base64Data, fileAttributes);
   }
 
+  // Convenience method to add an image to STM with proper attributes
+  add_image(key: string, base64Data: string, contentType: string = 'image/jpeg', attributes?: Partial<KeyAttributes>): void {
+    if (!contentType.startsWith('image/')) {
+      throw new Error(`Invalid image content type: ${contentType}. Must start with 'image/'`);
+    }
+
+    this.set_base64(key, base64Data, contentType, 'image', attributes);
+    
+    // Explicitly ensure the type is set to 'image' after setting the value
+    this.set_attributes(key, { 
+      type: 'image',
+      contentType: contentType
+    });
+  }
+
   // Get a value as data URL (for files/images)
   get_data_url(key: string): string | undefined {
     const entry = this.stm[key];
