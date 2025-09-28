@@ -103,24 +103,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     }
   };
 
-  // Add a new key with file upload
-  const addFileKey = () => {
-    const key = prompt('Enter key name for file:');
-    if (key && key.trim() && !mindcacheRef.current.has(key.trim())) {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*,*/*';
-      input.onchange = (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (file) {
-          handleFileUpload(key.trim(), file);
-        }
-      };
-      input.click();
-    } else if (mindcacheRef.current.has(key?.trim() || '')) {
-      alert('Key already exists!');
-    }
-  };
 
   // Delete an STM key
   const deleteSTMKey = (key: string) => {
