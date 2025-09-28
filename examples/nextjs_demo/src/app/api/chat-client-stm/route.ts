@@ -17,16 +17,26 @@ export const POST = async (req: NextRequest) => {
   
   if (toolSchemas && typeof toolSchemas === 'object') {
     Object.entries(toolSchemas).forEach(([toolName, schema]: [string, { description: string }]) => {
-      // Recreate the Zod schema on the server side
-      const zodSchema = z.object({
-        value: z.string().describe(`The value to write to ${toolName.replace('write_', '')}`)
-      });
-      
-      serverTools[toolName] = tool({
-        description: schema.description,
-        inputSchema: zodSchema,
-        // NO execute function - this forces client-side execution via onToolCall
-      });
+      if (toolName === 'generate_image') {
+        // Special schema for generate_image tool
+        serverTools[toolName] = tool({
+          description: schema.description,
+          inputSchema: z.object({
+            prompt: z.string().describe('The prompt for image generation or editing. Can include image references like @images_1 or {image_1}'),
+            mode: z.enum(['generate', 'edit']).optional().describe('Mode: "generate" for new images, "edit" to modify existing images')
+          }),
+          // NO execute function - this forces client-side execution via onToolCall
+        });
+      } else {
+        // Default schema for write_ tools
+        serverTools[toolName] = tool({
+          description: schema.description,
+          inputSchema: z.object({
+            value: z.string().describe(`The value to write to ${toolName.replace('write_', '')}`)
+          }),
+          // NO execute function - this forces client-side execution via onToolCall
+        });
+      }
     });
   }
 

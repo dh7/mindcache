@@ -38,7 +38,7 @@ interface WebSearchSource {
 }
 
 interface ChatInterfaceProps {
-  onToolCall?: (toolCall: TypedToolCall<ToolSet>) => void;
+  onToolCall?: (toolCall: TypedToolCall<ToolSet>) => Promise<any> | void;
   initialMessages?: UIMessage[];
 }
 
@@ -60,6 +60,11 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
         // Server will recreate the Zod schema
       };
     });
+
+    // Add custom generate_image tool
+    schemas['generate_image'] = {
+      description: 'Generate or edit images using AI. Supports image references like @images_1 or {image_1} from mindcache. Use mode="generate" for new images or mode="edit" to modify existing images.'
+    };
 
     console.log('📤 Sending tool schemas to server:', Object.keys(schemas));
     return schemas;
@@ -127,6 +132,26 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
           });
         } else {
           console.warn('Failed to execute tool call:', toolName);
+        }
+        return;
+      }
+
+      // Handle generate_image tool
+      if (toolName === 'generate_image') {
+        console.log('🖼️ Handling generate_image tool call');
+        
+        // Notify parent component and get result
+        if (onToolCall) {
+          const result = await onToolCall(typedToolCall);
+          
+          // Add tool result
+          addToolResult({
+            tool: toolName,
+            toolCallId: typedToolCall.toolCallId,
+            output: result
+          });
+        } else {
+          console.warn('No onToolCall handler for generate_image');
         }
         return;
       }
