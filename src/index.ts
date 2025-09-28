@@ -2,17 +2,17 @@
 import { z } from 'zod';
 
 // Browser environment type declarations
-declare const FileReader: {
-  prototype: FileReader;
-  new(): FileReader;
-} | undefined;
-
-interface FileReader {
-  onload: ((this: FileReader, ev: any) => any) | null;
-  onerror: ((this: FileReader, ev: any) => any) | null;
+interface FileReaderType {
+  onload: ((this: FileReaderType, ev: any) => any) | null;
+  onerror: ((this: FileReaderType, ev: any) => any) | null;
   result: string | ArrayBuffer | null;
   readAsDataURL(file: Blob): void;
 }
+
+declare const FileReader: {
+  prototype: FileReaderType;
+  new(): FileReaderType;
+} | undefined;
 
 interface KeyAttributes {
   readonly: boolean;
@@ -71,7 +71,7 @@ class MindCache {
     if (type === 'text' || type === 'json') {
       return true; // No content type validation needed for text/json
     }
-    
+
     if (!contentType) {
       return false; // Files and images require content type
     }
@@ -219,7 +219,7 @@ class MindCache {
   async set_file(key: string, file: File, attributes?: Partial<KeyAttributes>): Promise<void> {
     const base64Data = await this.encodeFileToBase64(file);
     const contentType = file.type;
-    
+
     const fileAttributes: Partial<KeyAttributes> = {
       type: contentType.startsWith('image/') ? 'image' : 'file',
       contentType,
@@ -521,7 +521,7 @@ class MindCache {
     Object.entries(this.stm).forEach(([key, entry]) => {
       if (entry.attributes.visible) {
         const processedValue = entry.attributes.template ? this.get_value(key) : entry.value;
-        
+
         apiData.push({
           key,
           value: processedValue,
@@ -537,9 +537,9 @@ class MindCache {
       value: now.toISOString().split('T')[0],
       type: 'text'
     });
-    
+
     apiData.push({
-      key: '$time', 
+      key: '$time',
       value: now.toTimeString().split(' ')[0],
       type: 'text'
     });
@@ -550,7 +550,7 @@ class MindCache {
   // Get visible images formatted for AI SDK UIMessage file parts
   getVisibleImages(): Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> {
     const imageParts: Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> = [];
-    
+
     Object.entries(this.stm).forEach(([key, entry]) => {
       if (entry.attributes.visible && entry.attributes.type === 'image' && entry.attributes.contentType) {
         // Create data URL from base64 data
@@ -563,7 +563,7 @@ class MindCache {
         });
       }
     });
-    
+
     return imageParts;
   }
 
@@ -698,19 +698,19 @@ class MindCache {
 
       const entry = this.stm[key];
       const keyType = entry?.attributes.type || 'text';
-      
+
       // Create appropriate schema based on the key's type
       let inputSchema;
       let description = `Write a value to the STM key: ${key}`;
-      
+
       if (keyType === 'image' || keyType === 'file') {
-        description += ` (expects base64 encoded data)`;
+        description += ' (expects base64 encoded data)';
         inputSchema = z.object({
           value: z.string().describe(`Base64 encoded data for ${key}`),
           contentType: z.string().optional().describe(`MIME type for the ${keyType}`)
         });
       } else if (keyType === 'json') {
-        description += ` (expects JSON string)`;
+        description += ' (expects JSON string)';
         inputSchema = z.object({
           value: z.string().describe(`JSON string value for ${key}`)
         });
@@ -741,7 +741,7 @@ class MindCache {
             // For text and json, use regular set_value
             this.set_value(key, input.value);
           }
-          
+
           // Create specialized success message based on type
           let resultMessage: string;
           if (keyType === 'image') {
