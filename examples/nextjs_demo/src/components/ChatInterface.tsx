@@ -176,23 +176,8 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
                     return <span key={index} className="break-words">{part.text}</span>;
                   }
                   if (part.type === 'file') {
-                    const filePart = part as MessagePart & { mediaType?: string; url?: string; filename?: string };
-                    if (filePart.mediaType?.startsWith('image/') && filePart.url) {
-                      return (
-                        <div key={index} className="mt-2 mb-2">
-                          <img 
-                            src={filePart.url} 
-                            alt={filePart.filename || 'Image from STM'} 
-                            className="max-w-xs max-h-48 rounded border border-green-400"
-                            style={{ display: 'block' }}
-                          />
-                          {filePart.filename && (
-                            <div className="text-green-500 text-xs mt-1">📷 {filePart.filename}</div>
-                          )}
-                        </div>
-                      );
-                    }
-                    return <div key={index} className="text-green-500 text-sm">📎 {filePart.filename || 'File'}</div>;
+                    // Images are sent to AI but not displayed in chat UI
+                    return null;
                   }
                   if (part.type === 'tool-call') {
                     const toolPart = part as MessagePart & { tool?: string; toolName?: string };
