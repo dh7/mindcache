@@ -6,6 +6,7 @@ export const POST = async (req: NextRequest) => {
   try {
     const { 
       imageBase64, 
+      images, // Array of base64 images for multi-image support
       prompt, 
       seed = -1, 
       promptUpsampling = false, 
@@ -21,10 +22,10 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // For edit mode, imageBase64 is required
-    if (mode === "edit" && !imageBase64) {
+    // For edit mode, either imageBase64 or images array is required
+    if (mode === "edit" && !imageBase64 && (!images || images.length === 0)) {
       return NextResponse.json(
-        { error: 'Missing required field for edit mode: imageBase64' },
+        { error: 'Missing required field for edit mode: imageBase64 or images array' },
         { status: 400 }
       );
     }
@@ -45,7 +46,17 @@ export const POST = async (req: NextRequest) => {
 
     if (mode === "edit") {
       // Image editing mode
-      requestBody.input_image = `data:image/jpeg;base64,${imageBase64}`;
+      if (images && images.length > 0) {
+        // Multiple images - send as array
+        requestBody.input_image = images.map((img: string) => 
+          img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`
+        );
+      } else if (imageBase64) {
+        // Single image - maintain backward compatibility
+        requestBody.input_image = imageBase64.startsWith('data:') 
+          ? imageBase64 
+          : `data:image/jpeg;base64,${imageBase64}`;
+      }
       requestBody.prompt_upsampling = promptUpsampling;
       requestBody.safety_tolerance = safetyTolerance;
     } else {
@@ -111,7 +122,8 @@ export const POST = async (req: NextRequest) => {
                 success: true, 
                 imageUrl: imageData,
                 requestId: result.request_id,
-                mode
+                mode,
+                inputCount: images?.length || (imageBase64 ? 1 : 0)
               });
             } else {
               // Return base64 image data
@@ -119,7 +131,8 @@ export const POST = async (req: NextRequest) => {
                 success: true, 
                 imageBase64: imageData,
                 requestId: result.request_id,
-                mode
+                mode,
+                inputCount: images?.length || (imageBase64 ? 1 : 0)
               });
             }
           }
