@@ -19,6 +19,10 @@ interface MessagePart {
   toolName?: string;
   output?: unknown;
   result?: unknown;
+  // File part properties
+  mediaType?: string;
+  url?: string;
+  filename?: string;
 }
 
 interface Message {
@@ -40,6 +44,7 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ onToolCall, initialMessages }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
+  
   
   // Generate tool schemas (without execute functions) for the server
   function getToolSchemas(): Record<string, ToolSchema> {
@@ -170,6 +175,25 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
                   if (part.type === 'text') {
                     return <span key={index} className="break-words">{part.text}</span>;
                   }
+                  if (part.type === 'file') {
+                    const filePart = part as MessagePart & { mediaType?: string; url?: string; filename?: string };
+                    if (filePart.mediaType?.startsWith('image/') && filePart.url) {
+                      return (
+                        <div key={index} className="mt-2 mb-2">
+                          <img 
+                            src={filePart.url} 
+                            alt={filePart.filename || 'Image from STM'} 
+                            className="max-w-xs max-h-48 rounded border border-green-400"
+                            style={{ display: 'block' }}
+                          />
+                          {filePart.filename && (
+                            <div className="text-green-500 text-xs mt-1">📷 {filePart.filename}</div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return <div key={index} className="text-green-500 text-sm">📎 {filePart.filename || 'File'}</div>;
+                  }
                   if (part.type === 'tool-call') {
                     const toolPart = part as MessagePart & { tool?: string; toolName?: string };
                     const name = toolPart.tool ?? toolPart.toolName;
@@ -225,7 +249,51 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
         onSubmit={e => {
           e.preventDefault();
           if (input.trim() && status === 'ready') {
-            sendMessage({ text: input });
+            // Get visible images from STM using the core library method
+            const imageParts = mindcacheRef.current.getVisibleImages();
+            
+            // Create message with text and image parts
+            const messageParts = [
+              { type: 'text' as const, text: input },
+              ...imageParts
+            ];
+
+            // 🐛 DEBUG: Log the complete UIMessage structure
+            console.log('🔍 DEBUG: Sending UIMessage:', {
+              role: 'user',
+              parts: messageParts,
+              totalParts: messageParts.length,
+              textParts: messageParts.filter(p => p.type === 'text').length,
+              imageParts: messageParts.filter(p => p.type === 'file').length
+            });
+
+            // 🐛 DEBUG: Log image details
+            imageParts.forEach((part, index) => {
+              const dataUrlSize = part.url.length;
+              const base64Size = part.url.split(',')[1]?.length || 0;
+              const estimatedKB = Math.round(base64Size * 0.75 / 1024); // Base64 to bytes conversion
+              
+              console.log(`🖼️ DEBUG: Image ${index + 1} (${part.filename}):`, {
+                mediaType: part.mediaType,
+                dataUrlLength: dataUrlSize,
+                base64Length: base64Size,
+                estimatedSizeKB: estimatedKB,
+                urlPreview: part.url.substring(0, 100) + '...'
+              });
+            });
+
+            // 🐛 DEBUG: Calculate total message size
+            const totalMessageSize = JSON.stringify(messageParts).length;
+            console.log('📊 DEBUG: Total message size:', {
+              totalCharacters: totalMessageSize,
+              estimatedKB: Math.round(totalMessageSize / 1024),
+              estimatedTokens: Math.round(totalMessageSize / 4) // Rough token estimation
+            });
+            
+            sendMessage({
+              role: 'user',
+              parts: messageParts as any // Type assertion needed for AI SDK compatibility
+            });
             setInput('');
           }
         }}

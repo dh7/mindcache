@@ -547,6 +547,26 @@ class MindCache {
     return apiData;
   }
 
+  // Get visible images formatted for AI SDK UIMessage file parts
+  getVisibleImages(): Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> {
+    const imageParts: Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> = [];
+    
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      if (entry.attributes.visible && entry.attributes.type === 'image' && entry.attributes.contentType) {
+        // Create data URL from base64 data
+        const dataUrl = this.createDataUrl(entry.value, entry.attributes.contentType);
+        imageParts.push({
+          type: 'file' as const,
+          mediaType: entry.attributes.contentType,
+          url: dataUrl,
+          filename: key // Use the STM key as filename
+        });
+      }
+    });
+    
+    return imageParts;
+  }
+
   // Serialize STM to JSON string (complete state)
   toJSON(): string {
     return JSON.stringify(this.serialize());
@@ -608,6 +628,17 @@ class MindCache {
     // Add visible regular STM entries
     Object.entries(this.stm).forEach(([key, entry]) => {
       if (entry.attributes.visible) {
+        // Skip images and large files in system prompt to save context
+        if (entry.attributes.type === 'image' || entry.attributes.type === 'file') {
+          if (entry.attributes.readonly) {
+            promptLines.push(`${key}: [${entry.attributes.type.toUpperCase()}] - ${entry.attributes.contentType || 'unknown format'}`);
+          } else {
+            const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+            promptLines.push(`${key}: [${entry.attributes.type.toUpperCase()}] - ${entry.attributes.contentType || 'unknown format'}. You can update this ${entry.attributes.type} using the write_${sanitizedKey} tool.`);
+          }
+          return;
+        }
+
         const value = this.get_value(key);
         const formattedValue = typeof value === 'object' && value !== null
           ? JSON.stringify(value)
