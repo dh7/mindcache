@@ -117,24 +117,42 @@ export const POST = async (req: NextRequest) => {
         if (['Ready', 'Complete', 'Finished'].includes(pollResult.status)) {
           const imageData = pollResult.result?.sample;
           if (imageData) {
+            let imageBuffer: ArrayBuffer;
+            
             if (typeof imageData === 'string' && imageData.startsWith('http')) {
-              return NextResponse.json({ 
-                success: true, 
-                imageUrl: imageData,
-                requestId: result.request_id,
-                mode,
-                inputCount: images?.length || (imageBase64 ? 1 : 0)
-              });
+              // Fetch the image from URL
+              try {
+                const imageResponse = await fetch(imageData);
+                if (imageResponse.ok) {
+                  imageBuffer = await imageResponse.arrayBuffer();
+                } else {
+                  return NextResponse.json(
+                    { error: `Failed to fetch image from URL: ${imageResponse.status}` },
+                    { status: 500 }
+                  );
+                }
+              } catch (fetchError) {
+                return NextResponse.json(
+                  { error: `Failed to fetch image: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` },
+                  { status: 500 }
+                );
+              }
             } else {
-              // Return base64 image data
-              return NextResponse.json({ 
-                success: true, 
-                imageBase64: imageData,
-                requestId: result.request_id,
-                mode,
-                inputCount: images?.length || (imageBase64 ? 1 : 0)
-              });
+              // Convert base64 to buffer
+              imageBuffer = Buffer.from(imageData, 'base64').buffer;
             }
+            
+            // Return the image as binary data with proper headers
+            return new NextResponse(imageBuffer, {
+              status: 200,
+              headers: {
+                'Content-Type': 'image/jpeg',
+                'Content-Length': imageBuffer.byteLength.toString(),
+                'X-Request-ID': result.request_id,
+                'X-Mode': mode,
+                'X-Input-Count': (images?.length || (imageBase64 ? 1 : 0)).toString()
+              }
+            });
           }
         }
         
