@@ -63,7 +63,7 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
 
     // Add custom generate_image tool
     schemas['generate_image'] = {
-      description: 'Generate or edit images using AI. Supports image references like @images_1 or {image_1} from mindcache. Use mode="generate" for new images or mode="edit" to modify existing images.'
+      description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. When user mentions editing/modifying/changing images (like @Image_1, @images_1, {image_1}), you MUST use this tool with mode="edit". For new images, use mode="generate". This tool can reference images from mindcache using @images_X or {image_X} syntax.'
     };
 
     console.log('📤 Sending tool schemas to server:', Object.keys(schemas));
@@ -201,8 +201,8 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
                     return <span key={index} className="break-words">{part.text}</span>;
                   }
                   if (part.type === 'file') {
-                    // Images are sent to AI but not displayed in chat UI
-                    return null;
+                    // Display an image icon, and the name of the image
+                    return <div key={index} className="text-green-500 text-sm break-words">📷 {part.filename}</div>;
                   }
                   if (part.type === 'tool-call') {
                     const toolPart = part as MessagePart & { tool?: string; toolName?: string };

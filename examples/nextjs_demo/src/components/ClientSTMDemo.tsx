@@ -18,18 +18,40 @@ export default function ClientSTMDemo() {
     const imageRefs: string[] = [];
     let cleanPrompt = prompt;
 
-    // Match @images_X or {image_X} patterns
-    const patterns = [/@images?_(\w+)/g, /\{images?_(\w+)\}/g];
+    // Match @Image_X, @images_X, {Image_X}, {image_X} patterns (case insensitive)
+    const patterns = [
+      /@images?_(\w+)/gi, 
+      /\{images?_(\w+)\}/gi,
+      /@Image_(\w+)/gi,
+      /\{Image_(\w+)\}/gi
+    ];
     
     patterns.forEach(pattern => {
       let match;
       while ((match = pattern.exec(prompt)) !== null) {
-        const imageKey = `images_${match[1]}`;
-        const base64Data = mindcacheRef.current.get_base64(imageKey);
-        if (base64Data) {
-          imageRefs.push(base64Data);
-          // Remove the reference from the prompt
-          cleanPrompt = cleanPrompt.replace(match[0], '').trim();
+        // Try both lowercase and original case for the key
+        const possibleKeys = [
+          `Image_${match[1]}`, // Try exact match first (Image_1)
+          `images_${match[1]}`, // Try lowercase plural
+          `image_${match[1]}`,  // Try lowercase singular
+          match[1] // Just the number/identifier
+        ];
+        
+        let foundImage = false;
+        for (const imageKey of possibleKeys) {
+          const base64Data = mindcacheRef.current.get_base64(imageKey);
+          if (base64Data) {
+            imageRefs.push(base64Data);
+            // Remove the reference from the prompt
+            cleanPrompt = cleanPrompt.replace(match[0], '').trim();
+            foundImage = true;
+            console.log(`🖼️ Found image reference: ${match[0]} -> ${imageKey}`);
+            break;
+          }
+        }
+        
+        if (!foundImage) {
+          console.warn(`⚠️ Image reference not found: ${match[0]} (tried keys: ${possibleKeys.join(', ')})`);
         }
       }
     });
@@ -37,10 +59,13 @@ export default function ClientSTMDemo() {
     return { images: imageRefs, cleanPrompt };
   };
 
-  // Generate image tool function
-  const generateImage = async (prompt: string, mode: 'edit' | 'generate' = 'generate') => {
+  // Generate image tool function with pre-resolved images
+  const generateImageWithImages = async (prompt: string, mode: 'edit' | 'generate' = 'generate', images: string[] = []) => {
     try {
-      const { images, cleanPrompt } = parseImageReferences(prompt);
+      console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length });
+      
+      // Use provided images instead of parsing prompt
+      const cleanPrompt = prompt; // Don't modify the prompt since images are provided separately
       
       const requestBody: any = {
         prompt: cleanPrompt,
@@ -59,6 +84,13 @@ export default function ClientSTMDemo() {
       } else if (mode === 'generate') {
         requestBody.aspectRatio = "1:1";
       }
+
+      console.log('📤 Sending request:', { 
+        mode, 
+        hasImages: images.length > 0, 
+        imageCount: images.length,
+        promptLength: cleanPrompt.length 
+      });
 
       const response = await fetch('/api/image-edit', {
         method: 'POST',
@@ -188,7 +220,31 @@ export default function ClientSTMDemo() {
     // Handle generate_image tool calls
     if (toolCall.toolName === 'generate_image') {
       const { prompt, mode } = toolCall.input as { prompt: string; mode?: 'edit' | 'generate' };
-      const result = await generateImage(prompt, mode);
+      
+      // For edit mode, automatically include all visible images from mindcache
+      // since the model often removes image references from the prompt
+      let imagesToInclude: string[] = [];
+      if (mode === 'edit') {
+        // Get all visible images from mindcache
+        const allKeys = mindcacheRef.current.keys();
+        const imageKeys = allKeys.filter(key => {
+          const attributes = mindcacheRef.current.get_attributes(key);
+          return attributes?.type === 'image' && attributes?.visible;
+        });
+        
+        console.log('🖼️ Found image keys for edit mode:', imageKeys);
+        
+        // Get base64 data for all image keys
+        imageKeys.forEach(key => {
+          const base64Data = mindcacheRef.current.get_base64(key);
+          if (base64Data) {
+            imagesToInclude.push(base64Data);
+            console.log(`✅ Including image: ${key} (${base64Data.length} chars)`);
+          }
+        });
+      }
+      
+      const result = await generateImageWithImages(prompt, mode, imagesToInclude);
       console.log('🖼️ Image generation result:', result);
       return result;
     }

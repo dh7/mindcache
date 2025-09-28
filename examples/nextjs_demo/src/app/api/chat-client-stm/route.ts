@@ -6,18 +6,30 @@ import { z } from 'zod';
 export const maxDuration = 30;
 
 export const POST = async (req: NextRequest) => {
+  console.log('🤖 Chat API called');
   const { messages, toolSchemas, systemPrompt }: {
     messages: UIMessage[];
     toolSchemas?: Record<string, { description: string }>;
     systemPrompt?: string;
   } = await req.json();
+  
+  console.log('📨 Request details:', {
+    messageCount: messages.length,
+    toolSchemaCount: Object.keys(toolSchemas || {}).length,
+    toolNames: Object.keys(toolSchemas || {}),
+    hasSystemPrompt: !!systemPrompt,
+    lastMessageRole: messages[messages.length - 1]?.role,
+    lastMessagePreview: (messages[messages.length - 1]?.parts?.[0] as any)?.text?.substring(0, 100) + '...'
+  });
 
   // Convert client tool schemas to server tool definitions (schema only, no execute)
   const serverTools: Record<string, unknown> = {};
   
   if (toolSchemas && typeof toolSchemas === 'object') {
+    console.log('🔧 Processing tool schemas:', Object.keys(toolSchemas));
     Object.entries(toolSchemas).forEach(([toolName, schema]: [string, { description: string }]) => {
       if (toolName === 'generate_image') {
+        console.log('🖼️ Setting up generate_image tool');
         // Special schema for generate_image tool
         serverTools[toolName] = tool({
           description: schema.description,
@@ -28,6 +40,7 @@ export const POST = async (req: NextRequest) => {
           // NO execute function - this forces client-side execution via onToolCall
         });
       } else {
+        console.log(`📝 Setting up write tool: ${toolName}`);
         // Default schema for write_ tools
         serverTools[toolName] = tool({
           description: schema.description,
@@ -41,7 +54,14 @@ export const POST = async (req: NextRequest) => {
   }
 
   // Build the final system prompt, optionally combining client-provided content
-  const baseInstructions = `Here are some facts and instructions for you to follow.`;
+  const baseInstructions = `Here are some facts and instructions for you to follow.
+
+IMPORTANT IMAGE HANDLING RULES:
+- When users ask to edit, modify, change, or update images (referenced as @Image_1, @images_1, {image_1}, etc.), you MUST use the generate_image tool with mode="edit"
+- When users ask to create new images, use the generate_image tool with mode="generate"
+- NEVER say you cannot edit images - you have the generate_image tool available
+- The generate_image tool can access images from mindcache using the @images_X or {image_X} syntax
+- Always use the generate_image tool for ANY image-related requests`;
 
   const finalSystem = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
     ? `${baseInstructions}\n\n${systemPrompt}`
@@ -57,18 +77,66 @@ export const POST = async (req: NextRequest) => {
 
   // Combine client tools with web search
   const allTools = { ...serverTools, ...webSearchTool } as any;
+  
+  console.log('🎯 Final tool setup:', {
+    serverToolCount: Object.keys(serverTools).length,
+    serverToolNames: Object.keys(serverTools),
+    totalToolCount: Object.keys(allTools).length,
+    hasWebSearch: 'web_search' in allTools
+  });
 
-  //console.log('🔍 SERVER: Final system prompt:', finalSystem);
+  console.log('🔍 SERVER: Final system prompt preview:', finalSystem.substring(0, 200) + '...');
+  
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToModelMessages(messages),
     system: finalSystem,
     tools: allTools,
     stopWhen: [stepCountIs(5)],
-    // v5 API: Use onFinish instead of onStepFinish for logging
-    onFinish: () => {
-      // Logging disabled for cleaner output
+    // v5 API: Enhanced logging
+    onFinish: (result) => {
+      console.log('🏁 Stream finished:', {
+        finishReason: result.finishReason,
+        usage: result.usage,
+        toolCalls: result.toolCalls?.length || 0,
+        toolCallNames: result.toolCalls?.map(tc => tc.toolName) || [],
+        responsePreview: result.text?.substring(0, 100) + '...'
+      });
+      
+      // Log each tool call in detail
+      result.toolCalls?.forEach((toolCall, index) => {
+        console.log(`🔧 Tool call ${index + 1}:`, {
+          toolName: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+          input: (toolCall as any).input || (toolCall as any).args
+        });
+      });
     },
+    onStepFinish: (step) => {
+      console.log('👣 Step finished:', {
+        text: step.text?.substring(0, 100) + '...',
+        toolCalls: step.toolCalls?.length || 0,
+        toolResults: step.toolResults?.length || 0,
+        usage: step.usage,
+        finishReason: step.finishReason
+      });
+      
+      // Log tool calls in this step
+      step.toolCalls?.forEach((toolCall, index) => {
+        console.log(`  🔧 Step tool call ${index + 1}:`, {
+          toolName: toolCall.toolName,
+          input: (toolCall as any).input || (toolCall as any).args
+        });
+      });
+      
+      // Log tool results in this step
+      step.toolResults?.forEach((result, index) => {
+        console.log(`  ✅ Step tool result ${index + 1}:`, {
+          toolCallId: result.toolCallId,
+          output: (result as any).output || (result as any).result
+        });
+      });
+    }
   });
 
   return result.toUIMessageStreamResponse();
