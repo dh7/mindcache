@@ -60,9 +60,9 @@ export default function ClientSTMDemo() {
   };
 
   // Generate image tool function with pre-resolved images
-  const generateImageWithImages = async (prompt: string, mode: 'edit' | 'generate' = 'generate', images: string[] = []) => {
+  const generateImageWithImages = async (prompt: string, mode: 'edit' | 'generate' = 'generate', images: string[] = [], imageName?: string) => {
     try {
-      console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length });
+      console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length, imageName });
       
       // Use provided images instead of parsing prompt
       const cleanPrompt = prompt; // Don't modify the prompt since images are provided separately
@@ -124,9 +124,9 @@ export default function ClientSTMDemo() {
           
           // Store the generated image in mindcache
           const timestamp = Date.now();
-          const imageKey = `generated_image_${timestamp}`;
+          const imageKey = imageName || `generated_image_${timestamp}`;
           
-          console.log('🖼️ Adding image to mindcache:', { imageKey, contentType, base64Length: base64Data.length });
+          console.log('🖼️ Adding image to mindcache:', { imageKey, contentType, base64Length: base64Data.length, customName: !!imageName });
           mindcacheRef.current.add_image(imageKey, base64Data, contentType);
           
           // Debug: Check what was actually stored
@@ -219,7 +219,7 @@ export default function ClientSTMDemo() {
     
     // Handle generate_image tool calls
     if (toolCall.toolName === 'generate_image') {
-      const { prompt, mode } = toolCall.input as { prompt: string; mode?: 'edit' | 'generate' };
+      const { prompt, mode, imageName } = toolCall.input as { prompt: string; mode?: 'edit' | 'generate'; imageName?: string };
       
       // For edit mode, automatically include all visible images from mindcache
       // since the model often removes image references from the prompt
@@ -244,7 +244,7 @@ export default function ClientSTMDemo() {
         });
       }
       
-      const result = await generateImageWithImages(prompt, mode, imagesToInclude);
+      const result = await generateImageWithImages(prompt, mode, imagesToInclude, imageName);
       console.log('🖼️ Image generation result:', result);
       return result;
     }

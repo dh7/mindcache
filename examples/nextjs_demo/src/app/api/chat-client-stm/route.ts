@@ -35,7 +35,8 @@ export const POST = async (req: NextRequest) => {
           description: schema.description,
           inputSchema: z.object({
             prompt: z.string().describe('The prompt for image generation or editing. Can include image references like @images_1 or {image_1}'),
-            mode: z.enum(['generate', 'edit']).optional().describe('Mode: "generate" for new images, "edit" to modify existing images')
+            mode: z.enum(['generate', 'edit']).optional().describe('Mode: "generate" for new images, "edit" to modify existing images'),
+            imageName: z.string().optional().describe('Optional name for the generated/edited image to store in the STM (Short Term Memory)')
           }),
           // NO execute function - this forces client-side execution via onToolCall
         });
