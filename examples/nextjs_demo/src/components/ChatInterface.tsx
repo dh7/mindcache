@@ -19,6 +19,10 @@ interface MessagePart {
   toolName?: string;
   output?: unknown;
   result?: unknown;
+  // File part properties
+  mediaType?: string;
+  url?: string;
+  filename?: string;
 }
 
 interface Message {
@@ -34,12 +38,13 @@ interface WebSearchSource {
 }
 
 interface ChatInterfaceProps {
-  onToolCall?: (toolCall: TypedToolCall<ToolSet>) => void;
+  onToolCall?: (toolCall: TypedToolCall<ToolSet>) => Promise<any> | void;
   initialMessages?: UIMessage[];
 }
 
 export default function ChatInterface({ onToolCall, initialMessages }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
+  
   
   // Generate tool schemas (without execute functions) for the server
   function getToolSchemas(): Record<string, ToolSchema> {
@@ -55,6 +60,11 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
         // Server will recreate the Zod schema
       };
     });
+
+    // Add custom generate_image tool
+    schemas['generate_image'] = {
+      description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. When user mentions editing/modifying/changing images (like @Image_1, @images_1, {image_1}), you MUST use this tool with mode="edit". For new images, use mode="generate". This tool can reference images from mindcache using @images_X or {image_X} syntax. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).'
+    };
 
     console.log('📤 Sending tool schemas to server:', Object.keys(schemas));
     return schemas;
@@ -126,6 +136,26 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
         return;
       }
 
+      // Handle generate_image tool
+      if (toolName === 'generate_image') {
+        console.log('🖼️ Handling generate_image tool call');
+        
+        // Notify parent component and get result
+        if (onToolCall) {
+          const result = await onToolCall(typedToolCall);
+          
+          // Add tool result
+          addToolResult({
+            tool: toolName,
+            toolCallId: typedToolCall.toolCallId,
+            output: result
+          });
+        } else {
+          console.warn('No onToolCall handler for generate_image');
+        }
+        return;
+      }
+
       // Handle other potential tools
       console.warn('Unknown tool:', toolName);
     }
@@ -169,6 +199,10 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
                 {message.parts?.map((part: MessagePart, index: number) => {
                   if (part.type === 'text') {
                     return <span key={index} className="break-words">{part.text}</span>;
+                  }
+                  if (part.type === 'file') {
+                    // Display an image icon, and the name of the image
+                    return <div key={index} className="text-green-500 text-sm break-words">📷 {part.filename}</div>;
                   }
                   if (part.type === 'tool-call') {
                     const toolPart = part as MessagePart & { tool?: string; toolName?: string };
@@ -225,7 +259,51 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
         onSubmit={e => {
           e.preventDefault();
           if (input.trim() && status === 'ready') {
-            sendMessage({ text: input });
+            // Get visible images from STM using the core library method
+            const imageParts = mindcacheRef.current.getVisibleImages();
+            
+            // Create message with text and image parts
+            const messageParts = [
+              { type: 'text' as const, text: input },
+              ...imageParts
+            ];
+
+            // 🐛 DEBUG: Log the complete UIMessage structure
+            console.log('🔍 DEBUG: Sending UIMessage:', {
+              role: 'user',
+              parts: messageParts,
+              totalParts: messageParts.length,
+              textParts: messageParts.filter(p => p.type === 'text').length,
+              imageParts: messageParts.filter(p => p.type === 'file').length
+            });
+
+            // 🐛 DEBUG: Log image details
+            imageParts.forEach((part, index) => {
+              const dataUrlSize = part.url.length;
+              const base64Size = part.url.split(',')[1]?.length || 0;
+              const estimatedKB = Math.round(base64Size * 0.75 / 1024); // Base64 to bytes conversion
+              
+              console.log(`🖼️ DEBUG: Image ${index + 1} (${part.filename}):`, {
+                mediaType: part.mediaType,
+                dataUrlLength: dataUrlSize,
+                base64Length: base64Size,
+                estimatedSizeKB: estimatedKB,
+                urlPreview: part.url.substring(0, 100) + '...'
+              });
+            });
+
+            // 🐛 DEBUG: Calculate total message size
+            const totalMessageSize = JSON.stringify(messageParts).length;
+            console.log('📊 DEBUG: Total message size:', {
+              totalCharacters: totalMessageSize,
+              estimatedKB: Math.round(totalMessageSize / 1024),
+              estimatedTokens: Math.round(totalMessageSize / 4) // Rough token estimation
+            });
+            
+            sendMessage({
+              role: 'user',
+              parts: messageParts as any // Type assertion needed for AI SDK compatibility
+            });
             setInput('');
           }
         }}

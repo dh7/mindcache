@@ -76,7 +76,8 @@ describe('MindCache Tooling', () => {
       
       const result = await editableTool.execute({ value: 'new_value' });
       
-      expect(result.result).toContain('Successfully wrote "new_value" to editable');
+      // Test the specialized success message for text type
+      expect(result.result).toBe('Successfully wrote "new_value" to editable');
       expect(result.key).toBe('editable');
       expect(result.value).toBe('new_value');
       expect(cache.get_value('editable')).toBe('new_value');

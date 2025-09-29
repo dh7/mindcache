@@ -347,15 +347,15 @@ describe('MindCache', () => {
       const testData = {
         name: {
           value: 'Bob',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         age: {
           value: 25,
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         settings: {
           value: { notifications: true },
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         }
       };
       
@@ -379,11 +379,11 @@ describe('MindCache', () => {
       cache.deserialize({
         existing: {
           value: 'new',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         newKey: {
           value: 'newValue',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         }
       });
       
@@ -424,15 +424,15 @@ describe('MindCache', () => {
       const testData = {
         name: {
           value: 'David',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         active: {
           value: true,
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         metadata: {
           value: { version: 1 },
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false }
+          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         }
       };
       
