@@ -251,9 +251,9 @@ class MindCache {
     }
 
     this.set_base64(key, base64Data, contentType, 'image', attributes);
-    
+
     // Explicitly ensure the type is set to 'image' after setting the value
-    this.set_attributes(key, { 
+    this.set_attributes(key, {
       type: 'image',
       contentType: contentType
     });
