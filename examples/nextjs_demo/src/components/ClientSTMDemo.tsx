@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
+import Workflows from './Workflows';
 
 // Import official types from AI SDK
 import type { TypedToolCall, ToolSet } from 'ai';
@@ -12,6 +13,10 @@ export default function ClientSTMDemo() {
   const mindcacheRef = useRef(mindcache);
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
   const [isResizing, setIsResizing] = useState(false);
+  
+  // Workflow state
+  const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
+  const [chatStatus, setChatStatus] = useState<string>('ready');
 
 
   // Generate image tool function with pre-resolved images
@@ -205,6 +210,23 @@ export default function ClientSTMDemo() {
     }
   };
 
+  // Workflow handlers
+  const handleSendPrompt = (prompt: string) => {
+    setWorkflowPrompt(prompt);
+  };
+
+  const handleWorkflowPromptSent = () => {
+    setWorkflowPrompt(''); // Clear the prompt after sending
+  };
+
+  const handleExecutionComplete = () => {
+    // Workflow execution complete
+  };
+
+  const handleStatusChange = (status: string) => {
+    setChatStatus(status);
+  };
+
   // Handle mouse events for resizing
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsResizing(true);
@@ -255,7 +277,18 @@ export default function ClientSTMDemo() {
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <ChatInterface onToolCall={handleToolCall} initialMessages={initialMessages} />
+        <Workflows 
+          onSendPrompt={handleSendPrompt}
+          isExecuting={chatStatus !== 'ready'}
+          onExecutionComplete={handleExecutionComplete}
+        />
+        <ChatInterface 
+          onToolCall={handleToolCall} 
+          initialMessages={initialMessages}
+          workflowPrompt={workflowPrompt}
+          onWorkflowPromptSent={handleWorkflowPromptSent}
+          onStatusChange={handleStatusChange}
+        />
       </div>
       
       {/* Resizer - invisible but functional */}

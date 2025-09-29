@@ -2,7 +2,7 @@
 
 import { useChat, UIMessage } from '@ai-sdk/react';
 import { lastAssistantMessageIsCompleteWithToolCalls, DefaultChatTransport } from 'ai';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
 // Import official types from AI SDK
@@ -40,9 +40,12 @@ interface WebSearchSource {
 interface ChatInterfaceProps {
   onToolCall?: (toolCall: TypedToolCall<ToolSet>) => Promise<any> | void;
   initialMessages?: UIMessage[];
+  workflowPrompt?: string;
+  onWorkflowPromptSent?: () => void;
+  onStatusChange?: (status: string) => void;
 }
 
-export default function ChatInterface({ onToolCall, initialMessages }: ChatInterfaceProps) {
+export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   
@@ -165,6 +168,36 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
   
   // Track loading state based on status
   const isLoading = status !== 'ready';
+
+  // Notify parent of status changes
+  useEffect(() => {
+    if (onStatusChange) {
+      onStatusChange(status);
+    }
+  }, [status, onStatusChange]);
+
+  // Handle workflow prompts
+  useEffect(() => {
+    if (workflowPrompt && status === 'ready') {
+      // Send the workflow prompt
+      const imageParts = mindcacheRef.current.getVisibleImages();
+      
+      const messageParts = [
+        { type: 'text' as const, text: workflowPrompt },
+        ...imageParts
+      ];
+
+      sendMessage({
+        role: 'user',
+        parts: messageParts as any
+      });
+      
+      // Immediately notify that the prompt was sent to clear the workflowPrompt
+      if (onWorkflowPromptSent) {
+        onWorkflowPromptSent();
+      }
+    }
+  }, [workflowPrompt, status, sendMessage, onWorkflowPromptSent]);
 
   // Helper function to render message with citations
   const renderMessageContent = (message: Message) => {
