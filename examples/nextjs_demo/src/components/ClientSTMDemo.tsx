@@ -13,51 +13,6 @@ export default function ClientSTMDemo() {
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
   const [isResizing, setIsResizing] = useState(false);
 
-  // Function to parse image references from prompt
-  const parseImageReferences = (prompt: string): { images: string[], cleanPrompt: string } => {
-    const imageRefs: string[] = [];
-    let cleanPrompt = prompt;
-
-    // Match @Image_X, @images_X, {Image_X}, {image_X} patterns (case insensitive)
-    const patterns = [
-      /@images?_(\w+)/gi, 
-      /\{images?_(\w+)\}/gi,
-      /@Image_(\w+)/gi,
-      /\{Image_(\w+)\}/gi
-    ];
-    
-    patterns.forEach(pattern => {
-      let match;
-      while ((match = pattern.exec(prompt)) !== null) {
-        // Try both lowercase and original case for the key
-        const possibleKeys = [
-          `Image_${match[1]}`, // Try exact match first (Image_1)
-          `images_${match[1]}`, // Try lowercase plural
-          `image_${match[1]}`,  // Try lowercase singular
-          match[1] // Just the number/identifier
-        ];
-        
-        let foundImage = false;
-        for (const imageKey of possibleKeys) {
-          const base64Data = mindcacheRef.current.get_base64(imageKey);
-          if (base64Data) {
-            imageRefs.push(base64Data);
-            // Remove the reference from the prompt
-            cleanPrompt = cleanPrompt.replace(match[0], '').trim();
-            foundImage = true;
-            console.log(`🖼️ Found image reference: ${match[0]} -> ${imageKey}`);
-            break;
-          }
-        }
-        
-        if (!foundImage) {
-          console.warn(`⚠️ Image reference not found: ${match[0]} (tried keys: ${possibleKeys.join(', ')})`);
-        }
-      }
-    });
-
-    return { images: imageRefs, cleanPrompt };
-  };
 
   // Generate image tool function with pre-resolved images
   const generateImageWithImages = async (prompt: string, mode: 'edit' | 'generate' = 'generate', images: string[] = [], imageName?: string) => {
