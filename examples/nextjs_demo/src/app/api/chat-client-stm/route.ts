@@ -25,32 +25,34 @@ export const POST = async (req: NextRequest) => {
   // Convert client tool schemas to server tool definitions (schema only, no execute)
   const serverTools: Record<string, unknown> = {};
   
+  // Add generate_image tool directly on server
+  serverTools['generate_image'] = tool({
+    description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. If the prompt references existing images (like @Image_1, @images_1, {image_1}), the tool will automatically edit those images. Otherwise, it will generate a new image. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).',
+    inputSchema: z.object({
+      prompt: z.string().describe('The prompt for image generation or editing. Can include image references like @images_1 or {image_1}'),
+      imageName: z.string().optional().describe('Optional name for the generated/edited image to store in the STM (Short Term Memory)')
+    }),
+    // NO execute function - this forces client-side execution via onToolCall
+  });
+  
   if (toolSchemas && typeof toolSchemas === 'object') {
     console.log('🔧 Processing tool schemas:', Object.keys(toolSchemas));
     Object.entries(toolSchemas).forEach(([toolName, schema]: [string, { description: string }]) => {
+      // Skip generate_image since it's now defined directly above
       if (toolName === 'generate_image') {
-        console.log('🖼️ Setting up generate_image tool');
-        // Special schema for generate_image tool
-        serverTools[toolName] = tool({
-          description: schema.description,
-          inputSchema: z.object({
-            prompt: z.string().describe('The prompt for image generation or editing. Can include image references like @images_1 or {image_1}'),
-            mode: z.enum(['generate', 'edit']).optional().describe('Mode: "generate" for new images, "edit" to modify existing images'),
-            imageName: z.string().optional().describe('Optional name for the generated/edited image to store in the STM (Short Term Memory)')
-          }),
-          // NO execute function - this forces client-side execution via onToolCall
-        });
-      } else {
-        console.log(`📝 Setting up write tool: ${toolName}`);
-        // Default schema for write_ tools
-        serverTools[toolName] = tool({
-          description: schema.description,
-          inputSchema: z.object({
-            value: z.string().describe(`The value to write to ${toolName.replace('write_', '')}`)
-          }),
-          // NO execute function - this forces client-side execution via onToolCall
-        });
+        console.log('🖼️ Skipping generate_image - defined directly on server');
+        return;
       }
+      
+      console.log(`📝 Setting up write tool: ${toolName}`);
+      // Default schema for write_ tools
+      serverTools[toolName] = tool({
+        description: schema.description,
+        inputSchema: z.object({
+          value: z.string().describe(`The value to write to ${toolName.replace('write_', '')}`)
+        }),
+        // NO execute function - this forces client-side execution via onToolCall
+      });
     });
   }
 

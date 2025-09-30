@@ -12,12 +12,14 @@ export const POST = async (req: NextRequest) => {
       seed = -1, 
       promptUpsampling = false, 
       safetyTolerance = 2,
-      aspectRatio = "1:1",
-      mode = "edit" // "edit" or "generate"
+      aspectRatio = "1:1"
     } = await req.json();
     
+    // Check if we have images to determine behavior
+    const hasImages = imageBase64 || (images && images.length > 0);
+    
     console.log('📝 Request params:', { 
-      mode, 
+      hasImages,
       prompt: prompt?.substring(0, 100) + '...', 
       hasImageBase64: !!imageBase64,
       imagesCount: images?.length || 0,
@@ -32,13 +34,6 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // For edit mode, either imageBase64 or images array is required
-    if (mode === "edit" && !imageBase64 && (!images || images.length === 0)) {
-      return NextResponse.json(
-        { error: 'Missing required field for edit mode: imageBase64 or images array' },
-        { status: 400 }
-      );
-    }
 
     const apiKey = process.env.FIREWORKS_API_KEY;
     if (!apiKey) {
@@ -48,14 +43,14 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // Prepare request body based on mode
+    // Prepare request body
     const requestBody: any = {
       prompt,
       seed,
     };
 
-    if (mode === "edit") {
-      // Image editing mode
+    // Add images if provided
+    if (hasImages) {
       if (images && images.length > 0) {
         // Multiple images - send as array
         requestBody.input_image = images.map((img: string) => 
@@ -70,7 +65,7 @@ export const POST = async (req: NextRequest) => {
       requestBody.prompt_upsampling = promptUpsampling;
       requestBody.safety_tolerance = safetyTolerance;
     } else {
-      // Image generation mode
+      // No images provided - generation mode
       requestBody.aspect_ratio = aspectRatio;
     }
 
@@ -87,7 +82,7 @@ export const POST = async (req: NextRequest) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": mode === "generate" ? "application/json" : "image/jpeg",
+          "Accept": hasImages ? "image/jpeg" : "application/json",
           "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify(requestBody),
@@ -195,7 +190,7 @@ export const POST = async (req: NextRequest) => {
                 'Content-Type': 'image/jpeg',
                 'Content-Length': imageBuffer.byteLength.toString(),
                 'X-Request-ID': result.request_id,
-                'X-Mode': mode,
+                'X-Has-Images': hasImages.toString(),
                 'X-Input-Count': (images?.length || (imageBase64 ? 1 : 0)).toString()
               }
             });

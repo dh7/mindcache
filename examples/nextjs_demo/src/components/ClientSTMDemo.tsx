@@ -20,8 +20,11 @@ export default function ClientSTMDemo() {
 
 
   // Generate image tool function with pre-resolved images
-  const generateImageWithImages = async (prompt: string, mode: 'edit' | 'generate' = 'generate', images: string[] = [], imageName?: string) => {
+  const generateImageWithImages = async (prompt: string, images: string[] = [], imageName?: string) => {
     try {
+      // Auto-detect mode based on whether images are provided
+      const mode = images.length > 0 ? 'edit' : 'generate';
+      
       console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length, imageName });
       
       // Use provided images instead of parsing prompt
@@ -127,7 +130,7 @@ export default function ClientSTMDemo() {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to ${mode} image: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   };
@@ -179,19 +182,23 @@ export default function ClientSTMDemo() {
     
     // Handle generate_image tool calls
     if (toolCall.toolName === 'generate_image') {
-      const { prompt, mode, imageName } = toolCall.input as { prompt: string; mode?: 'edit' | 'generate'; imageName?: string };
+      const { prompt, imageName } = toolCall.input as { prompt: string; imageName?: string };
       
-      // For edit mode, automatically include all visible images from mindcache
-      // since the model often removes image references from the prompt
+      // Check if prompt contains image references or if there are visible images in mindcache
+      const hasImageReferences = /@\w*images?_?\d*|\{images?_?\d*\}/i.test(prompt);
+      
+      // Get all visible images from mindcache
+      const allKeys = mindcacheRef.current.keys();
+      const imageKeys = allKeys.filter(key => {
+        const attributes = mindcacheRef.current.get_attributes(key);
+        return attributes?.type === 'image' && attributes?.visible;
+      });
+      
+      // Automatically determine mode: edit if there are image references or visible images, otherwise generate
+      const mode = hasImageReferences || imageKeys.length > 0 ? 'edit' : 'generate';
+      
       let imagesToInclude: string[] = [];
       if (mode === 'edit') {
-        // Get all visible images from mindcache
-        const allKeys = mindcacheRef.current.keys();
-        const imageKeys = allKeys.filter(key => {
-          const attributes = mindcacheRef.current.get_attributes(key);
-          return attributes?.type === 'image' && attributes?.visible;
-        });
-        
         console.log('🖼️ Found image keys for edit mode:', imageKeys);
         
         // Get base64 data for all image keys
@@ -204,7 +211,9 @@ export default function ClientSTMDemo() {
         });
       }
       
-      const result = await generateImageWithImages(prompt, mode, imagesToInclude, imageName);
+      console.log(`🎯 Auto-detected mode: ${mode} (hasImageReferences: ${hasImageReferences}, visibleImages: ${imageKeys.length})`);
+      
+      const result = await generateImageWithImages(prompt, imagesToInclude, imageName);
       console.log('🖼️ Image generation result:', result);
       return result;
     }

@@ -64,10 +64,6 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       };
     });
 
-    // Add custom generate_image tool
-    schemas['generate_image'] = {
-      description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. When user mentions editing/modifying/changing images (like @Image_1, @images_1, {image_1}), you MUST use this tool with mode="edit". For new images, use mode="generate". This tool can reference images from mindcache using @images_X or {image_X} syntax. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).'
-    };
 
     console.log('📤 Sending tool schemas to server:', Object.keys(schemas));
     return schemas;
