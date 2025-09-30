@@ -27,10 +27,20 @@ export const POST = async (req: NextRequest) => {
   
   // Add generate_image tool directly on server
   serverTools['generate_image'] = tool({
-    description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. If the prompt references existing images (like @Image_1, @images_1, {image_1}), the tool will automatically edit those images. Otherwise, it will generate a new image. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).',
+    description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. Only includes existing images when explicitly referenced with @image_name syntax. Without explicit references, generates completely new images. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).',
     inputSchema: z.object({
-      prompt: z.string().describe('The prompt for image generation or editing. Can include image references like @images_1 or {image_1}'),
+      prompt: z.string().describe('The prompt for image generation or editing. Use @image_name to reference specific images for editing (e.g., "Edit @my_image to be brighter"). Without explicit references, generates new images.'),
       imageName: z.string().optional().describe('Optional name for the generated/edited image to store in the STM (Short Term Memory)')
+    }),
+    // NO execute function - this forces client-side execution via onToolCall
+  });
+
+  // Add analyze_image tool directly on server
+  serverTools['analyze_image'] = tool({
+    description: 'Analyze specific images stored in STM (Short Term Memory) using AI vision. REQUIRES explicit @image_name references in the prompt - will not analyze visible images automatically. The analysis result will be stored back in STM for future reference.',
+    inputSchema: z.object({
+      prompt: z.string().describe('The analysis prompt. MUST include @image_name to reference specific images from STM (e.g., "Analyze @generated_image_1 and describe the colors"). Will fail if no explicit image references are provided.'),
+      analysisName: z.string().optional().describe('Optional name for storing the analysis result in STM (defaults to analysis_timestamp)')
     }),
     // NO execute function - this forces client-side execution via onToolCall
   });
@@ -60,11 +70,13 @@ export const POST = async (req: NextRequest) => {
   const baseInstructions = `Here are some facts and instructions for you to follow.
 
 IMPORTANT IMAGE HANDLING RULES:
-- When users ask to edit, modify, change, or update images (referenced as @Image_1, @images_1, {image_1}, etc.), you MUST use the generate_image tool with mode="edit"
-- When users ask to create new images, use the generate_image tool with mode="generate"
-- NEVER say you cannot edit images - you have the generate_image tool available
-- The generate_image tool can access images from mindcache using the @images_X or {image_X} syntax
-- Always use the generate_image tool for ANY image-related requests`;
+- When users ask to edit, modify, change, or update images, use the generate_image tool with explicit @image_name references (e.g., "Edit @my_image")
+- When users ask to create new images, use the generate_image tool without any @image_name references
+- When users ask to analyze, describe, or examine images, use the analyze_image tool with explicit @image_name references
+- BOTH tools only include images when explicitly referenced with @image_name - they never auto-include visible images
+- The analyze_image tool REQUIRES explicit @image_name references and will fail without them
+- NEVER say you cannot edit or analyze images - you have both generate_image and analyze_image tools available
+- Always use explicit @image_name references when working with specific images from STM`;
 
   const finalSystem = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
     ? `${baseInstructions}\n\n${systemPrompt}`

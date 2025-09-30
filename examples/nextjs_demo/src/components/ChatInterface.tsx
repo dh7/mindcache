@@ -155,6 +155,26 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
         return;
       }
 
+      // Handle analyze_image tool
+      if (toolName === 'analyze_image') {
+        console.log('🔍 Handling analyze_image tool call');
+        
+        // Notify parent component and get result
+        if (onToolCall) {
+          const result = await onToolCall(typedToolCall);
+          
+          // Add tool result
+          addToolResult({
+            tool: toolName,
+            toolCallId: typedToolCall.toolCallId,
+            output: result
+          });
+        } else {
+          console.warn('No onToolCall handler for analyze_image');
+        }
+        return;
+      }
+
       // Handle other potential tools
       console.warn('Unknown tool:', toolName);
     }
@@ -175,17 +195,10 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   // Handle workflow prompts
   useEffect(() => {
     if (workflowPrompt && status === 'ready') {
-      // Send the workflow prompt
-      const imageParts = mindcacheRef.current.getVisibleImages();
-      
-      const messageParts = [
-        { type: 'text' as const, text: workflowPrompt },
-        ...imageParts
-      ];
-
+      // Send the workflow prompt (without automatic image attachment)
       sendMessage({
         role: 'user',
-        parts: messageParts as any
+        parts: [{ type: 'text' as const, text: workflowPrompt }]
       });
       
       // Immediately notify that the prompt was sent to clear the workflowPrompt
@@ -288,50 +301,10 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
         onSubmit={e => {
           e.preventDefault();
           if (input.trim() && status === 'ready') {
-            // Get visible images from STM using the core library method
-            const imageParts = mindcacheRef.current.getVisibleImages();
-            
-            // Create message with text and image parts
-            const messageParts = [
-              { type: 'text' as const, text: input },
-              ...imageParts
-            ];
-
-            // 🐛 DEBUG: Log the complete UIMessage structure
-            console.log('🔍 DEBUG: Sending UIMessage:', {
-              role: 'user',
-              parts: messageParts,
-              totalParts: messageParts.length,
-              textParts: messageParts.filter(p => p.type === 'text').length,
-              imageParts: messageParts.filter(p => p.type === 'file').length
-            });
-
-            // 🐛 DEBUG: Log image details
-            imageParts.forEach((part, index) => {
-              const dataUrlSize = part.url.length;
-              const base64Size = part.url.split(',')[1]?.length || 0;
-              const estimatedKB = Math.round(base64Size * 0.75 / 1024); // Base64 to bytes conversion
-              
-              console.log(`🖼️ DEBUG: Image ${index + 1} (${part.filename}):`, {
-                mediaType: part.mediaType,
-                dataUrlLength: dataUrlSize,
-                base64Length: base64Size,
-                estimatedSizeKB: estimatedKB,
-                urlPreview: part.url.substring(0, 100) + '...'
-              });
-            });
-
-            // 🐛 DEBUG: Calculate total message size
-            const totalMessageSize = JSON.stringify(messageParts).length;
-            console.log('📊 DEBUG: Total message size:', {
-              totalCharacters: totalMessageSize,
-              estimatedKB: Math.round(totalMessageSize / 1024),
-              estimatedTokens: Math.round(totalMessageSize / 4) // Rough token estimation
-            });
-            
+            // Send message with only text (no automatic image attachment)
             sendMessage({
               role: 'user',
-              parts: messageParts as any // Type assertion needed for AI SDK compatibility
+              parts: [{ type: 'text' as const, text: input }]
             });
             setInput('');
           }
