@@ -398,23 +398,24 @@ export default function ClientSTMDemo() {
 
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden resize-container">
-      {/* Left Panel - ChatInterface */}
+      {/* Left Panel - ChatInterface with Workflows in between */}
       <div 
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <Workflows 
-          onSendPrompt={handleSendPrompt}
-          isExecuting={chatStatus !== 'ready'}
-          onExecutionComplete={handleExecutionComplete}
-        />
         <ChatInterface 
           onToolCall={handleToolCall} 
           initialMessages={initialMessages}
           workflowPrompt={workflowPrompt}
           onWorkflowPromptSent={handleWorkflowPromptSent}
           onStatusChange={handleStatusChange}
-        />
+        >
+          <Workflows 
+            onSendPrompt={handleSendPrompt}
+            isExecuting={chatStatus !== 'ready'}
+            onExecutionComplete={handleExecutionComplete}
+          />
+        </ChatInterface>
       </div>
       
       {/* Resizer - invisible but functional */}
