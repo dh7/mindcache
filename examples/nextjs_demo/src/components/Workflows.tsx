@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { mindcache } from 'mindcache';
 
 interface WorkflowsProps {
   onSendPrompt: (prompt: string) => void;
@@ -9,7 +10,8 @@ interface WorkflowsProps {
 }
 
 export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete }: WorkflowsProps) {
-  const [workflowText, setWorkflowText] = useState('1. Analyze the current situation\n2. Provide recommendations\n3. Summarize the key points');
+  const mindcacheRef = useRef(mindcache);
+  const [workflowText, setWorkflowText] = useState('1. Analyze the current situation for {name}\n2. Consider their preferences: {preferences}\n3. Review notes: {notes}\n4. Provide personalized recommendations\n5. Summarize key points for today ({$date})');
   const [currentStep, setCurrentStep] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -54,9 +56,11 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       return;
     }
 
-    const prompt = steps[stepIndex];
+    const rawPrompt = steps[stepIndex];
+    // Process the prompt through injectSTM to replace {key} placeholders with STM values
+    const processedPrompt = mindcacheRef.current.injectSTM(rawPrompt);
     setCurrentStep(stepIndex);
-    onSendPrompt(prompt);
+    onSendPrompt(processedPrompt);
   }, [steps, onExecutionComplete, onSendPrompt]);
 
   // Move to next step
@@ -146,7 +150,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
             value={workflowText}
             onChange={(e) => setWorkflowText(e.target.value)}
             disabled={isRunning}
-            placeholder="Enter your workflow steps:&#10;1. First step&#10;2. Second step&#10;3. Third step"
+            placeholder="Enter your workflow steps (use {name}, {preferences}, {notes}, {$date}, {$time}):&#10;1. Analyze situation for {name}&#10;2. Consider {preferences}&#10;3. Review {notes}&#10;4. Provide recommendations"
             className="w-full h-32 bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50 resize-vertical"
           />
           

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { mindcache } from 'mindcache';
 
 interface ChatInputProps {
   onSendMessage: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
@@ -8,6 +9,7 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
+  const mindcacheRef = useRef(mindcache);
   const [input, setInput] = useState('');
   
   // Track loading state based on status
@@ -18,10 +20,12 @@ export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
       onSubmit={e => {
         e.preventDefault();
         if (input.trim() && status === 'ready') {
-          // Send message with only text (no automatic image attachment)
+          // Process the input through injectSTM to replace {key} placeholders with STM values
+          const processedInput = mindcacheRef.current.injectSTM(input);
+          // Send message with processed text
           onSendMessage({
             role: 'user',
-            parts: [{ type: 'text' as const, text: input }]
+            parts: [{ type: 'text' as const, text: processedInput }]
           });
           setInput('');
         }
@@ -33,7 +37,7 @@ export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
         value={input}
         onChange={e => setInput(e.target.value)}
         disabled={isLoading}
-        placeholder={isLoading ? "AI is thinking..." : "Ask something..."}
+        placeholder={isLoading ? "AI is thinking..." : "Ask something... (use {name}, {preferences}, {notes}, {$date}, {$time})"}
       />
       <button 
         type="submit"
