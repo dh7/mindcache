@@ -297,6 +297,59 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     console.log('🗑️ STM cleared');
   };
 
+  // Export STM to markdown file
+  const exportSTM = () => {
+    try {
+      const markdown = mindcacheRef.current.toMarkdown();
+      const blob = new Blob([markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mindcache-export-${new Date().toISOString().split('T')[0]}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      console.log('✅ STM exported to markdown');
+    } catch (error) {
+      console.error('❌ Failed to export STM:', error);
+    }
+  };
+
+  // Import STM from markdown file
+  const importSTM = () => {
+    try {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.md,.markdown,text/markdown';
+      input.onchange = (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            try {
+              const markdown = event.target?.result as string;
+              mindcacheRef.current.fromMarkdown(markdown);
+              updateSTMState(); // Refresh UI and notify listeners
+              console.log('✅ STM imported from markdown');
+            } catch (error) {
+              console.error('❌ Failed to parse markdown:', error);
+              alert('Failed to import markdown file. Please check the file format.');
+            }
+          };
+          reader.onerror = () => {
+            console.error('❌ Failed to read file');
+            alert('Failed to read file.');
+          };
+          reader.readAsText(file);
+        }
+      };
+      input.click();
+    } catch (error) {
+      console.error('❌ Failed to import STM:', error);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col pl-1 min-h-0">
       {/* Terminal Commands - Fixed Header */}
@@ -339,9 +392,23 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
           >
             Clear
           </div>
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={exportSTM}
+            title="Export STM to markdown file"
+          >
+            Export
+          </div>
+          <div 
+            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
+            onClick={importSTM}
+            title="Import STM from markdown file"
+          >
+            Import
+          </div>
         </div>
         <div className="text-xs text-gray-500 mb-4">
-          Auto-loads on page refresh • Ctrl+S/L/K shortcuts
+          Auto-loads on page refresh • Ctrl+S/L/K shortcuts • Export/Import as markdown
         </div>
         <div className="border-b border-green-400"></div>
       </div>
