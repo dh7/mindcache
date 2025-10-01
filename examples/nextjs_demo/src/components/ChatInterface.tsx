@@ -79,7 +79,10 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       fetch: async (input, init) => {
         try {
           const originalBody = init?.body ? JSON.parse(init.body as string) : {};
-          const systemPrompt = mindcacheRef.current.get_system_prompt();
+          const systemPromptTagged = mindcacheRef.current.getTagged("SystemPrompt");
+          const systemPrompt = systemPromptTagged 
+            ? systemPromptTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
+            : mindcacheRef.current.get_system_prompt();
           const nextBody = { ...originalBody, toolSchemas: getToolSchemas(), systemPrompt };
           console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}), hasSystemPrompt: Boolean(systemPrompt) });
           return fetch(input, { ...init, body: JSON.stringify(nextBody) });

@@ -243,20 +243,27 @@ export default function ClientSTMDemo() {
     }
   };
   
-  // Define initial assistant message
-  const initialMessages = [
-    {
-      id: 'welcome-message',
-      role: 'assistant' as const,
-      parts: [
-        {
-          type: 'text' as const,
-          text: 'Hello! I\'m your AI assistant with access to your short-term memory. I can help you manage your preferences, notes, and other information. What would you like to do today?'
-        }
-      ],
-      createdAt: new Date()
-    }
-  ];
+  // Define initial assistant message using tagged content
+  const getInitialMessages = () => {
+    const assistantFirstMessage = mindcacheRef.current.getTagged("AssistantFirstMessage");
+    const messageText = assistantFirstMessage 
+      ? assistantFirstMessage.split(': ').slice(1).join(': ') // Extract value part after "key: "
+      : 'Hello!';
+    
+    return [
+      {
+        id: 'welcome-message',
+        role: 'assistant' as const,
+        parts: [
+          {
+            type: 'text' as const,
+            text: messageText
+          }
+        ],
+        createdAt: new Date()
+      }
+    ];
+  };
   
   // Initialize with auto-load and default keys
   useEffect(() => {
@@ -405,7 +412,7 @@ export default function ClientSTMDemo() {
       >
         <ChatInterface 
           onToolCall={handleToolCall} 
-          initialMessages={initialMessages}
+          initialMessages={getInitialMessages()}
           workflowPrompt={workflowPrompt}
           onWorkflowPromptSent={handleWorkflowPromptSent}
           onStatusChange={handleStatusChange}

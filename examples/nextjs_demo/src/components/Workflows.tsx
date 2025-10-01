@@ -11,11 +11,24 @@ interface WorkflowsProps {
 
 export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete }: WorkflowsProps) {
   const mindcacheRef = useRef(mindcache);
-  const [workflowText, setWorkflowText] = useState('1. Analyze the current situation for {{name}}\n2. Consider their preferences: {{preferences}}\n3. Review notes: {{notes}}\n4. Provide personalized recommendations\n5. Summarize key points for today ({{$date}})');
+  // Get workflow from tagged content or use default
+  const getWorkflowText = () => {
+    const workflowTagged = mindcacheRef.current.getTagged("Workflow");
+    return workflowTagged 
+      ? workflowTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
+      : '1. Say hello to the user';
+  };
+
+  const [workflowText, setWorkflowText] = useState(getWorkflowText());
   const [currentStep, setCurrentStep] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const executionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Update workflow text when component mounts or tagged content changes
+  useEffect(() => {
+    setWorkflowText(getWorkflowText());
+  }, []);
 
   // Parse workflow text into individual prompts
   const parseWorkflowSteps = (text: string): string[] => {
