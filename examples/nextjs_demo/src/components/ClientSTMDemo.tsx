@@ -14,10 +14,16 @@ export default function ClientSTMDemo() {
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
   const [isResizing, setIsResizing] = useState(false);
   const [stmLoaded, setStmLoaded] = useState(false); // Track STM loading state
+  const [stmVersion, setStmVersion] = useState(0); // Force refresh of getTagged values
   
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
   const [chatStatus, setChatStatus] = useState<string>('ready');
+
+  // Callback to force refresh of getTagged values
+  const handleSTMChange = useCallback(() => {
+    setStmVersion(v => v + 1);
+  }, []);
 
 
   // Analyze image tool function
@@ -448,18 +454,22 @@ export default function ClientSTMDemo() {
         className="flex flex-col min-h-0"
       >
         <ChatInterface 
+          key={`chat-${stmVersion}`}
           onToolCall={handleToolCall} 
           initialMessages={getInitialMessages()}
           workflowPrompt={workflowPrompt}
           onWorkflowPromptSent={handleWorkflowPromptSent}
           onStatusChange={handleStatusChange}
           stmLoaded={stmLoaded}
+          stmVersion={stmVersion}
         >
           <Workflows 
+            key={`workflow-${stmVersion}`}
             onSendPrompt={handleSendPrompt}
             isExecuting={chatStatus !== 'ready'}
             onExecutionComplete={handleExecutionComplete}
             stmLoaded={stmLoaded}
+            stmVersion={stmVersion}
           />
         </ChatInterface>
       </div>
@@ -478,7 +488,7 @@ export default function ClientSTMDemo() {
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMEditor />
+        <STMEditor onSTMChange={handleSTMChange} />
       </div>
     </div>
   );

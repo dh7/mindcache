@@ -47,9 +47,10 @@ interface ChatInterfaceProps {
   onStatusChange?: (status: string) => void;
   children?: React.ReactNode; // Allow children to be inserted between conversation and input
   stmLoaded?: boolean; // Track STM loading state
+  stmVersion?: number; // Track STM changes to refresh getTagged values
 }
 
-export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded }: ChatInterfaceProps) {
+export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded, stmVersion }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   

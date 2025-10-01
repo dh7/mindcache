@@ -8,9 +8,10 @@ interface WorkflowsProps {
   isExecuting: boolean;
   onExecutionComplete: () => void;
   stmLoaded?: boolean; // Track STM loading state
+  stmVersion?: number; // Track STM changes to refresh getTagged values
 }
 
-export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded }: WorkflowsProps) {
+export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion }: WorkflowsProps) {
   const mindcacheRef = useRef(mindcache);
   // Get workflow from tagged content or use default
   const getWorkflowText = () => {
@@ -40,7 +41,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       const newWorkflowText = getWorkflowText();
       setWorkflowText(newWorkflowText);
     }
-  }, [stmLoaded]);
+  }, [stmLoaded, stmVersion]);
 
   // Parse workflow text into individual prompts
   const parseWorkflowSteps = (text: string): string[] => {
