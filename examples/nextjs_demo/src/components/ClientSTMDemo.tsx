@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
+import Workflows from './Workflows';
 
 // Import official types from AI SDK
 import type { TypedToolCall, ToolSet } from 'ai';
@@ -12,11 +13,126 @@ export default function ClientSTMDemo() {
   const mindcacheRef = useRef(mindcache);
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
   const [isResizing, setIsResizing] = useState(false);
+  
+  // Workflow state
+  const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
+  const [chatStatus, setChatStatus] = useState<string>('ready');
 
+
+  // Analyze image tool function
+  const analyzeImageWithSTM = async (prompt: string, keyName?: string) => {
+    try {
+      console.log('🔍 Starting image analysis with STM integration');
+      
+      // Extract image references from prompt (@image_name, {image_name}, etc.)
+      const imageRefMatches = prompt.match(/@(\w+)|{(\w+)}/g);
+      const imageRefs = imageRefMatches?.map(ref => ref.replace(/[@{}]/g, '')) || [];
+      
+      console.log('📝 Found image references:', imageRefs);
+      
+      // Only analyze images with explicit references
+      let imagesToAnalyze: string[] = [];
+      if (imageRefs.length === 0) {
+        // NO EXPLICIT REFERENCES: Don't attach any images
+        console.log('🚫 No explicit image references found - no images will be analyzed');
+        return {
+          success: false,
+          error: 'No explicit image references found. Please use @image_name syntax to specify which image to analyze (e.g., "Analyze @my_image and describe what you see").'
+        };
+      } else {
+        // EXPLICIT REFERENCES: Get specific referenced images (ignore visibility)
+        console.log('🎯 Using explicit image references:', imageRefs);
+        imageRefs.forEach(ref => {
+          const base64Data = mindcacheRef.current.get_base64(ref);
+          if (base64Data) {
+            imagesToAnalyze.push(base64Data);
+            console.log(`✅ Found referenced image: ${ref}`);
+          } else {
+            console.warn(`❌ Referenced image not found: ${ref}`);
+          }
+        });
+      }
+      
+      if (imagesToAnalyze.length === 0) {
+        return {
+          success: false,
+          error: 'No images found to analyze. Make sure images are stored in STM and referenced correctly.'
+        };
+      }
+      
+      // Create FormData for the analysis API
+      const formData = new FormData();
+      
+      // Convert first base64 to blob for the API (for now, analyze first image)
+      const base64Data = imagesToAnalyze[0];
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+      
+      formData.append('image', blob, 'image.jpg');
+      formData.append('prompt', prompt);
+      
+      console.log('🚀 Calling image analysis API');
+      const response = await fetch('/api/image-analysis', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.success) {
+          // Store analysis result in STM
+          const timestamp = Date.now();
+          const analysisKey = keyName || `image_analysis_${timestamp}`;
+          
+          console.log('💾 Storing analysis in STM:', { analysisKey, analysis: result.data.analysis });
+          mindcacheRef.current.set_value(analysisKey, result.data.analysis, {
+            type: 'text',
+            visible: true
+          });
+          
+          return {
+            success: true,
+            analysisKey,
+            analysis: result.data.analysis,
+            confidence: result.data.confidence,
+            tags: result.data.tags,
+            summary: result.data.summary,
+            message: `Image analysis completed and stored as '${analysisKey}'`
+          };
+        } else {
+          return {
+            success: false,
+            error: result.error || 'Analysis failed'
+          };
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        return {
+          success: false,
+          error: errorData.error || `API error: ${response.status}`
+        };
+      }
+    } catch (error) {
+      console.error('❌ Image analysis error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  };
 
   // Generate image tool function with pre-resolved images
-  const generateImageWithImages = async (prompt: string, mode: 'edit' | 'generate' = 'generate', images: string[] = [], imageName?: string) => {
+  const generateImageWithImages = async (prompt: string, images: string[] = [], imageName?: string) => {
     try {
+      // Auto-detect mode based on whether images are provided
+      const mode = images.length > 0 ? 'edit' : 'generate';
+      
       console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length, imageName });
       
       // Use provided images instead of parsing prompt
@@ -122,7 +238,7 @@ export default function ClientSTMDemo() {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to ${mode} image: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   };
@@ -174,35 +290,67 @@ export default function ClientSTMDemo() {
     
     // Handle generate_image tool calls
     if (toolCall.toolName === 'generate_image') {
-      const { prompt, mode, imageName } = toolCall.input as { prompt: string; mode?: 'edit' | 'generate'; imageName?: string };
+      const { prompt, imageName } = toolCall.input as { prompt: string; imageName?: string };
       
-      // For edit mode, automatically include all visible images from mindcache
-      // since the model often removes image references from the prompt
+      // Extract explicit image references from prompt (@image_name, {image_name}, etc.)
+      const imageRefMatches = prompt.match(/@(\w+)|{(\w+)}/g);
+      const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/[@{}]/g, '')) || [];
+      
+      console.log('📝 Found explicit image references:', explicitImageRefs);
+      
       let imagesToInclude: string[] = [];
-      if (mode === 'edit') {
-        // Get all visible images from mindcache
-        const allKeys = mindcacheRef.current.keys();
-        const imageKeys = allKeys.filter(key => {
-          const attributes = mindcacheRef.current.get_attributes(key);
-          return attributes?.type === 'image' && attributes?.visible;
-        });
-        
-        console.log('🖼️ Found image keys for edit mode:', imageKeys);
-        
-        // Get base64 data for all image keys
-        imageKeys.forEach(key => {
-          const base64Data = mindcacheRef.current.get_base64(key);
+      
+      if (explicitImageRefs.length > 0) {
+        // EXPLICIT REFERENCES: Get specific referenced images (ignore visibility)
+        console.log('🎯 Using explicit image references:', explicitImageRefs);
+        explicitImageRefs.forEach(ref => {
+          const base64Data = mindcacheRef.current.get_base64(ref);
           if (base64Data) {
             imagesToInclude.push(base64Data);
-            console.log(`✅ Including image: ${key} (${base64Data.length} chars)`);
+            console.log(`✅ Found referenced image: ${ref}`);
+          } else {
+            console.warn(`❌ Referenced image not found: ${ref}`);
           }
         });
+      } else {
+        // NO EXPLICIT REFERENCES: Don't include any images (generate new image)
+        console.log('🚫 No explicit image references - will generate new image without input images');
       }
       
-      const result = await generateImageWithImages(prompt, mode, imagesToInclude, imageName);
+      console.log(`🎯 Images to include: ${imagesToInclude.length} (explicitRefs: ${explicitImageRefs.length})`);
+      
+      const result = await generateImageWithImages(prompt, imagesToInclude, imageName);
       console.log('🖼️ Image generation result:', result);
       return result;
     }
+
+    // Handle analyze_image tool calls
+    if (toolCall.toolName === 'analyze_image') {
+      const { prompt, analysisName } = toolCall.input as { prompt: string; analysisName?: string };
+      
+      console.log('🔍 Analyzing image with prompt:', prompt);
+      
+      const result = await analyzeImageWithSTM(prompt, analysisName);
+      console.log('🔍 Image analysis result:', result);
+      return result;
+    }
+  };
+
+  // Workflow handlers
+  const handleSendPrompt = (prompt: string) => {
+    setWorkflowPrompt(prompt);
+  };
+
+  const handleWorkflowPromptSent = () => {
+    setWorkflowPrompt(''); // Clear the prompt after sending
+  };
+
+  const handleExecutionComplete = () => {
+    // Workflow execution complete
+  };
+
+  const handleStatusChange = (status: string) => {
+    setChatStatus(status);
   };
 
   // Handle mouse events for resizing
@@ -250,12 +398,24 @@ export default function ClientSTMDemo() {
 
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden resize-container">
-      {/* Left Panel - ChatInterface */}
+      {/* Left Panel - ChatInterface with Workflows in between */}
       <div 
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <ChatInterface onToolCall={handleToolCall} initialMessages={initialMessages} />
+        <ChatInterface 
+          onToolCall={handleToolCall} 
+          initialMessages={initialMessages}
+          workflowPrompt={workflowPrompt}
+          onWorkflowPromptSent={handleWorkflowPromptSent}
+          onStatusChange={handleStatusChange}
+        >
+          <Workflows 
+            onSendPrompt={handleSendPrompt}
+            isExecuting={chatStatus !== 'ready'}
+            onExecutionComplete={handleExecutionComplete}
+          />
+        </ChatInterface>
       </div>
       
       {/* Resizer - invisible but functional */}

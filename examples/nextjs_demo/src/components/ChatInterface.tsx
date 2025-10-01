@@ -2,8 +2,10 @@
 
 import { useChat, UIMessage } from '@ai-sdk/react';
 import { lastAssistantMessageIsCompleteWithToolCalls, DefaultChatTransport } from 'ai';
-import { useState, useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
+import ChatConversation from './ChatConversation';
+import ChatInput from './ChatInput';
 
 // Import official types from AI SDK
 import type { TypedToolCall, ToolSet } from 'ai';
@@ -40,9 +42,13 @@ interface WebSearchSource {
 interface ChatInterfaceProps {
   onToolCall?: (toolCall: TypedToolCall<ToolSet>) => Promise<any> | void;
   initialMessages?: UIMessage[];
+  workflowPrompt?: string;
+  onWorkflowPromptSent?: () => void;
+  onStatusChange?: (status: string) => void;
+  children?: React.ReactNode; // Allow children to be inserted between conversation and input
 }
 
-export default function ChatInterface({ onToolCall, initialMessages }: ChatInterfaceProps) {
+export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   
@@ -61,10 +67,6 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
       };
     });
 
-    // Add custom generate_image tool
-    schemas['generate_image'] = {
-      description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. When user mentions editing/modifying/changing images (like @Image_1, @images_1, {image_1}), you MUST use this tool with mode="edit". For new images, use mode="generate". This tool can reference images from mindcache using @images_X or {image_X} syntax. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).'
-    };
 
     console.log('📤 Sending tool schemas to server:', Object.keys(schemas));
     return schemas;
@@ -156,175 +158,67 @@ export default function ChatInterface({ onToolCall, initialMessages }: ChatInter
         return;
       }
 
+      // Handle analyze_image tool
+      if (toolName === 'analyze_image') {
+        console.log('🔍 Handling analyze_image tool call');
+        
+        // Notify parent component and get result
+        if (onToolCall) {
+          const result = await onToolCall(typedToolCall);
+          
+          // Add tool result
+          addToolResult({
+            tool: toolName,
+            toolCallId: typedToolCall.toolCallId,
+            output: result
+          });
+        } else {
+          console.warn('No onToolCall handler for analyze_image');
+        }
+        return;
+      }
+
       // Handle other potential tools
       console.warn('Unknown tool:', toolName);
     }
   });
 
-  const [input, setInput] = useState('');
-  
-  // Track loading state based on status
-  const isLoading = status !== 'ready';
 
-  // Helper function to render message with citations
-  const renderMessageContent = (message: Message) => {
-    const parts = message.parts || [];
-    let content = '';
-    let sources: WebSearchSource[] = [];
+  // Notify parent of status changes
+  useEffect(() => {
+    if (onStatusChange) {
+      onStatusChange(status);
+    }
+  }, [status, onStatusChange]);
 
-    // Extract text content and sources
-    parts.forEach((part: MessagePart) => {
-      if (part.type === 'text') {
-        content += part.text || '';
-      } else if (part.type === 'tool-result' && part.toolName === 'web_search') {
-        const result = part.result as { sources?: WebSearchSource[] };
-        if (result?.sources) {
-          sources = [...sources, ...result.sources];
-        }
+  // Handle workflow prompts
+  useEffect(() => {
+    if (workflowPrompt && status === 'ready') {
+      // Send the workflow prompt (without automatic image attachment)
+      sendMessage({
+        role: 'user',
+        parts: [{ type: 'text' as const, text: workflowPrompt }]
+      });
+      
+      // Immediately notify that the prompt was sent to clear the workflowPrompt
+      if (onWorkflowPromptSent) {
+        onWorkflowPromptSent();
       }
-    });
+    }
+  }, [workflowPrompt, status, sendMessage, onWorkflowPromptSent]);
 
-    return { content, sources };
-  };
 
   return (
     <div className="flex-1 flex flex-col pr-1 min-h-0">
-      <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2 min-h-0">
-        {messages.map((message) => {
-          const { sources } = renderMessageContent(message);
-          return (
-            <div key={message.id} className="whitespace-pre-wrap mb-4">
-              <div className={`ml-2 ${message.role === 'user' ? 'text-green-400' : 'text-gray-400'}`}>
-                {message.role === 'user' ? '< ' : '> '}
-                {message.parts?.map((part: MessagePart, index: number) => {
-                  if (part.type === 'text') {
-                    return <span key={index} className="break-words">{part.text}</span>;
-                  }
-                  if (part.type === 'file') {
-                    // Display an image icon, and the name of the image
-                    return <div key={index} className="text-green-500 text-sm break-words">📷 {part.filename}</div>;
-                  }
-                  if (part.type === 'tool-call') {
-                    const toolPart = part as MessagePart & { tool?: string; toolName?: string };
-                    const name = toolPart.tool ?? toolPart.toolName;
-                    if (name === 'web_search') {
-                      return <div key={index} className="text-blue-400 text-sm break-words">🔍 Searching...</div>;
-                    }
-                    return <div key={index} className="text-yellow-400 text-sm break-words">🔧 {name}</div>;
-                  }
-                  if (part.type === 'tool-result') {
-                    const resultPart = part as MessagePart & { toolName?: string; output?: unknown; result?: unknown };
-                    const name = resultPart.toolName;
-                    if (name === 'web_search') {
-                      return null; // Web search results are handled via sources
-                    }
-                    const result = resultPart.output ?? resultPart.result;
-                    const resultText = JSON.stringify(result);
-                    return <div key={index} className="text-green-500 text-sm break-words">✅ {resultText.length > 50 ? resultText.substring(0, 50) + '...' : resultText}</div>;
-                  }
-                  return null;
-                })}
-                
-                {/* Display citations if available */}
-                {sources.length > 0 && (
-                  <div className="mt-3 pt-2 border-t border-green-600">
-                    <div className="text-green-300 text-sm font-semibold mb-2">📚 Sources:</div>
-                    {sources.map((source: WebSearchSource, index: number) => (
-                      <div key={index} className="text-green-500 text-xs mb-2">
-                        <span className="text-green-300">[{index + 1}]</span>{' '}
-                        <a 
-                          href={source.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="underline hover:text-green-300 transition-colors"
-                        >
-                          {source.title || source.url}
-                        </a>
-                        {source.snippet && (
-                          <div className="text-green-600 ml-4 italic mt-1">
-                            &quot;{source.snippet.length > 100 ? source.snippet.substring(0, 100) + '...' : source.snippet}&quot;
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          if (input.trim() && status === 'ready') {
-            // Get visible images from STM using the core library method
-            const imageParts = mindcacheRef.current.getVisibleImages();
-            
-            // Create message with text and image parts
-            const messageParts = [
-              { type: 'text' as const, text: input },
-              ...imageParts
-            ];
-
-            // 🐛 DEBUG: Log the complete UIMessage structure
-            console.log('🔍 DEBUG: Sending UIMessage:', {
-              role: 'user',
-              parts: messageParts,
-              totalParts: messageParts.length,
-              textParts: messageParts.filter(p => p.type === 'text').length,
-              imageParts: messageParts.filter(p => p.type === 'file').length
-            });
-
-            // 🐛 DEBUG: Log image details
-            imageParts.forEach((part, index) => {
-              const dataUrlSize = part.url.length;
-              const base64Size = part.url.split(',')[1]?.length || 0;
-              const estimatedKB = Math.round(base64Size * 0.75 / 1024); // Base64 to bytes conversion
-              
-              console.log(`🖼️ DEBUG: Image ${index + 1} (${part.filename}):`, {
-                mediaType: part.mediaType,
-                dataUrlLength: dataUrlSize,
-                base64Length: base64Size,
-                estimatedSizeKB: estimatedKB,
-                urlPreview: part.url.substring(0, 100) + '...'
-              });
-            });
-
-            // 🐛 DEBUG: Calculate total message size
-            const totalMessageSize = JSON.stringify(messageParts).length;
-            console.log('📊 DEBUG: Total message size:', {
-              totalCharacters: totalMessageSize,
-              estimatedKB: Math.round(totalMessageSize / 1024),
-              estimatedTokens: Math.round(totalMessageSize / 4) // Rough token estimation
-            });
-            
-            sendMessage({
-              role: 'user',
-              parts: messageParts as any // Type assertion needed for AI SDK compatibility
-            });
-            setInput('');
-          }
-        }}
-        className="flex gap-2 min-w-0"
-      >
-        <input
-          className="flex-1 min-w-0 bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          disabled={isLoading}
-          placeholder={isLoading ? "AI is thinking..." : "Ask something..."}
-        />
-        <button 
-          type="submit"
-          disabled={status !== 'ready' || !input.trim()}
-          className="bg-green-400 text-black font-mono px-2 py-2 text-sm rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-        >
-          {isLoading ? '...' : 'Send'}
-        </button>
-      </form>
+      <ChatConversation messages={messages} />
       
+      {/* Allow children to be inserted between conversation and input */}
+      {children}
+      
+      <ChatInput 
+        onSendMessage={sendMessage}
+        status={status}
+      />
     </div>
   );
 }

@@ -242,20 +242,20 @@ describe('MindCache', () => {
       cache.set('name', 'David');
       cache.set('city', 'New York');
       
-      const result = cache.injectSTM('Hello {name} from {city}!');
+      const result = cache.injectSTM('Hello {{name}} from {{city}}!');
       expect(result).toBe('Hello David from New York!');
     });
 
     test('should inject temporal context values', () => {
       const today = new Date().toISOString().split('T')[0];
-      const result = cache.injectSTM('Today is {$date}');
+      const result = cache.injectSTM('Today is {{$date}}');
       expect(result).toBe(`Today is ${today}`);
     });
 
     test('should handle missing keys gracefully', () => {
       cache.set('name', 'Eve');
       
-      const result = cache.injectSTM('Hello {name}, you live in {city}');
+      const result = cache.injectSTM('Hello {{name}}, you live in {{city}}');
       expect(result).toBe('Hello Eve, you live in '); // Missing key becomes empty string
     });
 
@@ -268,14 +268,14 @@ describe('MindCache', () => {
     test('should handle complex object values', () => {
       cache.set('user', { name: 'Frank', age: 35 });
       
-      const result = cache.injectSTM('User: {user}');
+      const result = cache.injectSTM('User: {{user}}');
       expect(result).toBe('User: [object Object]'); // Objects get toString() treatment
     });
 
     test('should handle multiple occurrences of the same placeholder', () => {
       cache.set('name', 'Grace');
       
-      const result = cache.injectSTM('{name} says hello to {name}');
+      const result = cache.injectSTM('{{name}} says hello to {{name}}');
       expect(result).toBe('Grace says hello to Grace');
     });
   });
