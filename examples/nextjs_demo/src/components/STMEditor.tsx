@@ -25,9 +25,11 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     hardcoded: false,
     template: false,
     type: 'text' as 'text' | 'image' | 'file' | 'json',
-    contentType: ''
+    contentType: '',
+    tags: [] as string[]
   });
   const [editingKeyName, setEditingKeyName] = useState('');
+  const [newTagInput, setNewTagInput] = useState('');
 
   // Subscribe to STM changes to update UI
   const updateSTMState = useCallback(() => {
@@ -152,7 +154,8 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         hardcoded: attributes.hardcoded,
         template: attributes.template,
         type: attributes.type,
-        contentType: attributes.contentType || ''
+        contentType: attributes.contentType || '',
+        tags: mindcacheRef.current.getTags(key)
       });
     } else {
       // Default attributes for new keys
@@ -163,11 +166,13 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         hardcoded: false,
         template: false,
         type: 'text',
-        contentType: ''
+        contentType: '',
+        tags: []
       });
     }
     setEditingAttributes(key);
     setEditingKeyName(key);
+    setNewTagInput('');
   };
 
   // Save attributes
@@ -187,18 +192,35 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         // Get current value
         const currentValue = mindcacheRef.current.get_value(oldKey);
         
-        // Create new entry with new name
-        mindcacheRef.current.set_value(newKey, currentValue, attributesForm);
+        // Create new entry with new name (excluding tags from attributes)
+        const { tags, ...attributesWithoutTags } = attributesForm;
+        mindcacheRef.current.set_value(newKey, currentValue, attributesWithoutTags);
+        
+        // Set tags separately
+        tags.forEach(tag => {
+          mindcacheRef.current.addTag(newKey, tag);
+        });
         
         // Delete old entry
         mindcacheRef.current.delete(oldKey);
       } else {
-        // Just update attributes
-        mindcacheRef.current.set_attributes(oldKey, attributesForm);
+        // Just update attributes (excluding tags)
+        const { tags, ...attributesWithoutTags } = attributesForm;
+        mindcacheRef.current.set_attributes(oldKey, attributesWithoutTags);
+        
+        // Update tags - remove all existing tags and add new ones
+        const existingTags = mindcacheRef.current.getTags(oldKey);
+        existingTags.forEach(tag => {
+          mindcacheRef.current.removeTag(oldKey, tag);
+        });
+        tags.forEach(tag => {
+          mindcacheRef.current.addTag(oldKey, tag);
+        });
       }
       
       setEditingAttributes(null);
       setEditingKeyName('');
+      setNewTagInput('');
     }
   };
 
@@ -206,6 +228,41 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   const cancelAttributes = () => {
     setEditingAttributes(null);
     setEditingKeyName('');
+    setNewTagInput('');
+  };
+
+  // Add a new tag
+  const addTag = (tag: string) => {
+    const trimmedTag = tag.trim();
+    if (trimmedTag && !attributesForm.tags.includes(trimmedTag)) {
+      setAttributesForm({
+        ...attributesForm,
+        tags: [...attributesForm.tags, trimmedTag]
+      });
+    }
+  };
+
+  // Remove a tag
+  const removeTag = (tagToRemove: string) => {
+    setAttributesForm({
+      ...attributesForm,
+      tags: attributesForm.tags.filter(tag => tag !== tagToRemove)
+    });
+  };
+
+  // Handle tag input
+  const handleTagInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      if (newTagInput.trim()) {
+        addTag(newTagInput);
+        setNewTagInput('');
+      }
+    } else if (e.key === 'Backspace' && newTagInput === '' && attributesForm.tags.length > 0) {
+      // Remove last tag if input is empty and backspace is pressed
+      const lastTag = attributesForm.tags[attributesForm.tags.length - 1];
+      removeTag(lastTag);
+    }
   };
 
   // Save STM to localStorage
@@ -327,6 +384,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
               
               // Create property indicators
               const indicators = [];
+              const tags = mindcacheRef.current.getTags(key);
               if (attributes) {
                 // Add type indicator
                 if (contentType !== 'text') {
@@ -352,11 +410,23 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
               return (
                 <div key={key} className="relative">
                   <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <div className="text-gray-400 font-mono">{key}:</div>
                       {indicators.length > 0 && (
                         <div className="text-xs text-yellow-400 font-mono">
                           [{indicators.join('')}]
+                        </div>
+                      )}
+                      {tags.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {tags.map(tag => (
+                            <span 
+                              key={tag}
+                              className="text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-0.5 rounded font-mono border border-blue-600"
+                            >
+                              {tag}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -643,6 +713,57 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                   />
                 </div>
               )}
+
+              {/* Tags */}
+              <div className="flex flex-col space-y-2">
+                <div className="text-gray-400 font-mono">
+                  tags:
+                  <div className="text-xs text-gray-500 mt-1">Press Enter or comma to add • Backspace to remove last</div>
+                </div>
+                
+                {/* Tag display and input */}
+                <div className="bg-black border border-green-400 rounded px-2 py-2 focus-within:ring-1 focus-within:ring-green-400">
+                  <div className="flex flex-wrap gap-1 items-center">
+                    {/* Existing tags */}
+                    {attributesForm.tags.map((tag, index) => (
+                      <span 
+                        key={index}
+                        className="inline-flex items-center gap-1 text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-1 rounded font-mono border border-blue-600 group hover:bg-blue-800 hover:bg-opacity-50 transition-colors"
+                      >
+                        {tag}
+                        <button
+                          onClick={() => removeTag(tag)}
+                          className="text-blue-400 hover:text-red-400 ml-1 leading-none"
+                          title="Remove tag"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    
+                    {/* Tag input */}
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={(e) => setNewTagInput(e.target.value)}
+                      onKeyDown={handleTagInput}
+                      className="bg-transparent text-green-400 font-mono focus:outline-none flex-1 min-w-0"
+                      placeholder={attributesForm.tags.length === 0 ? "Add tags..." : ""}
+                      style={{ minWidth: '80px' }}
+                    />
+                  </div>
+                </div>
+                
+                {/* Tag suggestions or help */}
+                <div className="text-xs text-gray-500">
+                  {attributesForm.tags.length > 0 && (
+                    <div>
+                      {attributesForm.tags.length} tag{attributesForm.tags.length !== 1 ? 's' : ''} • 
+                      Use getTagged(&quot;{attributesForm.tags[0]}&quot;) to find entries with this tag
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
 
