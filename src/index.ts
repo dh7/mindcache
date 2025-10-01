@@ -910,6 +910,302 @@ class MindCache {
       .join(', ');
   }
 
+  // Export STM to Markdown format
+  toMarkdown(): string {
+    const now = new Date();
+    const lines: string[] = [];
+    const appendixEntries: Array<{ key: string; type: string; contentType: string; base64: string; label: string }> = [];
+    let appendixCounter = 0;
+    const appendixLabels: Record<string, string> = {};
+
+    // Header
+    lines.push('# MindCache STM Export');
+    lines.push('');
+    lines.push(`Export Date: ${now.toISOString().split('T')[0]}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('## STM Entries');
+    lines.push('');
+
+    // Process each entry
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      // Skip hardcoded keys - they won't be serialized
+      if (entry.attributes.hardcoded) {
+        return;
+      }
+
+      lines.push(`### ${key}`);
+      lines.push(`- **Type**: \`${entry.attributes.type}\``);
+
+      // Handle content type for files/images
+      if (entry.attributes.contentType) {
+        lines.push(`- **Content Type**: \`${entry.attributes.contentType}\``);
+      }
+
+      // Handle value based on type
+      if (entry.attributes.type === 'image' || entry.attributes.type === 'file') {
+        // Create appendix reference
+        const label = String.fromCharCode(65 + appendixCounter); // A, B, C, etc.
+        appendixLabels[key] = label;
+        appendixCounter++;
+        lines.push(`- **Value**: [See Appendix ${label}]`);
+
+        // Store for appendix section
+        appendixEntries.push({
+          key,
+          type: entry.attributes.type,
+          contentType: entry.attributes.contentType || 'application/octet-stream',
+          base64: entry.value,
+          label
+        });
+      } else if (entry.attributes.type === 'json') {
+        // Format JSON with proper indentation
+        lines.push('- **Value**:');
+        lines.push('```json');
+        try {
+          const jsonValue = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value, null, 2);
+          lines.push(jsonValue);
+        } catch {
+          lines.push(String(entry.value));
+        }
+        lines.push('```');
+      } else {
+        // Text type - handle multiline
+        const valueStr = String(entry.value);
+        if (valueStr.includes('\n')) {
+          lines.push('- **Value**:');
+          lines.push('```');
+          lines.push(valueStr);
+          lines.push('```');
+        } else {
+          lines.push(`- **Value**: \`${valueStr}\``);
+        }
+      }
+
+      // Attributes
+      lines.push('- **Attributes**:');
+      lines.push(`  - Readonly: \`${entry.attributes.readonly}\``);
+      lines.push(`  - Visible: \`${entry.attributes.visible}\``);
+      lines.push(`  - Template: \`${entry.attributes.template}\``);
+      lines.push(`  - Default: \`${entry.attributes.default || ''}\``);
+      if (entry.attributes.tags && entry.attributes.tags.length > 0) {
+        lines.push(`  - Tags: \`${entry.attributes.tags.join('`, `')}\``);
+      } else {
+        lines.push('  - Tags: (none)');
+      }
+
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    });
+
+    // Add appendix section if there are binary entries
+    if (appendixEntries.length > 0) {
+      lines.push('## Appendix: Binary Data');
+      lines.push('');
+
+      appendixEntries.forEach(({ key, contentType, base64, label }) => {
+        lines.push(`### Appendix ${label}: ${key}`);
+        lines.push(`**Type**: ${contentType}`);
+        lines.push('');
+        lines.push('```');
+        lines.push(base64);
+        lines.push('```');
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+      });
+    }
+
+    lines.push('*End of MindCache Export*');
+
+    return lines.join('\n');
+  }
+
+  // Import STM from Markdown format
+  fromMarkdown(markdown: string): void {
+    const lines = markdown.split('\n');
+    let currentSection: 'header' | 'entries' | 'appendix' = 'header';
+    let currentKey: string | null = null;
+    let currentEntry: Partial<STMEntry> | null = null;
+    let inCodeBlock = false;
+    let codeBlockContent: string[] = [];
+    let codeBlockType: 'value' | 'json' | 'base64' | null = null;
+    const appendixData: Record<string, { contentType: string; base64: string }> = {};
+    let currentAppendixKey: string | null = null;
+    const pendingEntries: Record<string, Partial<STMEntry> & { appendixLabel?: string }> = {};
+
+    // Clear existing STM first
+    this.clear();
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Detect sections
+      if (trimmed === '## STM Entries') {
+        currentSection = 'entries';
+        continue;
+      }
+      if (trimmed === '## Appendix: Binary Data') {
+        currentSection = 'appendix';
+        continue;
+      }
+
+      // Handle code blocks
+      if (trimmed === '```' || trimmed === '```json') {
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+          codeBlockContent = [];
+          codeBlockType = currentSection === 'appendix' ? 'base64' : (trimmed === '```json' ? 'json' : 'value');
+        } else {
+          inCodeBlock = false;
+          const content = codeBlockContent.join('\n');
+
+          if (currentSection === 'appendix' && currentAppendixKey) {
+            // Store appendix base64 data
+            appendixData[currentAppendixKey].base64 = content;
+          } else if (currentEntry && codeBlockType === 'json') {
+            currentEntry.value = content;
+          } else if (currentEntry && codeBlockType === 'value') {
+            currentEntry.value = content;
+          }
+
+          codeBlockContent = [];
+          codeBlockType = null;
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeBlockContent.push(line);
+        continue;
+      }
+
+      // Parse entries section
+      if (currentSection === 'entries') {
+        if (trimmed.startsWith('### ')) {
+          // Save previous entry if exists
+          if (currentKey && currentEntry && currentEntry.attributes) {
+            pendingEntries[currentKey] = currentEntry as STMEntry & { appendixLabel?: string };
+          }
+
+          // Start new entry
+          currentKey = trimmed.substring(4);
+          currentEntry = {
+            value: undefined,
+            attributes: {
+              readonly: false,
+              visible: true,
+              default: '',
+              hardcoded: false,
+              template: false,
+              type: 'text',
+              tags: []
+            }
+          };
+        } else if (trimmed.startsWith('- **Type**: `')) {
+          const type = trimmed.match(/`([^`]+)`/)?.[1] as KeyAttributes['type'];
+          if (currentEntry && type) {
+            currentEntry.attributes!.type = type;
+          }
+        } else if (trimmed.startsWith('- **Content Type**: `')) {
+          const contentType = trimmed.match(/`([^`]+)`/)?.[1];
+          if (currentEntry && contentType) {
+            currentEntry.attributes!.contentType = contentType;
+          }
+        } else if (trimmed.startsWith('- **Value**: `')) {
+          const value = trimmed.substring(14, trimmed.length - 1);
+          if (currentEntry) {
+            currentEntry.value = value;
+          }
+        } else if (trimmed.startsWith('- **Value**: [See Appendix ')) {
+          const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
+          if (currentEntry && labelMatch && currentKey) {
+            (currentEntry as any).appendixLabel = labelMatch[1];
+            // Set a placeholder value so the entry is saved
+            currentEntry.value = '';
+          }
+        } else if (trimmed.startsWith('- Readonly: `')) {
+          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
+          if (currentEntry) {
+            currentEntry.attributes!.readonly = value;
+          }
+        } else if (trimmed.startsWith('- Visible: `')) {
+          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
+          if (currentEntry) {
+            currentEntry.attributes!.visible = value;
+          }
+        } else if (trimmed.startsWith('- Template: `')) {
+          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
+          if (currentEntry) {
+            currentEntry.attributes!.template = value;
+          }
+        } else if (trimmed.startsWith('- Default: `')) {
+          const value = trimmed.substring(12, trimmed.length - 1);
+          if (currentEntry) {
+            currentEntry.attributes!.default = value;
+          }
+        } else if (trimmed.startsWith('- Tags: `')) {
+          const tagsStr = trimmed.substring(9, trimmed.length - 1);
+          if (currentEntry && tagsStr !== '(none)') {
+            currentEntry.attributes!.tags = tagsStr.split('`, `');
+          }
+        }
+      }
+
+      // Parse appendix section
+      if (currentSection === 'appendix') {
+        if (trimmed.startsWith('### Appendix ')) {
+          const match = trimmed.match(/### Appendix ([A-Z]): (.+)/);
+          if (match) {
+            const label = match[1];
+            const key = match[2];
+            currentAppendixKey = `${label}:${key}`;
+            appendixData[currentAppendixKey] = { contentType: '', base64: '' };
+          }
+        } else if (trimmed.startsWith('**Type**: ')) {
+          const contentType = trimmed.substring(10);
+          if (currentAppendixKey) {
+            appendixData[currentAppendixKey].contentType = contentType;
+          }
+        }
+      }
+    }
+
+    // Save last entry
+    if (currentKey && currentEntry && currentEntry.attributes) {
+      pendingEntries[currentKey] = currentEntry as STMEntry & { appendixLabel?: string };
+    }
+
+    // Now combine entries with appendix data and populate STM
+    Object.entries(pendingEntries).forEach(([key, entry]) => {
+      const appendixLabel = (entry as any).appendixLabel;
+      if (appendixLabel) {
+        // Find matching appendix data
+        const appendixKey = `${appendixLabel}:${key}`;
+        const appendixInfo = appendixData[appendixKey];
+        if (appendixInfo && appendixInfo.base64) {
+          entry.value = appendixInfo.base64;
+          if (!entry.attributes!.contentType && appendixInfo.contentType) {
+            entry.attributes!.contentType = appendixInfo.contentType;
+          }
+        }
+      }
+
+      // Set the entry in STM (value can be undefined for entries without value line)
+      if (entry.value !== undefined && entry.attributes) {
+        this.stm[key] = {
+          value: entry.value,
+          attributes: entry.attributes as KeyAttributes
+        };
+      }
+    });
+
+    this.notifyGlobalListeners();
+  }
+
 
 }
 
