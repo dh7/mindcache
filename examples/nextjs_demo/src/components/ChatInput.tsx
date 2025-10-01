@@ -37,7 +37,7 @@ export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
         value={input}
         onChange={e => setInput(e.target.value)}
         disabled={isLoading}
-        placeholder={isLoading ? "AI is thinking..." : "Ask something... (use {{name}}, {{preferences}}, {{notes}}, {{$date}}, {{$time}})"}
+        placeholder={isLoading ? "AI is thinking..." : "Ask something... (use {{key}}, if you want to use a key from the STM)"}
       />
       <button 
         type="submit"

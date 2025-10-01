@@ -30,7 +30,8 @@ describe('MindCache Complete Serialization', () => {
           default: 'guest',
           hardcoded: false,
           template: false,
-          type: 'text'
+          type: 'text',
+          tags: []
         }
       });
 
@@ -42,7 +43,8 @@ describe('MindCache Complete Serialization', () => {
           default: 'dev',
           hardcoded: false,
           template: false,
-          type: 'text'
+          type: 'text',
+          tags: []
         }
       });
 
@@ -54,7 +56,8 @@ describe('MindCache Complete Serialization', () => {
           default: '',
           hardcoded: false,
           template: true,
-          type: 'text'
+          type: 'text',
+          tags: []
         }
       });
     });
@@ -122,7 +125,8 @@ describe('MindCache Complete Serialization', () => {
         default: 'anonymous',
         hardcoded: false,
         template: false,
-        type: 'text'
+        type: 'text',
+        tags: []
       });
 
       expect(cache.get_attributes('config')).toEqual({
@@ -131,7 +135,8 @@ describe('MindCache Complete Serialization', () => {
         default: 'development',
         hardcoded: false,
         template: false,
-        type: 'text'
+        type: 'text',
+        tags: []
       });
 
       expect(cache.get_attributes('greeting')).toEqual({
@@ -140,7 +145,8 @@ describe('MindCache Complete Serialization', () => {
         default: 'Hello!',
         hardcoded: false,
         template: true,
-        type: 'text'
+        type: 'text',
+        tags: []
       });
     });
 
@@ -211,7 +217,8 @@ describe('MindCache Complete Serialization', () => {
           default: 'default_val',
           hardcoded: false,
           template: true,
-          type: 'text'
+          type: 'text',
+          tags: []
         }
       });
     });
@@ -331,7 +338,8 @@ describe('MindCache Complete Serialization', () => {
         default: 'fallback',
         hardcoded: false,
         template: true,
-        type: 'text'
+        type: 'text',
+        tags: []
       });
       
       // Update value only (should preserve all attributes)
@@ -345,7 +353,8 @@ describe('MindCache Complete Serialization', () => {
         default: 'fallback',
         hardcoded: false,
         template: true,
-        type: 'text'
+        type: 'text',
+        tags: []
       });
     });
 
@@ -369,7 +378,8 @@ describe('MindCache Complete Serialization', () => {
         default: 'default_val', // Preserved
         hardcoded: false, // Preserved
         template: false,  // Preserved
-        type: 'text'     // Preserved
+        type: 'text',     // Preserved
+        tags: []         // Default
       });
     });
 
