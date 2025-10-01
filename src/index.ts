@@ -339,8 +339,8 @@ class MindCache {
       this.stm[key] = {
         value: defaultValue,
         attributes: {
-          ...attributes,
-          tags: [] // Reset tags when clearing
+          ...attributes
+          // Preserve all attributes including tags when clearing
         }
       };
     });

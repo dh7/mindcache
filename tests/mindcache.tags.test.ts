@@ -316,9 +316,9 @@ describe('MindCache Tag System', () => {
       
       cache.clear();
       
-      // User should be restored with default value but no tags
+      // User should be restored with default value and preserve tags
       expect(cache.get('user')).toBe('DefaultUser');
-      expect(cache.getTags('user')).toEqual([]);
+      expect(cache.getTags('user')).toEqual(['person']);
       expect(cache.has('document')).toBe(false);
     });
   });

@@ -718,7 +718,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
               <div className="flex flex-col space-y-2">
                 <div className="text-gray-400 font-mono">
                   tags:
-                  <div className="text-xs text-gray-500 mt-1">Press Enter or comma to add • Backspace to remove last</div>
                 </div>
                 
                 {/* Tag display and input */}
@@ -758,8 +757,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                 <div className="text-xs text-gray-500">
                   {attributesForm.tags.length > 0 && (
                     <div>
-                      {attributesForm.tags.length} tag{attributesForm.tags.length !== 1 ? 's' : ''} • 
-                      Use getTagged(&quot;{attributesForm.tags[0]}&quot;) to find entries with this tag
+                      Use getTagged(&quot;{attributesForm.tags[0]}&quot;)
                     </div>
                   )}
                 </div>
