@@ -323,6 +323,179 @@ describe('MindCache Tag System', () => {
     });
   });
 
+  describe('Tag serialization and persistence', () => {
+    test('should preserve tags through complete serialize/deserialize cycle', () => {
+      // Set up complex data with tags
+      cache.set_value('user1', 'Alice', { default: 'Guest', readonly: false });
+      cache.set_value('user2', 'Bob', { visible: false });
+      cache.set_value('document', 'content', { template: true });
+      
+      cache.addTag('user1', 'person');
+      cache.addTag('user1', 'admin');
+      cache.addTag('user2', 'person');
+      cache.addTag('user2', 'guest');
+      cache.addTag('document', 'important');
+      cache.addTag('document', 'work');
+      
+      // Serialize
+      const serialized = cache.serialize();
+      
+      // Verify serialization includes tags
+      expect(serialized.user1.attributes.tags).toEqual(['person', 'admin']);
+      expect(serialized.user2.attributes.tags).toEqual(['person', 'guest']);
+      expect(serialized.document.attributes.tags).toEqual(['important', 'work']);
+      
+      // Clear and deserialize
+      cache.clear();
+      cache.deserialize(serialized);
+      
+      // Verify all tags are restored
+      expect(cache.getTags('user1')).toEqual(['person', 'admin']);
+      expect(cache.getTags('user2')).toEqual(['person', 'guest']);
+      expect(cache.getTags('document')).toEqual(['important', 'work']);
+      
+      // Verify values and other attributes are also restored
+      expect(cache.get('user1')).toBe('Alice');
+      expect(cache.get('user2')).toBe('Bob');
+      expect(cache.get('document')).toBe('content');
+      expect(cache.get_attributes('user1')?.default).toBe('Guest');
+      expect(cache.get_attributes('user2')?.visible).toBe(false);
+      expect(cache.get_attributes('document')?.template).toBe(true);
+    });
+
+    test('should preserve tags through toJSON/fromJSON cycle', () => {
+      cache.set('project', 'MindCache');
+      cache.addTag('project', 'opensource');
+      cache.addTag('project', 'typescript');
+      cache.addTag('project', 'library');
+      
+      // Convert to JSON string
+      const jsonString = cache.toJSON();
+      
+      // Clear and restore from JSON
+      cache.clear();
+      cache.fromJSON(jsonString);
+      
+      // Verify tags are preserved
+      expect(cache.getTags('project')).toEqual(['opensource', 'typescript', 'library']);
+      expect(cache.get('project')).toBe('MindCache');
+    });
+
+    test('should handle deserialization of data without tags property', () => {
+      // Simulate old data format without tags
+      const oldFormatData = {
+        user: {
+          value: 'Alice',
+          attributes: {
+            readonly: false,
+            visible: true,
+            default: '',
+            hardcoded: false,
+            template: false,
+            type: 'text' as const
+            // No tags property
+          }
+        }
+      };
+      
+      cache.deserialize(oldFormatData);
+      
+      // Should handle gracefully and provide empty tags array
+      expect(cache.getTags('user')).toEqual([]);
+      expect(cache.get('user')).toBe('Alice');
+    });
+
+    test('should preserve tags when clearing with defaults', () => {
+      // Set up keys with defaults and tags
+      cache.set_value('config', 'production', { default: 'development' });
+      cache.set_value('theme', 'dark', { default: 'light' });
+      cache.set('temp', 'data'); // No default
+      
+      cache.addTag('config', 'settings');
+      cache.addTag('config', 'important');
+      cache.addTag('theme', 'ui');
+      cache.addTag('temp', 'temporary');
+      
+      // Clear should preserve keys with defaults and their tags
+      cache.clear();
+      
+      // Keys with defaults should be restored with their tags
+      expect(cache.get('config')).toBe('development');
+      expect(cache.getTags('config')).toEqual(['settings', 'important']);
+      expect(cache.get('theme')).toBe('light');
+      expect(cache.getTags('theme')).toEqual(['ui']);
+      
+      // Keys without defaults should be removed
+      expect(cache.has('temp')).toBe(false);
+      expect(cache.getTags('temp')).toEqual([]);
+    });
+
+    test('should handle complex clear/serialize/deserialize workflow', () => {
+      // Initial setup
+      cache.set_value('user', 'Alice', { default: 'Guest' });
+      cache.set('session', 'active'); // No default
+      cache.set_value('config', 'prod', { default: 'dev', readonly: true });
+      
+      cache.addTag('user', 'person');
+      cache.addTag('session', 'temporary');
+      cache.addTag('config', 'settings');
+      cache.addTag('config', 'important');
+      
+      // Step 1: Clear (should preserve user and config with tags)
+      cache.clear();
+      
+      expect(cache.get('user')).toBe('Guest');
+      expect(cache.getTags('user')).toEqual(['person']);
+      expect(cache.get('config')).toBe('dev');
+      expect(cache.getTags('config')).toEqual(['settings', 'important']);
+      expect(cache.has('session')).toBe(false);
+      
+      // Step 2: Add new data and tags
+      cache.set('user', 'Bob');
+      cache.addTag('user', 'admin');
+      cache.set('newkey', 'newvalue');
+      cache.addTag('newkey', 'fresh');
+      
+      // Step 3: Serialize
+      const serialized = cache.serialize();
+      
+      // Step 4: Clear and deserialize
+      cache.clear();
+      cache.deserialize(serialized);
+      
+      // Verify final state
+      expect(cache.get('user')).toBe('Bob');
+      expect(cache.getTags('user')).toEqual(['person', 'admin']);
+      expect(cache.get('config')).toBe('dev');
+      expect(cache.getTags('config')).toEqual(['settings', 'important']);
+      expect(cache.get('newkey')).toBe('newvalue');
+      expect(cache.getTags('newkey')).toEqual(['fresh']);
+    });
+
+    test('should handle getTagged after serialization operations', () => {
+      cache.set('doc1', 'content1');
+      cache.set('doc2', 'content2');
+      cache.set('user1', 'Alice');
+      
+      cache.addTag('doc1', 'document');
+      cache.addTag('doc2', 'document');
+      cache.addTag('user1', 'person');
+      
+      // Test getTagged before serialization
+      expect(cache.getTagged('document')).toBe('doc1: content1, doc2: content2');
+      
+      // Serialize and deserialize
+      const serialized = cache.serialize();
+      cache.clear();
+      cache.deserialize(serialized);
+      
+      // Test getTagged after serialization
+      expect(cache.getTagged('document')).toBe('doc1: content1, doc2: content2');
+      expect(cache.getTagged('person')).toBe('user1: Alice');
+      expect(cache.getTagged('nonexistent')).toBe('');
+    });
+  });
+
   describe('Edge cases and error handling', () => {
     test('should handle empty tag strings', () => {
       cache.set('user', 'Alice');
