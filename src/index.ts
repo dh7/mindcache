@@ -404,15 +404,15 @@ class MindCache {
     Object.entries(newValues).forEach(([key, value]) => {
       if (key !== '$date' && key !== '$time') {
         // Set value without triggering individual notifications
-                const defaultAttributes: KeyAttributes = {
-                  readonly: false,
-                  visible: true,
-                  default: '',
-                  hardcoded: false,
-                  template: false,
-                  type: 'text',
-                  tags: []
-                };
+        const defaultAttributes: KeyAttributes = {
+          readonly: false,
+          visible: true,
+          default: '',
+          hardcoded: false,
+          template: false,
+          type: 'text',
+          tags: []
+        };
 
         this.stm[key] = {
           value,
@@ -633,7 +633,7 @@ class MindCache {
         if (entry && typeof entry === 'object' && 'value' in entry && 'attributes' in entry) {
           this.stm[key] = {
             value: entry.value,
-            attributes: { 
+            attributes: {
               ...entry.attributes,
               tags: entry.attributes.tags || [] // Ensure tags array exists
             }
