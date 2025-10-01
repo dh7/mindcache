@@ -263,8 +263,8 @@ mindcache.set('priority', 'high');
 
 // Generate dynamic system prompt
 const systemPrompt = mindcache.injectSTM(`
-  You are a customer service AI. The user is {userMood} about a {issueType} issue.
-  Priority level: {priority}. Today is {$date} at {$time}.
+  You are a customer service AI. The user is {{userMood}} about a {{issueType}} issue.
+  Priority level: {{priority}}. Today is {{$date}} at {{$time}}.
   
   Respond with empathy and urgency appropriate to the situation.
 `);

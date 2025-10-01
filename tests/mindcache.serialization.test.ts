@@ -12,7 +12,7 @@ describe('MindCache Complete Serialization', () => {
       // Set up test data with different attribute combinations
       cache.set_value('user', 'john', { readonly: false, visible: true, default: 'guest', template: false });
       cache.set_value('config', 'prod', { readonly: true, visible: false, default: 'dev', template: false });
-      cache.set_value('template_key', 'Hello {user}!', { readonly: false, visible: true, default: '', template: true });
+      cache.set_value('template_key', 'Hello {{user}}!', { readonly: false, visible: true, default: '', template: true });
 
       const serialized = cache.serialize();
 
@@ -47,7 +47,7 @@ describe('MindCache Complete Serialization', () => {
       });
 
       expect(serialized.template_key).toEqual({
-        value: 'Hello {user}!',
+        value: 'Hello {{user}}!',
         attributes: {
           readonly: false,
           visible: true,
@@ -96,7 +96,7 @@ describe('MindCache Complete Serialization', () => {
           }
         },
         greeting: {
-          value: 'Hi {user}!',
+          value: 'Hi {{user}}!',
           attributes: {
             readonly: false,
             visible: true,
@@ -172,7 +172,7 @@ describe('MindCache Complete Serialization', () => {
       // Set up complex test data
       cache.set_value('name', 'Bob', { readonly: false, visible: true, default: 'Anonymous' });
       cache.set_value('secret', 'hidden', { readonly: true, visible: false, default: '' });
-      cache.set_value('message', 'Welcome {name}!', { template: true, visible: true });
+      cache.set_value('message', 'Welcome {{name}}!', { template: true, visible: true });
 
       const serialized = cache.serialize();
       const newCache = new MindCache();
@@ -229,7 +229,7 @@ describe('MindCache Complete Serialization', () => {
           }
         },
         template_msg: {
-          value: 'Hello {username}!',
+          value: 'Hello {{username}}!',
           attributes: {
             readonly: false,
             visible: true,
@@ -267,7 +267,7 @@ describe('MindCache Complete Serialization', () => {
 
     test('should handle round-trip JSON serialization', () => {
       cache.set_value('data', 'important', { readonly: true, default: 'fallback' });
-      cache.set_value('greeting', 'Hi {data}!', { template: true });
+      cache.set_value('greeting', 'Hi {{data}}!', { template: true });
 
       const jsonString = cache.toJSON();
       const newCache = new MindCache();
@@ -420,11 +420,11 @@ describe('MindCache Complete Serialization', () => {
           attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         greeting: {
-          value: 'Hello {name}!',
+          value: 'Hello {{name}}!',
           attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true, type: 'text' as const }
         },
         nested: {
-          value: '{greeting} Welcome!',
+          value: '{{greeting}} Welcome!',
           attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true, type: 'text' as const }
         }
       };

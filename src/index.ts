@@ -462,14 +462,14 @@ class MindCache {
     // Convert to string if not already
     const templateStr = String(template);
 
-    // find all the keys in the template
-    const keys = templateStr.match(/\{([$\w]+)\}/g);
+    // find all the keys in the template using double brackets
+    const keys = templateStr.match(/\{\{([$\w]+)\}\}/g);
 
     if (!keys) {
       return templateStr;
     }
 
-    // Extract the actual key names without the curly braces
+    // Extract the actual key names without the double curly braces
     const cleanKeys = keys.map(key => key.replace(/[{}]/g, ''));
 
     // Build inputValues with the clean keys
@@ -496,8 +496,8 @@ class MindCache {
       return acc;
     }, {});
 
-    // Replace the placeholders with actual values
-    return templateStr.replace(/\{([$\w]+)\}/g, (match, key) => inputValues[key] || '');
+    // Replace the placeholders with actual values using double brackets
+    return templateStr.replace(/\{\{([$\w]+)\}\}/g, (match, key) => inputValues[key] || '');
   }
 
   // Get a formatted string of all visible STM key-value pairs

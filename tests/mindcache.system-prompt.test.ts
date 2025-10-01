@@ -35,8 +35,8 @@ describe('MindCache System Prompt Generation', () => {
 
     test('should process templates in system prompt', () => {
       cache.set_value('name', 'Bob', { readonly: false, visible: true });
-      cache.set_value('greeting', 'Hello {name}!', { readonly: true, visible: true, template: true });
-      cache.set_value('message', 'Welcome {name} to our system!', { readonly: false, visible: true, template: true });
+      cache.set_value('greeting', 'Hello {{name}}!', { readonly: true, visible: true, template: true });
+      cache.set_value('message', 'Welcome {{name}} to our system!', { readonly: false, visible: true, template: true });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -48,8 +48,8 @@ describe('MindCache System Prompt Generation', () => {
 
     test('should handle nested template processing', () => {
       cache.set_value('user', 'Alice', { readonly: false, visible: true });
-      cache.set_value('greeting', 'Hello {user}!', { readonly: true, visible: true, template: true });
-      cache.set_value('full_message', '{greeting} Welcome to the system.', { readonly: true, visible: true, template: true });
+      cache.set_value('greeting', 'Hello {{user}}!', { readonly: true, visible: true, template: true });
+      cache.set_value('full_message', '{{greeting}} Welcome to the system.', { readonly: true, visible: true, template: true });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -145,7 +145,7 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should handle template with system keys', () => {
-      cache.set_value('today_message', 'Today is {$date} at {$time}', { 
+      cache.set_value('today_message', 'Today is {{$date}} at {{$time}}', { 
         readonly: true, 
         visible: true, 
         template: true 

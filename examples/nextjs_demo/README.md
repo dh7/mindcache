@@ -91,17 +91,17 @@ The app includes three different demos showcasing various MindCache and AI SDK v
 
 Use these placeholders in your templates:
 
-- `{firstName}` - Injects first name from STM
-- `{lastName}` - Injects last name from STM  
-- `{age}` - Injects age from STM
-- `{gender}` - Injects gender from STM
-- `{$date}` - Automatically injects current date (YYYY-MM-DD)
-- `{$time}` - Automatically injects current time (HH:MM:SS)
+- `{{firstName}}` - Injects first name from STM
+- `{{lastName}}` - Injects last name from STM  
+- `{{age}}` - Injects age from STM
+- `{{gender}}` - Injects gender from STM
+- `{{$date}}` - Automatically injects current date (YYYY-MM-DD)
+- `{{$time}}` - Automatically injects current time (HH:MM:SS)
 
 ### Example Template
 
 ```
-Create a personalized introduction for {firstName} {lastName}, who is {age} years old and identifies as {gender}. The introduction should be warm, professional, and suitable for a networking event. Include some interesting conversation starters based on their demographic. Write it in a friendly, engaging tone. Today's date is {$date} and the current time is {$time}.
+Create a personalized introduction for {{firstName}} {{lastName}}, who is {{age}} years old and identifies as {{gender}}. The introduction should be warm, professional, and suitable for a networking event. Include some interesting conversation starters based on their demographic. Write it in a friendly, engaging tone. Today's date is {{$date}} and the current time is {{$time}}.
 ```
 
 ## 🚀 AI SDK v5 Features

@@ -228,7 +228,7 @@ describe('MindCache Key Properties', () => {
     });
 
     test('invisible keys should not appear in injectSTM', () => {
-      const template = 'Visible: {visible_key}, Invisible: {invisible_key}';
+      const template = 'Visible: {{visible_key}}, Invisible: {{invisible_key}}';
       const result = cache.injectSTM(template);
       
       expect(result).toBe('Visible: visible_value, Invisible: ');
@@ -243,7 +243,7 @@ describe('MindCache Key Properties', () => {
     });
 
     test('hardcoded system keys should always be visible in injectSTM', () => {
-      const template = 'Date: {$date}, Time: {$time}';
+      const template = 'Date: {{$date}}, Time: {{$time}}';
       const result = cache.injectSTM(template);
       
       expect(result).toContain('Date: ');
@@ -285,7 +285,7 @@ describe('MindCache Key Properties', () => {
   describe('Template Property', () => {
     beforeEach(() => {
       cache.set_value('username', 'john_doe');
-      cache.set_value('greeting_template', 'Hello {username}! Today is {$date}', { template: true });
+      cache.set_value('greeting_template', 'Hello {{username}}! Today is {{$date}}', { template: true });
       cache.set_value('plain_text', 'Just plain text', { template: false });
     });
 
@@ -294,8 +294,8 @@ describe('MindCache Key Properties', () => {
       
       expect(result).toContain('Hello john_doe!');
       expect(result).toContain('Today is');
-      expect(result).not.toContain('{username}');
-      expect(result).not.toContain('{$date}');
+      expect(result).not.toContain('{{username}}');
+      expect(result).not.toContain('{{$date}}');
     });
 
     test('non-template keys should return raw value', () => {
@@ -305,7 +305,7 @@ describe('MindCache Key Properties', () => {
 
     test('template processing should work with invisible keys in template', () => {
       cache.set_value('secret', 'hidden_value', { visible: false });
-      cache.set_value('template_with_secret', 'Secret: {secret}', { template: true });
+      cache.set_value('template_with_secret', 'Secret: {{secret}}', { template: true });
       
       const result = cache.get_value('template_with_secret');
       // Template processing (internal) can access invisible keys
@@ -316,11 +316,11 @@ describe('MindCache Key Properties', () => {
       const stmString = cache.getSTM();
       
       expect(stmString).toContain('greeting_template: Hello john_doe!');
-      expect(stmString).not.toContain('{username}');
+      expect(stmString).not.toContain('{{username}}');
     });
 
     test('template with missing keys should leave placeholders empty', () => {
-      cache.set_value('incomplete_template', 'Hello {missing_key}!', { template: true });
+      cache.set_value('incomplete_template', 'Hello {{missing_key}}!', { template: true });
       
       const result = cache.get_value('incomplete_template');
       expect(result).toBe('Hello !');
@@ -328,8 +328,8 @@ describe('MindCache Key Properties', () => {
 
     test('nested template processing should work', () => {
       cache.set_value('name', 'Alice');
-      cache.set_value('title', 'Dr. {name}', { template: true });
-      cache.set_value('full_greeting', 'Welcome, {title}!', { template: true });
+      cache.set_value('title', 'Dr. {{name}}', { template: true });
+      cache.set_value('full_greeting', 'Welcome, {{title}}!', { template: true });
       
       const result = cache.get_value('full_greeting');
       expect(result).toBe('Welcome, Dr. Alice!');
@@ -441,7 +441,7 @@ describe('MindCache Key Properties', () => {
         template: false 
       });
       
-      cache.set_value('welcome_msg', 'Welcome {user_name}! Date: {$date}', { 
+      cache.set_value('welcome_msg', 'Welcome {{user_name}}! Date: {{$date}}', { 
         readonly: false, 
         visible: true, 
         default: 'Welcome Guest!', 
@@ -450,7 +450,7 @@ describe('MindCache Key Properties', () => {
       });
       
       // Test injectSTM (should not include invisible api_secret)
-      const template = 'User: {user_name}, Secret: {api_secret}, Message: {welcome_msg}';
+      const template = 'User: {{user_name}}, Secret: {{api_secret}}, Message: {{welcome_msg}}';
       const injected = cache.injectSTM(template);
       expect(injected).toContain('User: Alice');
       expect(injected).toContain('Secret: '); // Empty because invisible
@@ -538,8 +538,8 @@ describe('MindCache Key Properties', () => {
     });
 
     test('should handle circular template references gracefully', () => {
-      cache.set_value('template_a', 'A: {template_b}', { template: true });
-      cache.set_value('template_b', 'B: {template_a}', { template: true });
+      cache.set_value('template_a', 'A: {{template_b}}', { template: true });
+      cache.set_value('template_b', 'B: {{template_a}}', { template: true });
       
       // Should not cause infinite recursion
       expect(() => cache.get_value('template_a')).not.toThrow();
@@ -547,7 +547,7 @@ describe('MindCache Key Properties', () => {
 
     test('should handle special characters in template values', () => {
       cache.set_value('special_chars', 'Special: $@#%^&*()');
-      cache.set_value('template_special', 'Value: {special_chars}', { template: true });
+      cache.set_value('template_special', 'Value: {{special_chars}}', { template: true });
       
       const result = cache.get_value('template_special');
       expect(result).toBe('Value: Special: $@#%^&*()');
