@@ -18,7 +18,8 @@ describe('MindCache Key Properties', () => {
         default: '',
         hardcoded: false,
         template: false,
-        type: 'text' as const
+        type: 'text' as const,
+        tags: []
       });
     });
 
@@ -41,7 +42,8 @@ describe('MindCache Key Properties', () => {
         default: 'default_value',
         hardcoded: true,
         template: false, // Hardcoded keys cannot be templates
-        type: 'text' as const
+        type: 'text' as const,
+        tags: []
       };
       
       expect(attributes).toEqual(expectedAttributes);
@@ -57,7 +59,8 @@ describe('MindCache Key Properties', () => {
         default: '',
         hardcoded: false,
         template: false,
-        type: 'text' as const
+        type: 'text' as const,
+        tags: []
       });
     });
 
@@ -91,16 +94,18 @@ describe('MindCache Key Properties', () => {
         default: '',
         hardcoded: true,
         template: false,
-        type: 'text' as const
+        type: 'text' as const,
+        tags: []
       });
-      
+
       expect(timeAttrs).toEqual({
         readonly: true,
         visible: true,
         default: '',
         hardcoded: true,
         template: false,
-        type: 'text' as const
+        type: 'text' as const,
+        tags: []
       });
     });
 
@@ -370,7 +375,7 @@ describe('MindCache Key Properties', () => {
       cache.clear();
       
       const attributes = cache.get_attributes('test_key');
-      expect(attributes).toEqual({...originalAttributes, type: 'text'});
+      expect(attributes).toEqual({...originalAttributes, type: 'text', tags: []});
       expect(cache.get_value('test_key')).toBe('default_val');
     });
 
@@ -487,7 +492,8 @@ describe('MindCache Key Properties', () => {
         default: '',
         hardcoded: false,
         template: false,
-        type: 'text' as const
+        type: 'text' as const,
+        tags: []
       });
       
       // Old get should work

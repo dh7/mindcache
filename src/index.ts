@@ -22,6 +22,7 @@ interface KeyAttributes {
   template: boolean;
   type: 'text' | 'image' | 'file' | 'json';
   contentType?: string; // MIME type for files/images
+  tags?: string[]; // Tags for categorizing keys
 }
 
 interface STMEntry {
@@ -134,7 +135,8 @@ class MindCache {
         default: '',
         hardcoded: true,
         template: false,
-        type: 'text'
+        type: 'text',
+        tags: []
       };
     }
 
@@ -155,7 +157,8 @@ class MindCache {
       default: '',
       hardcoded: false,
       template: false,
-      type: 'text'
+      type: 'text',
+      tags: []
     };
 
     // If key exists, preserve existing attributes unless explicitly overridden
@@ -335,7 +338,10 @@ class MindCache {
     keysWithDefaults.forEach(({ key, defaultValue, attributes }) => {
       this.stm[key] = {
         value: defaultValue,
-        attributes
+        attributes: {
+          ...attributes,
+          tags: [] // Reset tags when clearing
+        }
       };
     });
 
@@ -398,14 +404,15 @@ class MindCache {
     Object.entries(newValues).forEach(([key, value]) => {
       if (key !== '$date' && key !== '$time') {
         // Set value without triggering individual notifications
-        const defaultAttributes: KeyAttributes = {
-          readonly: false,
-          visible: true,
-          default: '',
-          hardcoded: false,
-          template: false,
-          type: 'text'
-        };
+                const defaultAttributes: KeyAttributes = {
+                  readonly: false,
+                  visible: true,
+                  default: '',
+                  hardcoded: false,
+                  template: false,
+                  type: 'text',
+                  tags: []
+                };
 
         this.stm[key] = {
           value,
@@ -626,7 +633,10 @@ class MindCache {
         if (entry && typeof entry === 'object' && 'value' in entry && 'attributes' in entry) {
           this.stm[key] = {
             value: entry.value,
-            attributes: { ...entry.attributes }
+            attributes: { 
+              ...entry.attributes,
+              tags: entry.attributes.tags || [] // Ensure tags array exists
+            }
           };
         }
       });
@@ -812,6 +822,92 @@ class MindCache {
       key: originalKey,
       value: value
     };
+  }
+
+  // Add a tag to a key
+  addTag(key: string, tag: string): boolean {
+    // Don't allow tagging hardcoded system keys
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    if (!entry) {
+      return false;
+    }
+
+    // Initialize tags array if it doesn't exist
+    if (!entry.attributes.tags) {
+      entry.attributes.tags = [];
+    }
+
+    // Add tag if it doesn't already exist
+    if (!entry.attributes.tags.includes(tag)) {
+      entry.attributes.tags.push(tag);
+      this.notifyGlobalListeners();
+      return true;
+    }
+
+    return false; // Tag already exists
+  }
+
+  // Remove a tag from a key
+  removeTag(key: string, tag: string): boolean {
+    // Don't allow modifying hardcoded system keys
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    if (!entry || !entry.attributes.tags) {
+      return false;
+    }
+
+    const tagIndex = entry.attributes.tags.indexOf(tag);
+    if (tagIndex > -1) {
+      entry.attributes.tags.splice(tagIndex, 1);
+      this.notifyGlobalListeners();
+      return true;
+    }
+
+    return false; // Tag not found
+  }
+
+  // Get all tags for a key
+  getTags(key: string): string[] {
+    if (key === '$date' || key === '$time') {
+      return []; // System keys have no tags
+    }
+
+    const entry = this.stm[key];
+    return entry?.attributes.tags || [];
+  }
+
+  // Check if a key has a specific tag
+  hasTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time') {
+      return false; // System keys have no tags
+    }
+
+    const entry = this.stm[key];
+    return entry?.attributes.tags?.includes(tag) || false;
+  }
+
+  // Get a formatted string of all entries with a specific tag (ignores visible attribute)
+  getTagged(tag: string): string {
+    const entries: Array<[string, any]> = [];
+
+    // Add regular STM entries that have the specified tag
+    Object.entries(this.stm).forEach(([key, entry]) => {
+      if (entry.attributes.tags?.includes(tag)) {
+        // Use get_value to handle template processing
+        entries.push([key, this.get_value(key)]);
+      }
+    });
+
+    return entries
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ');
   }
 
 
