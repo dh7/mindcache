@@ -7,28 +7,40 @@ interface WorkflowsProps {
   onSendPrompt: (prompt: string) => void;
   isExecuting: boolean;
   onExecutionComplete: () => void;
+  stmLoaded?: boolean; // Track STM loading state
 }
 
-export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete }: WorkflowsProps) {
+export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded }: WorkflowsProps) {
   const mindcacheRef = useRef(mindcache);
   // Get workflow from tagged content or use default
   const getWorkflowText = () => {
+    if (!stmLoaded) {
+      console.log('🔄 [RELOAD DEBUG] Workflow: STM not loaded yet, using default');
+      return '1. Say hello to the user';
+    }
+
     const workflowTagged = mindcacheRef.current.getTagged("Workflow");
-    return workflowTagged 
+    const workflowText = workflowTagged 
       ? workflowTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
       : '1. Say hello to the user';
+    
+    console.log('🔄 [RELOAD DEBUG] Workflow:', workflowTagged ? `Found: "${workflowText}"` : 'Not found, using default');
+    return workflowText;
   };
 
-  const [workflowText, setWorkflowText] = useState(getWorkflowText());
+  const [workflowText, setWorkflowText] = useState('1. Say hello to the user'); // Start with default
   const [currentStep, setCurrentStep] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const executionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Update workflow text when component mounts or tagged content changes
+  // Update workflow text when STM loads or tagged content changes
   useEffect(() => {
-    setWorkflowText(getWorkflowText());
-  }, []);
+    if (stmLoaded) {
+      const newWorkflowText = getWorkflowText();
+      setWorkflowText(newWorkflowText);
+    }
+  }, [stmLoaded]);
 
   // Parse workflow text into individual prompts
   const parseWorkflowSteps = (text: string): string[] => {

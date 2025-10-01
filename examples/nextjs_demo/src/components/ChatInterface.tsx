@@ -46,9 +46,10 @@ interface ChatInterfaceProps {
   onWorkflowPromptSent?: () => void;
   onStatusChange?: (status: string) => void;
   children?: React.ReactNode; // Allow children to be inserted between conversation and input
+  stmLoaded?: boolean; // Track STM loading state
 }
 
-export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children }: ChatInterfaceProps) {
+export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   
@@ -79,10 +80,18 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       fetch: async (input, init) => {
         try {
           const originalBody = init?.body ? JSON.parse(init.body as string) : {};
-          const systemPromptTagged = mindcacheRef.current.getTagged("SystemPrompt");
-          const systemPrompt = systemPromptTagged 
-            ? systemPromptTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
-            : mindcacheRef.current.get_system_prompt();
+          let systemPrompt;
+          if (stmLoaded) {
+            const systemPromptTagged = mindcacheRef.current.getTagged("SystemPrompt");
+            systemPrompt = systemPromptTagged 
+              ? systemPromptTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
+              : mindcacheRef.current.get_system_prompt();
+            
+            console.log('🔄 [RELOAD DEBUG] SystemPrompt:', systemPromptTagged ? `Found: "${systemPrompt}"` : 'Not found, using default');
+          } else {
+            systemPrompt = mindcacheRef.current.get_system_prompt();
+            console.log('🔄 [RELOAD DEBUG] SystemPrompt: STM not loaded yet, using default');
+          }
           const nextBody = { ...originalBody, toolSchemas: getToolSchemas(), systemPrompt };
           console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}), hasSystemPrompt: Boolean(systemPrompt) });
           return fetch(input, { ...init, body: JSON.stringify(nextBody) });
