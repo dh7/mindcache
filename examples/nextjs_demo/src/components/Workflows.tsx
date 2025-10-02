@@ -131,14 +131,14 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-green-400 hover:text-green-300 transition-colors font-mono text-xs"
+            className="text-green-400 hover:text-green-300 transition-colors font-mono text-sm"
             title={isExpanded ? "Collapse" : "Expand"}
           >
             {isExpanded ? '▼' : '▶'}
           </button>
           <span className="text-green-400 font-mono text-sm">Workflows</span>
           {isRunning && (
-            <span className="text-yellow-400 text-xs font-mono">
+            <span className="text-yellow-400 text-sm font-mono">
               [{currentStep + 1}/{steps.length}]
             </span>
           )}
@@ -149,14 +149,14 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
             <button
               onClick={startWorkflow}
               disabled={steps.length === 0 || isExecuting}
-              className="bg-green-400 text-black font-mono px-2 py-1 text-xs rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="bg-green-400 text-black font-mono px-2 py-1 text-sm rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Run ({steps.length})
             </button>
           ) : (
             <button
               onClick={stopWorkflow}
-              className="bg-red-400 text-black font-mono px-2 py-1 text-xs rounded hover:bg-red-300 transition-colors"
+              className="bg-red-400 text-black font-mono px-2 py-1 text-sm rounded hover:bg-red-300 transition-colors"
             >
               Stop
             </button>

@@ -59,7 +59,7 @@ export default function ChatConversation({ messages }: ChatConversationProps) {
         const { sources } = renderMessageContent(message);
         return (
           <div key={message.id} className="whitespace-pre-wrap mb-4">
-            <div className={`ml-2 ${message.role === 'user' ? 'text-green-400' : 'text-gray-400'}`}>
+            <div className={`ml-2 font-mono text-sm ${message.role === 'user' ? 'text-green-400' : 'text-gray-400'}`}>
               {message.role === 'user' ? '< ' : '> '}
               {message.parts?.map((part: MessagePart, index: number) => {
                 if (part.type === 'text') {

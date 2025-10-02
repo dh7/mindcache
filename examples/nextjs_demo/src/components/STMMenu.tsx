@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { mindcache } from 'mindcache';
 
 interface STMMenuProps {
@@ -9,33 +9,6 @@ interface STMMenuProps {
 
 export default function STMMenu({ onRefresh }: STMMenuProps) {
   const mindcacheRef = useRef(mindcache);
-
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 's':
-            e.preventDefault();
-            saveSTM();
-            break;
-          case 'l':
-            e.preventDefault();
-            loadSTM();
-            break;
-          case 'k':
-            e.preventDefault();
-            if (confirm('Clear STM? This will delete all entries and reset the chat.')) {
-              clearSTM();
-            }
-            break;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Add a new STM key
   const handleAddKey = () => {
@@ -179,14 +152,14 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={loadSTM}
-          title="Load STM from localStorage (Ctrl+L)"
+          title="Load STM from localStorage"
         >
           Load
         </div>
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={saveSTM}
-          title="Save STM to localStorage (Ctrl+S)"
+          title="Save STM to localStorage"
         >
           Save
         </div>
@@ -197,7 +170,7 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
               clearSTM();
             }
           }}
-          title="Clear STM - deletes all entries (Ctrl+K)"
+          title="Clear STM - deletes all entries"
         >
           Clear
         </div>
@@ -215,9 +188,6 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
         >
           Import
         </div>
-      </div>
-      <div className="text-xs text-gray-500">
-        Auto-loads on page refresh • Ctrl+S/L/K shortcuts • Export/Import as markdown
       </div>
     </div>
   );

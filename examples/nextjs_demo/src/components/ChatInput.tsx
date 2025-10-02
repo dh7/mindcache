@@ -44,7 +44,7 @@ export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
         <button 
           type="submit"
           disabled={status !== 'ready' || !input.trim()}
-          className="bg-green-400 text-black font-mono px-2 py-1 text-xs rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+          className="bg-green-400 text-black font-mono px-2 py-1 text-sm rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
         >
           {isLoading ? '...' : 'Send'}
         </button>
