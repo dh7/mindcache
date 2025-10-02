@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { mindcache } from 'mindcache';
 
 interface ChatInputProps {
-  onSendMessage: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
+  onSendMessage: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }>; metadata?: any }) => void;
   status: string;
 }
 
@@ -20,12 +20,13 @@ export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
       onSubmit={e => {
         e.preventDefault();
         if (input.trim() && status === 'ready') {
-          // Process the input through injectSTM to replace {key} placeholders with STM values
+          // Process the input through injectSTM to replace {{key}} placeholders with STM values
           const processedInput = mindcacheRef.current.injectSTM(input);
-          // Send message with processed text
+          // Send message with original text for display, processed text in metadata for LLM
           onSendMessage({
             role: 'user',
-            parts: [{ type: 'text' as const, text: processedInput }]
+            parts: [{ type: 'text' as const, text: input }], // Original text with {{key}} for display
+            metadata: { processedText: processedInput } // Processed text for LLM
           });
           setInput('');
         }

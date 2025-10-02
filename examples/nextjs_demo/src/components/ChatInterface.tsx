@@ -47,6 +47,7 @@ interface ChatInterfaceProps {
   onStatusChange?: (status: string) => void;
   children?: React.ReactNode; // Allow children to be inserted between conversation and input
   stmLoaded?: boolean; // Track STM loading state
+  stmVersion?: number; // Track STM changes to refresh getTagged values
 }
 
 export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded }: ChatInterfaceProps) {
@@ -87,10 +88,8 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
               ? systemPromptTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
               : mindcacheRef.current.get_system_prompt();
             
-            console.log('🔄 [RELOAD DEBUG] SystemPrompt:', systemPromptTagged ? `Found: "${systemPrompt}"` : 'Not found, using default');
           } else {
             systemPrompt = mindcacheRef.current.get_system_prompt();
-            console.log('🔄 [RELOAD DEBUG] SystemPrompt: STM not loaded yet, using default');
           }
           const nextBody = { ...originalBody, toolSchemas: getToolSchemas(), systemPrompt };
           console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}), hasSystemPrompt: Boolean(systemPrompt) });
@@ -206,10 +205,13 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   // Handle workflow prompts
   useEffect(() => {
     if (workflowPrompt && status === 'ready') {
-      // Send the workflow prompt (without automatic image attachment)
+      // Process the workflow prompt through injectSTM
+      const processedPrompt = mindcacheRef.current.injectSTM(workflowPrompt);
+      // Send the workflow prompt with original text for display, processed text in metadata
       sendMessage({
         role: 'user',
-        parts: [{ type: 'text' as const, text: workflowPrompt }]
+        parts: [{ type: 'text' as const, text: workflowPrompt }], // Original text with {{key}} for display
+        metadata: { processedText: processedPrompt } // Processed text for LLM
       });
       
       // Immediately notify that the prompt was sent to clear the workflowPrompt

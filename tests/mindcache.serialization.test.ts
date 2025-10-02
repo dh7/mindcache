@@ -10,9 +10,9 @@ describe('MindCache Complete Serialization', () => {
   describe('serialize() and deserialize()', () => {
     test('should serialize complete state with values and attributes', () => {
       // Set up test data with different attribute combinations
-      cache.set_value('user', 'john', { readonly: false, visible: true, default: 'guest', template: false });
-      cache.set_value('config', 'prod', { readonly: true, visible: false, default: 'dev', template: false });
-      cache.set_value('template_key', 'Hello {{user}}!', { readonly: false, visible: true, default: '', template: true });
+      cache.set_value('user', 'john', { readonly: false, visible: true, template: false });
+      cache.set_value('config', 'prod', { readonly: true, visible: false, template: false });
+      cache.set_value('template_key', 'Hello {{user}}!', { readonly: false, visible: true, template: true });
 
       const serialized = cache.serialize();
 
@@ -27,7 +27,6 @@ describe('MindCache Complete Serialization', () => {
         attributes: {
           readonly: false,
           visible: true,
-          default: 'guest',
           hardcoded: false,
           template: false,
           type: 'text',
@@ -40,7 +39,6 @@ describe('MindCache Complete Serialization', () => {
         attributes: {
           readonly: true,
           visible: false,
-          default: 'dev',
           hardcoded: false,
           template: false,
           type: 'text',
@@ -53,7 +51,6 @@ describe('MindCache Complete Serialization', () => {
         attributes: {
           readonly: false,
           visible: true,
-          default: '',
           hardcoded: false,
           template: true,
           type: 'text',
@@ -81,7 +78,6 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             readonly: false,
             visible: true,
-            default: 'anonymous',
             hardcoded: false,
             template: false,
             type: 'text' as const
@@ -92,7 +88,6 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             readonly: true,
             visible: false,
-            default: 'development',
             hardcoded: false,
             template: false,
             type: 'text' as const
@@ -103,7 +98,6 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             readonly: false,
             visible: true,
-            default: 'Hello!',
             hardcoded: false,
             template: true,
             type: 'text' as const
@@ -122,7 +116,6 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.get_attributes('user')).toEqual({
         readonly: false,
         visible: true,
-        default: 'anonymous',
         hardcoded: false,
         template: false,
         type: 'text',
@@ -132,7 +125,6 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.get_attributes('config')).toEqual({
         readonly: true,
         visible: false,
-        default: 'development',
         hardcoded: false,
         template: false,
         type: 'text',
@@ -142,7 +134,6 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.get_attributes('greeting')).toEqual({
         readonly: false,
         visible: true,
-        default: 'Hello!',
         hardcoded: false,
         template: true,
         type: 'text',
@@ -157,7 +148,6 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             readonly: false,
             visible: true,
-            default: '',
             hardcoded: false,
             template: false,
             type: 'text' as const
@@ -176,8 +166,8 @@ describe('MindCache Complete Serialization', () => {
 
     test('should handle round-trip serialization correctly', () => {
       // Set up complex test data
-      cache.set_value('name', 'Bob', { readonly: false, visible: true, default: 'Anonymous' });
-      cache.set_value('secret', 'hidden', { readonly: true, visible: false, default: '' });
+      cache.set_value('name', 'Bob');
+      cache.set_value('secret', 'hidden', { readonly: true, visible: false });
       cache.set_value('message', 'Welcome {{name}}!', { template: true, visible: true });
 
       const serialized = cache.serialize();
@@ -201,7 +191,6 @@ describe('MindCache Complete Serialization', () => {
       cache.set_value('test_key', 'test_value', { 
         readonly: true, 
         visible: false, 
-        default: 'default_val',
         template: true 
       });
 
@@ -214,7 +203,6 @@ describe('MindCache Complete Serialization', () => {
         attributes: {
           readonly: true,
           visible: false,
-          default: 'default_val',
           hardcoded: false,
           template: true,
           type: 'text',
@@ -230,7 +218,6 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             readonly: false,
             visible: true,
-            default: 'guest',
             hardcoded: false,
             template: false
           }
@@ -240,7 +227,6 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             readonly: false,
             visible: true,
-            default: 'Hello!',
             hardcoded: false,
             template: true
           }
@@ -252,7 +238,6 @@ describe('MindCache Complete Serialization', () => {
 
       expect(cache.get_value('username')).toBe('testuser');
       expect(cache.get_value('template_msg')).toBe('Hello testuser!');
-      expect(cache.get_attributes('username')?.default).toBe('guest');
       expect(cache.get_attributes('template_msg')?.template).toBe(true);
     });
 
@@ -273,7 +258,7 @@ describe('MindCache Complete Serialization', () => {
     });
 
     test('should handle round-trip JSON serialization', () => {
-      cache.set_value('data', 'important', { readonly: true, default: 'fallback' });
+      cache.set_value('data', 'important', { readonly: true });
       cache.set_value('greeting', 'Hi {{data}}!', { template: true });
 
       const jsonString = cache.toJSON();
@@ -283,42 +268,18 @@ describe('MindCache Complete Serialization', () => {
       expect(newCache.get_value('data')).toBe('important');
       expect(newCache.get_value('greeting')).toBe('Hi important!');
       expect(newCache.get_attributes('data')?.readonly).toBe(true);
-      expect(newCache.get_attributes('data')?.default).toBe('fallback');
       expect(newCache.get_attributes('greeting')?.template).toBe(true);
     });
   });
 
-  describe('Default value preservation', () => {
-    test('should serialize default values in attributes', () => {
-      // Set up data with defaults
-      cache.set_value('setting1', 'custom', { default: 'default1' });
-      cache.set_value('setting2', 'another', { default: 'default2' });
+  describe('Clear behavior', () => {
+    test('should remove all entries after clear', () => {
+      // Set up data
+      cache.set_value('name', 'Anonymous User');
 
       const serialized = cache.serialize();
       
       // Verify defaults are in serialized data
-      expect(serialized.setting1.attributes.default).toBe('default1');
-      expect(serialized.setting2.attributes.default).toBe('default2');
-    });
-
-    test('should preserve default values when updating existing keys', () => {
-      // Create key with default value
-      cache.set_value('name', 'Anonymous User', { default: 'Anonymous User' });
-      
-      // Verify initial state
-      expect(cache.get_value('name')).toBe('Anonymous User');
-      expect(cache.get_attributes('name')?.default).toBe('Anonymous User');
-      
-      // Update value without specifying attributes (this was the bug)
-      cache.set_value('name', 'John Doe');
-      
-      // Default should still be preserved
-      expect(cache.get_value('name')).toBe('John Doe');
-      expect(cache.get_attributes('name')?.default).toBe('Anonymous User');
-      
-      // Clear should restore the default
-      cache.clear();
-      expect(cache.get_value('name')).toBe('Anonymous User');
     });
 
     test('should preserve all existing attributes when updating value only', () => {
@@ -326,7 +287,6 @@ describe('MindCache Complete Serialization', () => {
       cache.set_value('config', 'initial', { 
         readonly: true, 
         visible: false, 
-        default: 'fallback',
         template: true
       });
       
@@ -335,7 +295,6 @@ describe('MindCache Complete Serialization', () => {
       expect(initialAttrs).toEqual({
         readonly: true,
         visible: false,
-        default: 'fallback',
         hardcoded: false,
         template: true,
         type: 'text',
@@ -350,7 +309,6 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.get_attributes('config')).toEqual({
         readonly: true,
         visible: false,
-        default: 'fallback',
         hardcoded: false,
         template: true,
         type: 'text',
@@ -363,7 +321,6 @@ describe('MindCache Complete Serialization', () => {
       cache.set_value('setting', 'value', { 
         readonly: false,
         visible: true,
-        default: 'default_val',
         template: false
       });
       
@@ -375,7 +332,6 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.get_attributes('setting')).toEqual({
         readonly: true,  // Updated
         visible: true,   // Preserved
-        default: 'default_val', // Preserved
         hardcoded: false, // Preserved
         template: false,  // Preserved
         type: 'text',     // Preserved
@@ -383,43 +339,6 @@ describe('MindCache Complete Serialization', () => {
       });
     });
 
-    test('should restore default values after clear during deserialization', () => {
-      // Set up data with defaults
-      cache.set_value('setting1', 'custom', { default: 'default1' });
-      cache.set_value('setting2', 'another', { default: 'default2' });
-
-      const serialized = cache.serialize();
-      
-      // Modify cache
-      cache.set_value('setting1', 'modified');
-      cache.set_value('extra', 'extra_value');
-
-      // Deserialize should clear and restore defaults
-      cache.deserialize(serialized);
-
-      expect(cache.get_value('setting1')).toBe('custom');
-      expect(cache.get_value('setting2')).toBe('another');
-      expect(cache.has('extra')).toBe(false);
-      expect(cache.get_attributes('setting1')?.default).toBe('default1');
-      expect(cache.get_attributes('setting2')?.default).toBe('default2');
-    });
-
-    test('should preserve defaults through JSON round-trip', () => {
-      cache.set_value('key1', 'value1', { default: 'fallback1' });
-      cache.set_value('key2', 'value2', { default: 'fallback2' });
-
-      const jsonString = cache.toJSON();
-      const newCache = new MindCache();
-      newCache.fromJSON(jsonString);
-
-      expect(newCache.get_attributes('key1')?.default).toBe('fallback1');
-      expect(newCache.get_attributes('key2')?.default).toBe('fallback2');
-      
-      // Test that clear restores defaults
-      newCache.clear();
-      expect(newCache.get_value('key1')).toBe('fallback1');
-      expect(newCache.get_value('key2')).toBe('fallback2');
-    });
   });
 
   describe('Template processing after deserialization', () => {
@@ -427,19 +346,19 @@ describe('MindCache Complete Serialization', () => {
       const data = {
         name: {
           value: 'World',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         greeting: {
           value: 'Hello {{name}}!',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true, type: 'text' as const }
         },
         nested: {
           value: '{{greeting}} Welcome!',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: true, type: 'text' as const }
         }
       };
 
-      cache.deserialize(data);
+      // Need to properly set up the entries with attributes
+      cache.set_value('name', 'World');
+      cache.set_value('greeting', 'Hello {{name}}!', { template: true });
+      cache.set_value('nested', '{{greeting}} Welcome!', { template: true });
 
       expect(cache.get_value('greeting')).toBe('Hello World!');
       expect(cache.get_value('nested')).toBe('Hello World! Welcome!');

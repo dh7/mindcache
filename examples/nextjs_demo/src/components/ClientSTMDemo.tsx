@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
+import STMMenu from './STMMenu';
 import Workflows from './Workflows';
 
 // Import official types from AI SDK
@@ -14,20 +15,36 @@ export default function ClientSTMDemo() {
   const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
   const [isResizing, setIsResizing] = useState(false);
   const [stmLoaded, setStmLoaded] = useState(false); // Track STM loading state
+  const [stmVersion, setStmVersion] = useState(0); // Force refresh of getTagged values
+  const [chatKey, setChatKey] = useState(0); // Force chat remount on load/import/clear
   
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
   const [chatStatus, setChatStatus] = useState<string>('ready');
 
+  // Callback to force refresh of getTagged values
+  const handleSTMChange = useCallback(() => {
+    setStmVersion(v => v + 1);
+  }, []);
+
+  // Callback to fully refresh UI (chat, workflows) after load/import/clear
+  const handleFullRefresh = useCallback(() => {
+    console.log('🔄 Full UI refresh triggered');
+    // Increment version to refresh workflows and STM editor
+    setStmVersion(v => v + 1);
+    // Increment chat key to force remount with new initial messages
+    setChatKey(k => k + 1);
+  }, []);
+
 
   // Analyze image tool function
-  const analyzeImageWithSTM = async (prompt: string, keyName?: string) => {
+  const analyzeImageWithSTM = async (prompt: string) => {
     try {
       console.log('🔍 Starting image analysis with STM integration');
       
-      // Extract image references from prompt (@image_name, {image_name}, etc.)
-      const imageRefMatches = prompt.match(/@(\w+)|{(\w+)}/g);
-      const imageRefs = imageRefMatches?.map(ref => ref.replace(/[@{}]/g, '')) || [];
+      // Extract image references from prompt ({{image_name}})
+      const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
+      const imageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
       
       console.log('📝 Found image references:', imageRefs);
       
@@ -38,7 +55,7 @@ export default function ClientSTMDemo() {
         console.log('🚫 No explicit image references found - no images will be analyzed');
         return {
           success: false,
-          error: 'No explicit image references found. Please use @image_name syntax to specify which image to analyze (e.g., "Analyze @my_image and describe what you see").'
+          error: 'No explicit image references found. Please use {{image_name}} syntax to specify which image to analyze (e.g., "Analyze {{my_image}} and describe what you see").'
         };
       } else {
         // EXPLICIT REFERENCES: Get specific referenced images (ignore visibility)
@@ -87,24 +104,16 @@ export default function ClientSTMDemo() {
         const result = await response.json();
         
         if (result.success) {
-          // Store analysis result in STM
-          const timestamp = Date.now();
-          const analysisKey = keyName || `image_analysis_${timestamp}`;
-          
-          console.log('💾 Storing analysis in STM:', { analysisKey, analysis: result.data.analysis });
-          mindcacheRef.current.set_value(analysisKey, result.data.analysis, {
-            type: 'text',
-            visible: true
-          });
+          // Return the analysis without storing it - let the AI write it to the desired location
+          console.log('✅ Analysis completed:', { hasAnalysis: !!result.data.analysis });
           
           return {
             success: true,
-            analysisKey,
             analysis: result.data.analysis,
             confidence: result.data.confidence,
             tags: result.data.tags,
             summary: result.data.summary,
-            message: `Image analysis completed and stored as '${analysisKey}'`
+            message: `Image analysis completed. Use the analysis result to write to your desired STM key.`
           };
         } else {
           return {
@@ -199,7 +208,10 @@ export default function ClientSTMDemo() {
           const imageKey = imageName || `generated_image_${timestamp}`;
           
           console.log('🖼️ Adding image to mindcache:', { imageKey, contentType, base64Length: base64Data.length, customName: !!imageName });
-          mindcacheRef.current.add_image(imageKey, base64Data, contentType);
+          mindcacheRef.current.add_image(imageKey, base64Data, contentType, {
+            readonly: true, // Prevent AI from overwriting the image with text
+            visible: true
+          });
           
           // Debug: Check what was actually stored
           const storedAttributes = mindcacheRef.current.get_attributes(imageKey);
@@ -268,7 +280,6 @@ export default function ClientSTMDemo() {
       ? assistantFirstMessage.split(': ').slice(1).join(': ') // Extract value part after "key: "
       : 'Hello!';
     
-    console.log('🔄 [RELOAD DEBUG] AssistantFirstMessage:', assistantFirstMessage ? `Found: "${messageText}"` : 'Not found, using default');
     
     return [
       {
@@ -305,9 +316,9 @@ export default function ClientSTMDemo() {
       
       if (userKeys.length === 0) {
         console.log('Creating default STM keys...');
-        mindcacheRef.current.set_value('name', 'Anonymous User', { default: 'Anonymous User' });
-        mindcacheRef.current.set_value('preferences', 'No preferences set', { default: 'No preferences set' });
-        mindcacheRef.current.set_value('notes', 'No notes', { default: 'No notes' });
+        mindcacheRef.current.set_value('name', 'Anonymous User');
+        mindcacheRef.current.set_value('preferences', 'No preferences set');
+        mindcacheRef.current.set_value('notes', 'No notes');
         console.log('Created keys:', Object.keys(mindcacheRef.current.getAll()));
       }
       
@@ -325,9 +336,9 @@ export default function ClientSTMDemo() {
     if (toolCall.toolName === 'generate_image') {
       const { prompt, imageName } = toolCall.input as { prompt: string; imageName?: string };
       
-      // Extract explicit image references from prompt (@image_name, {image_name}, etc.)
-      const imageRefMatches = prompt.match(/@(\w+)|{(\w+)}/g);
-      const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/[@{}]/g, '')) || [];
+      // Extract explicit image references from prompt ({{image_name}})
+      const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
+      const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
       
       console.log('📝 Found explicit image references:', explicitImageRefs);
       
@@ -359,11 +370,11 @@ export default function ClientSTMDemo() {
 
     // Handle analyze_image tool calls
     if (toolCall.toolName === 'analyze_image') {
-      const { prompt, analysisName } = toolCall.input as { prompt: string; analysisName?: string };
+      const { prompt } = toolCall.input as { prompt: string; analysisName?: string };
       
       console.log('🔍 Analyzing image with prompt:', prompt);
       
-      const result = await analyzeImageWithSTM(prompt, analysisName);
+      const result = await analyzeImageWithSTM(prompt);
       console.log('🔍 Image analysis result:', result);
       return result;
     }
@@ -448,18 +459,21 @@ export default function ClientSTMDemo() {
         className="flex flex-col min-h-0"
       >
         <ChatInterface 
+          key={chatKey} // Force remount on load/import/clear
           onToolCall={handleToolCall} 
           initialMessages={getInitialMessages()}
           workflowPrompt={workflowPrompt}
           onWorkflowPromptSent={handleWorkflowPromptSent}
           onStatusChange={handleStatusChange}
           stmLoaded={stmLoaded}
+          stmVersion={stmVersion}
         >
           <Workflows 
             onSendPrompt={handleSendPrompt}
             isExecuting={chatStatus !== 'ready'}
             onExecutionComplete={handleExecutionComplete}
             stmLoaded={stmLoaded}
+            stmVersion={stmVersion}
           />
         </ChatInterface>
       </div>
@@ -473,12 +487,13 @@ export default function ClientSTMDemo() {
         title="Drag to resize panels"
       />
       
-      {/* Right Panel - STMEditor */}
+      {/* Right Panel - STM Menu + Editor */}
       <div 
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMEditor />
+        <STMMenu onRefresh={handleFullRefresh} />
+        <STMEditor onSTMChange={handleSTMChange} />
       </div>
     </div>
   );

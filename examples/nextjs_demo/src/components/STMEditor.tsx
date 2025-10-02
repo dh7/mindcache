@@ -21,7 +21,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   const [attributesForm, setAttributesForm] = useState({
     readonly: false,
     visible: true,
-    default: '',
     hardcoded: false,
     template: false,
     type: 'text' as 'text' | 'image' | 'file' | 'json',
@@ -45,33 +44,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     return () => mindcacheRef.current.unsubscribeFromAll(updateSTMState);
   }, [updateSTMState]);
 
-  // Global keyboard shortcuts for terminal commands
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 's':
-            e.preventDefault();
-            saveSTM();
-            break;
-          case 'l':
-            e.preventDefault();
-            loadSTM();
-            break;
-          case 'k':
-            e.preventDefault();
-            if (confirm('Clear STM? This will restore default values.')) {
-              clearSTM();
-            }
-            break;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
   // Generate tool schemas (without execute functions) for display
   function getToolSchemas(): Record<string, ToolSchema> {
     const tools = mindcacheRef.current.get_aisdk_tools();
@@ -86,13 +58,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
 
     return schemas;
   }
-
-  // Add a new STM key
-  const addSTMKey = (key: string) => {
-    if (key && !mindcacheRef.current.has(key)) {
-      mindcacheRef.current.set_value(key, '');
-    }
-  };
 
   // Handle file upload
   const handleFileUpload = async (key: string, file: File) => {
@@ -150,7 +115,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
       setAttributesForm({
         readonly: attributes.readonly,
         visible: attributes.visible,
-        default: attributes.default,
         hardcoded: attributes.hardcoded,
         template: attributes.template,
         type: attributes.type,
@@ -162,7 +126,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
       setAttributesForm({
         readonly: false,
         visible: true,
-        default: '',
         hardcoded: false,
         template: false,
         type: 'text',
@@ -178,6 +141,13 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   // Save attributes
   const saveAttributes = () => {
     if (editingAttributes) {
+      // Collect final tags array including any pending tag being typed
+      const finalTags = [...attributesForm.tags];
+      const pendingTag = newTagInput.trim();
+      if (pendingTag && !finalTags.includes(pendingTag)) {
+        finalTags.push(pendingTag);
+      }
+      
       const oldKey = editingAttributes;
       const newKey = editingKeyName.trim();
       
@@ -193,11 +163,12 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         const currentValue = mindcacheRef.current.get_value(oldKey);
         
         // Create new entry with new name (excluding tags from attributes)
-        const { tags, ...attributesWithoutTags } = attributesForm;
+        const { tags: _, ...attributesWithoutTags } = attributesForm;
+        void _; // Mark as intentionally unused
         mindcacheRef.current.set_value(newKey, currentValue, attributesWithoutTags);
         
-        // Set tags separately
-        tags.forEach(tag => {
+        // Set tags separately (using final tags)
+        finalTags.forEach(tag => {
           mindcacheRef.current.addTag(newKey, tag);
         });
         
@@ -205,15 +176,16 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         mindcacheRef.current.delete(oldKey);
       } else {
         // Just update attributes (excluding tags)
-        const { tags, ...attributesWithoutTags } = attributesForm;
+        const { tags: _, ...attributesWithoutTags } = attributesForm;
+        void _; // Mark as intentionally unused
         mindcacheRef.current.set_attributes(oldKey, attributesWithoutTags);
         
-        // Update tags - remove all existing tags and add new ones
+        // Update tags - remove all existing tags and add new ones (using final tags)
         const existingTags = mindcacheRef.current.getTags(oldKey);
         existingTags.forEach(tag => {
           mindcacheRef.current.removeTag(oldKey, tag);
         });
-        tags.forEach(tag => {
+        finalTags.forEach(tag => {
           mindcacheRef.current.addTag(oldKey, tag);
         });
       }
@@ -265,89 +237,10 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     }
   };
 
-  // Save STM to localStorage
-  const saveSTM = () => {
-    try {
-      const serialized = mindcacheRef.current.toJSON();
-      localStorage.setItem('mindcache_stm', serialized);
-      console.log('✅ STM saved to localStorage');
-    } catch (error) {
-      console.error('❌ Failed to save STM:', error);
-    }
-  };
-
-  // Load STM from localStorage
-  const loadSTM = () => {
-    try {
-      const saved = localStorage.getItem('mindcache_stm');
-      if (saved) {
-        mindcacheRef.current.fromJSON(saved);
-        console.log('✅ STM loaded from localStorage');
-      } else {
-        console.log('ℹ️ No saved STM found');
-      }
-    } catch (error) {
-      console.error('❌ Failed to load STM:', error);
-    }
-  };
-
-  // Clear STM
-  const clearSTM = () => {
-    mindcacheRef.current.clear();
-    console.log('🗑️ STM cleared');
-  };
-
   return (
     <div className="flex-1 flex flex-col pl-1 min-h-0">
-      {/* Terminal Commands - Fixed Header */}
-      <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0">
-        <div className="flex space-x-4 mb-2">
-          <div 
-            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-            onClick={() => {
-              const key = prompt('Enter new STM key:');
-              if (key && key.trim()) {
-                addSTMKey(key.trim());
-              }
-            }}
-            title="Add new STM key"
-          >
-            Add Key
-          </div>
-          <div 
-            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-            onClick={loadSTM}
-            title="Load STM from localStorage (Ctrl+L)"
-          >
-            Load
-          </div>
-          <div 
-            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-            onClick={saveSTM}
-            title="Save STM to localStorage (Ctrl+S)"
-          >
-            Save
-          </div>
-          <div 
-            className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
-            onClick={() => {
-              if (confirm('Clear STM? This will restore default values.')) {
-                clearSTM();
-              }
-            }}
-            title="Clear STM - keeps defaults (Ctrl+K)"
-          >
-            Clear
-          </div>
-        </div>
-        <div className="text-xs text-gray-500 mb-4">
-          Auto-loads on page refresh • Ctrl+S/L/K shortcuts
-        </div>
-        <div className="border-b border-green-400"></div>
-      </div>
-
       {/* STM Content - Scrollable */}
-      <div className="flex-1 border border-green-400 rounded-b p-4 overflow-y-auto min-h-0 border-t-0">
+      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto min-h-0">
 
         {Object.keys(stmState).length === 0 ? (
           <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>
@@ -402,9 +295,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                 if (attributes.hardcoded || isSystemKey) {
                   indicators.push('H');
                 }
-                if (attributes.default !== '') {
-                  indicators.push('D');
-                }
               }
               
               return (
@@ -453,8 +343,9 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                       <textarea
                         value={editingValue}
                         onChange={(e) => setEditingValue(e.target.value)}
-                        className="w-full bg-black text-green-400 font-mono px-2 py-1 focus:outline-none resize-none"
-                        rows={Math.max(2, editingValue.split('\n').length)}
+                        onBlur={saveEdit}
+                        className="w-full bg-black text-green-400 font-mono px-2 py-2 focus:outline-none resize-y border border-green-400 rounded"
+                        rows={Math.max(6, editingValue.split('\n').length + 1)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && e.ctrlKey) {
                             saveEdit();
@@ -536,11 +427,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
       {editingAttributes && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              cancelAttributes();
-            }
-          }}
         >
           <div 
             className="bg-black border-2 border-green-400 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
@@ -697,60 +583,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                 </span>
               </div>
 
-              {/* Default - only show if not a hardcoded property */}
-              {!attributesForm.hardcoded && (
-                <div className="flex flex-col space-y-2">
-                  <div className="text-gray-400 font-mono">
-                    <span className="text-yellow-400">[D]</span> default:
-                    <div className="text-xs text-gray-500 mt-1">Value restored on clear()</div>
-                  </div>
-                  
-                  {/* Image/File default handling */}
-                  {(attributesForm.type === 'image' || attributesForm.type === 'file') ? (
-                    <div className="space-y-2">
-                      {attributesForm.default ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-green-400 font-mono text-sm">
-                            Default {attributesForm.type} set
-                          </span>
-                          <button
-                            onClick={() => setAttributesForm({ ...attributesForm, default: '' })}
-                            className="text-red-400 hover:text-red-300 font-mono text-sm px-2 py-1 border border-red-400 rounded transition-colors"
-                          >
-                            Remove Default
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            if (editingKeyName && mindcacheRef.current.has(editingKeyName)) {
-                              const currentValue = mindcacheRef.current.get_value(editingKeyName);
-                              if (currentValue) {
-                                setAttributesForm({ ...attributesForm, default: currentValue });
-                              } else {
-                                alert(`No ${attributesForm.type} data to set as default. Upload a ${attributesForm.type} first.`);
-                              }
-                            }
-                          }}
-                          className="text-green-400 hover:text-green-300 font-mono text-sm px-3 py-2 border border-green-400 rounded transition-colors"
-                        >
-                          Set Current as Default
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    /* Text/JSON default handling */
-                    <textarea
-                      value={attributesForm.default}
-                      onChange={(e) => setAttributesForm({ ...attributesForm, default: e.target.value })}
-                      className="bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-green-400 resize-none"
-                      placeholder="Default value..."
-                      rows={3}
-                    />
-                  )}
-                </div>
-              )}
-
               {/* Tags */}
               <div className="flex flex-col space-y-2">
                 <div className="text-gray-400 font-mono">
@@ -820,7 +652,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
 
             {/* Keyboard Shortcuts */}
             <div className="mt-3 text-xs text-gray-500 text-center">
-              Ctrl+Enter to save &bull; Esc to cancel &bull; Click outside to close
+              Ctrl+Enter to save &bull; Esc to cancel
             </div>
           </div>
         </div>

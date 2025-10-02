@@ -22,14 +22,30 @@ export const POST = async (req: NextRequest) => {
     lastMessagePreview: (messages[messages.length - 1]?.parts?.[0] as any)?.text?.substring(0, 100) + '...'
   });
 
+  // Process messages: use metadata.processedText for LLM if available (keeps {{key}} in UI, sends values to LLM)
+  const processedMessages = messages.map(msg => {
+    if (msg.metadata && (msg.metadata as any).processedText) {
+      return {
+        ...msg,
+        parts: msg.parts?.map(part => {
+          if (part.type === 'text') {
+            return { ...part, text: (msg.metadata as any).processedText };
+          }
+          return part;
+        })
+      };
+    }
+    return msg;
+  });
+
   // Convert client tool schemas to server tool definitions (schema only, no execute)
   const serverTools: Record<string, unknown> = {};
   
   // Add generate_image tool directly on server
   serverTools['generate_image'] = tool({
-    description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. Only includes existing images when explicitly referenced with @image_name syntax. Without explicit references, generates completely new images. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).',
+    description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. Only includes existing images when explicitly referenced with {{image_name}} syntax. Without explicit references, generates completely new images. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).',
     inputSchema: z.object({
-      prompt: z.string().describe('The prompt for image generation or editing. Use @image_name to reference specific images for editing (e.g., "Edit @my_image to be brighter"). Without explicit references, generates new images.'),
+      prompt: z.string().describe('The prompt for image generation or editing. Use {{image_name}} to reference specific images for editing (e.g., "Edit {{my_image}} to be brighter"). Without explicit references, generates new images.'),
       imageName: z.string().optional().describe('Optional name for the generated/edited image to store in the STM (Short Term Memory)')
     }),
     // NO execute function - this forces client-side execution via onToolCall
@@ -37,9 +53,9 @@ export const POST = async (req: NextRequest) => {
 
   // Add analyze_image tool directly on server
   serverTools['analyze_image'] = tool({
-    description: 'Analyze specific images stored in STM (Short Term Memory) using AI vision. REQUIRES explicit @image_name references in the prompt - will not analyze visible images automatically. The analysis result will be stored back in STM for future reference.',
+    description: 'Analyze specific images stored in STM (Short Term Memory) using AI vision. REQUIRES explicit {{image_name}} references in the prompt - will not analyze visible images automatically. The analysis result will be stored back in STM for future reference.',
     inputSchema: z.object({
-      prompt: z.string().describe('The analysis prompt. MUST include @image_name to reference specific images from STM (e.g., "Analyze @generated_image_1 and describe the colors"). Will fail if no explicit image references are provided.'),
+      prompt: z.string().describe('The analysis prompt. MUST include {{image_name}} to reference specific images from STM (e.g., "Analyze {{generated_image_1}} and describe the colors"). Will fail if no explicit image references are provided.'),
       analysisName: z.string().optional().describe('Optional name for storing the analysis result in STM (defaults to analysis_timestamp)')
     }),
     // NO execute function - this forces client-side execution via onToolCall
@@ -104,7 +120,7 @@ IMPORTANT IMAGE HANDLING RULES:
   
   const result = await streamText({
     model: openai('gpt-4o'),
-    messages: convertToModelMessages(messages),
+    messages: convertToModelMessages(processedMessages),
     system: finalSystem,
     tools: allTools,
     stopWhen: [stepCountIs(5)],

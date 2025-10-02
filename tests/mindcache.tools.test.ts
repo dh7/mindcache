@@ -165,7 +165,6 @@ describe('MindCache Tooling', () => {
       cache.set_value('special_key', 'original', {
         readonly: false,
         visible: true,
-        default: 'default_value',
         hardcoded: false,
         template: false
       });
@@ -180,7 +179,6 @@ describe('MindCache Tooling', () => {
       const attributes = cache.get_attributes('special_key');
       expect(attributes).toBeDefined();
       expect(attributes!.visible).toBe(true);
-      expect(attributes!.default).toBe('default_value');
     });
   });
 

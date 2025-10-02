@@ -259,6 +259,15 @@ describe('MindCache', () => {
       expect(result).toBe('Hello Eve, you live in '); // Missing key becomes empty string
     });
 
+    test('should preserve image and file placeholders', () => {
+      cache.set_base64('profile_pic', 'base64data', 'image/png', 'image');
+      cache.set_base64('document', 'base64data', 'application/pdf', 'file');
+      cache.set('username', 'Alice');
+      
+      const result = cache.injectSTM('User {{username}} has image {{profile_pic}} and file {{document}}');
+      expect(result).toBe('User Alice has image {{profile_pic}} and file {{document}}');
+    });
+
     test('should return template unchanged if no placeholders', () => {
       const template = 'This is a plain string';
       const result = cache.injectSTM(template);
@@ -347,15 +356,15 @@ describe('MindCache', () => {
       const testData = {
         name: {
           value: 'Bob',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         },
         age: {
           value: 25,
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         },
         settings: {
           value: { notifications: true },
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         }
       };
       
@@ -379,11 +388,11 @@ describe('MindCache', () => {
       cache.deserialize({
         existing: {
           value: 'new',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         },
         newKey: {
           value: 'newValue',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         }
       });
       
@@ -424,20 +433,25 @@ describe('MindCache', () => {
       const testData = {
         name: {
           value: 'David',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         active: {
           value: true,
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         metadata: {
           value: { version: 1 },
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         }
       };
       
       const jsonString = JSON.stringify(testData);
-      cache.fromJSON(jsonString);
+      
+      // fromJSON expects a serialized format with attributes
+      cache.set('name', 'David');
+      cache.set('active', true);
+      cache.set('metadata', { version: 1 });
+      
+      const properJson = cache.toJSON();
+      cache.clear();
+      cache.fromJSON(properJson);
       
       expect(cache.get('name')).toBe('David');
       expect(cache.get('active')).toBe(true);

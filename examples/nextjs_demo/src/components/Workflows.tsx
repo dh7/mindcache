@@ -8,23 +8,21 @@ interface WorkflowsProps {
   isExecuting: boolean;
   onExecutionComplete: () => void;
   stmLoaded?: boolean; // Track STM loading state
+  stmVersion?: number; // Track STM changes to refresh getTagged values
 }
 
-export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded }: WorkflowsProps) {
-  const mindcacheRef = useRef(mindcache);
+export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion }: WorkflowsProps) {
   // Get workflow from tagged content or use default
   const getWorkflowText = () => {
     if (!stmLoaded) {
-      console.log('🔄 [RELOAD DEBUG] Workflow: STM not loaded yet, using default');
       return '1. Say hello to the user';
     }
 
-    const workflowTagged = mindcacheRef.current.getTagged("Workflow");
+    const workflowTagged = mindcache.getTagged("Workflow");
     const workflowText = workflowTagged 
       ? workflowTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
       : '1. Say hello to the user';
     
-    console.log('🔄 [RELOAD DEBUG] Workflow:', workflowTagged ? `Found: "${workflowText}"` : 'Not found, using default');
     return workflowText;
   };
 
@@ -40,7 +38,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       const newWorkflowText = getWorkflowText();
       setWorkflowText(newWorkflowText);
     }
-  }, [stmLoaded]);
+  }, [stmLoaded, stmVersion]);
 
   // Parse workflow text into individual prompts
   const parseWorkflowSteps = (text: string): string[] => {
@@ -82,10 +80,9 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
     }
 
     const rawPrompt = steps[stepIndex];
-    // Process the prompt through injectSTM to replace {key} placeholders with STM values
-    const processedPrompt = mindcacheRef.current.injectSTM(rawPrompt);
+    // Send raw prompt with {{key}} placeholders - ChatInterface will process it
     setCurrentStep(stepIndex);
-    onSendPrompt(processedPrompt);
+    onSendPrompt(rawPrompt);
   }, [steps, onExecutionComplete, onSendPrompt]);
 
   // Move to next step
@@ -171,14 +168,6 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       {/* Content */}
       {isExpanded && (
         <div className="p-3">
-          <textarea
-            value={workflowText}
-            onChange={(e) => setWorkflowText(e.target.value)}
-            disabled={isRunning}
-            placeholder="Enter your workflow steps (use {{name}}, {{preferences}}, {{notes}}, {{$date}}, {{$time}}):&#10;1. Analyze situation for {{name}}&#10;2. Consider {{preferences}}&#10;3. Review {{notes}}&#10;4. Provide recommendations"
-            className="w-full h-32 bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50 resize-vertical"
-          />
-          
           {/* Step preview */}
           {steps.length > 0 && (
             <div className="mt-3 p-2 bg-green-900 bg-opacity-20 rounded">
