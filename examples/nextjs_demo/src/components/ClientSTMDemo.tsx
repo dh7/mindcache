@@ -37,7 +37,7 @@ export default function ClientSTMDemo() {
 
 
   // Analyze image tool function
-  const analyzeImageWithSTM = async (prompt: string, keyName?: string) => {
+  const analyzeImageWithSTM = async (prompt: string) => {
     try {
       console.log('🔍 Starting image analysis with STM integration');
       
@@ -369,11 +369,11 @@ export default function ClientSTMDemo() {
 
     // Handle analyze_image tool calls
     if (toolCall.toolName === 'analyze_image') {
-      const { prompt, analysisName } = toolCall.input as { prompt: string; analysisName?: string };
+      const { prompt } = toolCall.input as { prompt: string; analysisName?: string };
       
       console.log('🔍 Analyzing image with prompt:', prompt);
       
-      const result = await analyzeImageWithSTM(prompt, analysisName);
+      const result = await analyzeImageWithSTM(prompt);
       console.log('🔍 Image analysis result:', result);
       return result;
     }

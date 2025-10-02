@@ -428,6 +428,7 @@ class MindCache {
   }
 
   // Replace placeholders in a string with STM values (only uses visible keys for public injectSTM calls)
+  // Note: Image and file type placeholders are NOT replaced - they remain as {{key}} for tools to process
   injectSTM(template: string, _processingStack?: Set<string>): string {
     // Handle null/undefined templates
     if (template === null || template === undefined) {
@@ -461,6 +462,11 @@ class MindCache {
       // If this is external call, only allow visible keys
       const attributes = this.get_attributes(key);
       if (_processingStack || (attributes && attributes.visible)) {
+        // Skip replacement for image and file types - keep the placeholder
+        if (attributes && (attributes.type === 'image' || attributes.type === 'file')) {
+          return acc; // Don't add to inputValues, placeholder will remain
+        }
+        
         return {
           ...acc,
           [key]: this.get_value(key, _processingStack)
@@ -472,7 +478,22 @@ class MindCache {
     }, {});
 
     // Replace the placeholders with actual values using double brackets
-    return templateStr.replace(/\{\{([$\w]+)\}\}/g, (match, key) => inputValues[key] || '');
+    // Image/file placeholders will remain as {{key}} since they're not in inputValues
+    return templateStr.replace(/\{\{([$\w]+)\}\}/g, (match, key) => {
+      // If value is in inputValues, use it
+      if (inputValues[key] !== undefined) {
+        return inputValues[key];
+      }
+      
+      // Check if this is an image/file placeholder that should be preserved
+      const attributes = this.get_attributes(key);
+      if (attributes && (attributes.type === 'image' || attributes.type === 'file')) {
+        return match; // Keep the placeholder for images/files
+      }
+      
+      // For missing or invisible keys, replace with empty string (original behavior)
+      return '';
+    });
   }
 
   // Get a formatted string of all visible STM key-value pairs

@@ -259,6 +259,15 @@ describe('MindCache', () => {
       expect(result).toBe('Hello Eve, you live in '); // Missing key becomes empty string
     });
 
+    test('should preserve image and file placeholders', () => {
+      cache.set_base64('profile_pic', 'base64data', 'image/png', 'image');
+      cache.set_base64('document', 'base64data', 'application/pdf', 'file');
+      cache.set('username', 'Alice');
+      
+      const result = cache.injectSTM('User {{username}} has image {{profile_pic}} and file {{document}}');
+      expect(result).toBe('User Alice has image {{profile_pic}} and file {{document}}');
+    });
+
     test('should return template unchanged if no placeholders', () => {
       const template = 'This is a plain string';
       const result = cache.injectSTM(template);
