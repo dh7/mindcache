@@ -453,7 +453,7 @@ export default function ClientSTMDemo() {
 
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden resize-container">
-      {/* Left Panel - ChatInterface with Workflows in between */}
+      {/* Left Panel - ChatInterface */}
       <div 
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
@@ -467,15 +467,7 @@ export default function ClientSTMDemo() {
           onStatusChange={handleStatusChange}
           stmLoaded={stmLoaded}
           stmVersion={stmVersion}
-        >
-          <Workflows 
-            onSendPrompt={handleSendPrompt}
-            isExecuting={chatStatus !== 'ready'}
-            onExecutionComplete={handleExecutionComplete}
-            stmLoaded={stmLoaded}
-            stmVersion={stmVersion}
-          />
-        </ChatInterface>
+        />
       </div>
       
       {/* Resizer - invisible but functional */}
@@ -487,13 +479,20 @@ export default function ClientSTMDemo() {
         title="Drag to resize panels"
       />
       
-      {/* Right Panel - STM Menu + Editor */}
+      {/* Right Panel - STM Menu + Editor + Workflows */}
       <div 
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
         <STMMenu onRefresh={handleFullRefresh} />
         <STMEditor onSTMChange={handleSTMChange} />
+        <Workflows 
+          onSendPrompt={handleSendPrompt}
+          isExecuting={chatStatus !== 'ready'}
+          onExecutionComplete={handleExecutionComplete}
+          stmLoaded={stmLoaded}
+          stmVersion={stmVersion}
+        />
       </div>
     </div>
   );

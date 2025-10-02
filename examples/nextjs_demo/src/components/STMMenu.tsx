@@ -167,7 +167,7 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
   };
 
   return (
-    <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0 ml-1">
+    <div className="border border-green-400 rounded p-4 font-mono text-sm flex-shrink-0 mb-2">
       <div className="flex space-x-4 mb-2">
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
@@ -216,10 +216,9 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
           Import
         </div>
       </div>
-      <div className="text-xs text-gray-500 mb-4">
+      <div className="text-xs text-gray-500">
         Auto-loads on page refresh • Ctrl+S/L/K shortcuts • Export/Import as markdown
       </div>
-
     </div>
   );
 }

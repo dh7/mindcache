@@ -45,12 +45,11 @@ interface ChatInterfaceProps {
   workflowPrompt?: string;
   onWorkflowPromptSent?: () => void;
   onStatusChange?: (status: string) => void;
-  children?: React.ReactNode; // Allow children to be inserted between conversation and input
   stmLoaded?: boolean; // Track STM loading state
   stmVersion?: number; // Track STM changes to refresh getTagged values
 }
 
-export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded }: ChatInterfaceProps) {
+export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, stmLoaded }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   
@@ -225,9 +224,6 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   return (
     <div className="flex-1 flex flex-col pr-1 min-h-0">
       <ChatConversation messages={messages} />
-      
-      {/* Allow children to be inserted between conversation and input */}
-      {children}
       
       <ChatInput 
         onSendMessage={sendMessage}

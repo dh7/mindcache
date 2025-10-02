@@ -4,10 +4,6 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
 // Type definitions
-interface ToolSchema {
-  description: string;
-}
-
 interface STMEditorProps {
   onSTMChange?: () => void;
 }
@@ -43,21 +39,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     mindcacheRef.current.subscribeToAll(updateSTMState);
     return () => mindcacheRef.current.unsubscribeFromAll(updateSTMState);
   }, [updateSTMState]);
-
-  // Generate tool schemas (without execute functions) for display
-  function getToolSchemas(): Record<string, ToolSchema> {
-    const tools = mindcacheRef.current.get_aisdk_tools();
-    const schemas: Record<string, ToolSchema> = {};
-    
-    // Convert tools to schema-only format
-    Object.entries(tools).forEach(([toolName, tool]: [string, { description: string }]) => {
-      schemas[toolName] = {
-        description: tool.description,
-      };
-    });
-
-    return schemas;
-  }
 
   // Handle file upload
   const handleFileUpload = async (key: string, file: File) => {
@@ -238,7 +219,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col pl-1 min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 mb-2">
       {/* STM Content - Scrollable */}
       <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto min-h-0">
 
@@ -411,17 +392,6 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
           </div>
         )}
       </div>
-
-      {/* Tool Schemas Info */}
-      <div className="mt-4 p-2 border border-gray-600 rounded text-xs">
-        <div className="text-gray-400">Available Tools: {Object.keys(getToolSchemas()).length}</div>
-        <div className="text-gray-500">
-          {Object.keys(getToolSchemas()).map(tool => (
-            <div key={tool}>• {tool}</div>
-          ))}
-        </div>
-      </div>
-
 
       {/* Attributes Editor Popup */}
       {editingAttributes && (

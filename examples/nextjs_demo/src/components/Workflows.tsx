@@ -125,22 +125,21 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
   }, [isExecuting, isRunning, executeNextStep]);
 
   return (
-    <div className="mb-4 border border-green-400 rounded">
+    <div className="border border-green-400 rounded flex-shrink-0">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-green-400">
+      <div className="flex items-center justify-between p-2 bg-black">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-green-400 hover:text-green-300 transition-colors"
+            className="text-green-400 hover:text-green-300 transition-colors font-mono text-xs"
+            title={isExpanded ? "Collapse" : "Expand"}
           >
-            <span className={`transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-              ▶
-            </span>
+            {isExpanded ? '▼' : '▶'}
           </button>
-          <h3 className="text-green-400 font-semibold">Workflows</h3>
+          <span className="text-green-400 font-mono text-sm">Workflows</span>
           {isRunning && (
-            <span className="text-yellow-400 text-sm">
-              Running step {currentStep + 1}/{steps.length}
+            <span className="text-yellow-400 text-xs font-mono">
+              [{currentStep + 1}/{steps.length}]
             </span>
           )}
         </div>
@@ -150,16 +149,16 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
             <button
               onClick={startWorkflow}
               disabled={steps.length === 0 || isExecuting}
-              className="bg-green-400 text-black px-3 py-1 text-sm rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="bg-green-400 text-black font-mono px-2 py-1 text-xs rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              ▶ Run ({steps.length})
+              Run ({steps.length})
             </button>
           ) : (
             <button
               onClick={stopWorkflow}
-              className="bg-red-400 text-black px-3 py-1 text-sm rounded hover:bg-red-300 transition-colors"
+              className="bg-red-400 text-black font-mono px-2 py-1 text-xs rounded hover:bg-red-300 transition-colors"
             >
-              ⏹ Stop
+              Stop
             </button>
           )}
         </div>
@@ -167,28 +166,29 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
 
       {/* Content */}
       {isExpanded && (
-        <div className="p-3">
+        <div className="p-2 border-t border-green-400">
           {/* Step preview */}
-          {steps.length > 0 && (
-            <div className="mt-3 p-2 bg-green-900 bg-opacity-20 rounded">
-              <div className="text-green-300 text-xs mb-2">Preview ({steps.length} steps):</div>
+          {steps.length > 0 ? (
+            <div className="space-y-1">
               {steps.map((step, index) => (
                 <div
                   key={index}
-                  className={`text-xs mb-1 ${
+                  className={`text-xs font-mono ${
                     isRunning && index === currentStep
-                      ? 'text-yellow-400 font-semibold'
+                      ? 'text-yellow-400'
                       : isRunning && index < currentStep
-                      ? 'text-green-500 line-through'
+                      ? 'text-green-500 opacity-60'
                       : 'text-green-400'
                   }`}
                 >
+                  {isRunning && index < currentStep && '✓ '}
+                  {isRunning && index === currentStep && '⏳ '}
                   {index + 1}. {step}
-                  {isRunning && index === currentStep && ' ⏳'}
-                  {isRunning && index < currentStep && ' ✓'}
                 </div>
               ))}
             </div>
+          ) : (
+            <div className="text-gray-500 text-xs font-mono">No workflow steps defined</div>
           )}
         </div>
       )}
