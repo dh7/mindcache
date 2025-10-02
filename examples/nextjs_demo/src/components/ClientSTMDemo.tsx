@@ -15,6 +15,7 @@ export default function ClientSTMDemo() {
   const [isResizing, setIsResizing] = useState(false);
   const [stmLoaded, setStmLoaded] = useState(false); // Track STM loading state
   const [stmVersion, setStmVersion] = useState(0); // Force refresh of getTagged values
+  const [chatKey, setChatKey] = useState(0); // Force chat remount on load/import/clear
   
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
@@ -25,15 +26,24 @@ export default function ClientSTMDemo() {
     setStmVersion(v => v + 1);
   }, []);
 
+  // Callback to fully refresh UI (chat, workflows) after load/import/clear
+  const handleFullRefresh = useCallback(() => {
+    console.log('🔄 Full UI refresh triggered');
+    // Increment version to refresh workflows and STM editor
+    setStmVersion(v => v + 1);
+    // Increment chat key to force remount with new initial messages
+    setChatKey(k => k + 1);
+  }, []);
+
 
   // Analyze image tool function
   const analyzeImageWithSTM = async (prompt: string, keyName?: string) => {
     try {
       console.log('🔍 Starting image analysis with STM integration');
       
-      // Extract image references from prompt (@image_name, {image_name}, etc.)
-      const imageRefMatches = prompt.match(/@(\w+)|{(\w+)}/g);
-      const imageRefs = imageRefMatches?.map(ref => ref.replace(/[@{}]/g, '')) || [];
+      // Extract image references from prompt ({{image_name}})
+      const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
+      const imageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
       
       console.log('📝 Found image references:', imageRefs);
       
@@ -44,7 +54,7 @@ export default function ClientSTMDemo() {
         console.log('🚫 No explicit image references found - no images will be analyzed');
         return {
           success: false,
-          error: 'No explicit image references found. Please use @image_name syntax to specify which image to analyze (e.g., "Analyze @my_image and describe what you see").'
+          error: 'No explicit image references found. Please use {{image_name}} syntax to specify which image to analyze (e.g., "Analyze {{my_image}} and describe what you see").'
         };
       } else {
         // EXPLICIT REFERENCES: Get specific referenced images (ignore visibility)
@@ -325,9 +335,9 @@ export default function ClientSTMDemo() {
     if (toolCall.toolName === 'generate_image') {
       const { prompt, imageName } = toolCall.input as { prompt: string; imageName?: string };
       
-      // Extract explicit image references from prompt (@image_name, {image_name}, etc.)
-      const imageRefMatches = prompt.match(/@(\w+)|{(\w+)}/g);
-      const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/[@{}]/g, '')) || [];
+      // Extract explicit image references from prompt ({{image_name}})
+      const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
+      const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
       
       console.log('📝 Found explicit image references:', explicitImageRefs);
       
@@ -448,6 +458,7 @@ export default function ClientSTMDemo() {
         className="flex flex-col min-h-0"
       >
         <ChatInterface 
+          key={chatKey} // Force remount on load/import/clear
           onToolCall={handleToolCall} 
           initialMessages={getInitialMessages()}
           workflowPrompt={workflowPrompt}
@@ -480,7 +491,7 @@ export default function ClientSTMDemo() {
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMEditor onSTMChange={handleSTMChange} />
+        <STMEditor onSTMChange={handleSTMChange} onFullRefresh={handleFullRefresh} />
       </div>
     </div>
   );

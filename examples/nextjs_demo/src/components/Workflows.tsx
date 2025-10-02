@@ -170,14 +170,6 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       {/* Content */}
       {isExpanded && (
         <div className="p-3">
-          <textarea
-            value={workflowText}
-            onChange={(e) => setWorkflowText(e.target.value)}
-            disabled={isRunning}
-            placeholder="Enter your workflow steps (use {{name}}, {{preferences}}, {{notes}}, {{$date}}, {{$time}}):&#10;1. Analyze situation for {{name}}&#10;2. Consider {{preferences}}&#10;3. Review {{notes}}&#10;4. Provide recommendations"
-            className="w-full h-32 bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400 placeholder-green-600 disabled:opacity-50 resize-vertical"
-          />
-          
           {/* Step preview */}
           {steps.length > 0 && (
             <div className="mt-3 p-2 bg-green-900 bg-opacity-20 rounded">
