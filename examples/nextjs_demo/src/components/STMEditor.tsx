@@ -143,6 +143,13 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
   // Save attributes
   const saveAttributes = () => {
     if (editingAttributes) {
+      // Collect final tags array including any pending tag being typed
+      const finalTags = [...attributesForm.tags];
+      const pendingTag = newTagInput.trim();
+      if (pendingTag && !finalTags.includes(pendingTag)) {
+        finalTags.push(pendingTag);
+      }
+      
       const oldKey = editingAttributes;
       const newKey = editingKeyName.trim();
       
@@ -161,8 +168,8 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
         const { tags, ...attributesWithoutTags } = attributesForm;
         mindcacheRef.current.set_value(newKey, currentValue, attributesWithoutTags);
         
-        // Set tags separately
-        tags.forEach(tag => {
+        // Set tags separately (using final tags)
+        finalTags.forEach(tag => {
           mindcacheRef.current.addTag(newKey, tag);
         });
         
@@ -173,12 +180,12 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
         const { tags, ...attributesWithoutTags } = attributesForm;
         mindcacheRef.current.set_attributes(oldKey, attributesWithoutTags);
         
-        // Update tags - remove all existing tags and add new ones
+        // Update tags - remove all existing tags and add new ones (using final tags)
         const existingTags = mindcacheRef.current.getTags(oldKey);
         existingTags.forEach(tag => {
           mindcacheRef.current.removeTag(oldKey, tag);
         });
-        tags.forEach(tag => {
+        finalTags.forEach(tag => {
           mindcacheRef.current.addTag(oldKey, tag);
         });
       }
@@ -430,11 +437,6 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
       {editingAttributes && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              cancelAttributes();
-            }
-          }}
         >
           <div 
             className="bg-black border-2 border-green-400 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
@@ -660,7 +662,7 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
 
             {/* Keyboard Shortcuts */}
             <div className="mt-3 text-xs text-gray-500 text-center">
-              Ctrl+Enter to save &bull; Esc to cancel &bull; Click outside to close
+              Ctrl+Enter to save &bull; Esc to cancel
             </div>
           </div>
         </div>
