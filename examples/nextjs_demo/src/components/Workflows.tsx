@@ -134,14 +134,14 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
             className="text-green-400 hover:text-green-300 transition-colors font-mono text-sm"
             title={isExpanded ? "Collapse" : "Expand"}
           >
-            {isExpanded ? '▼' : '▶'}
+            {isExpanded ? '▼ ' : '▶ '}          
+            <span className="text-green-400 font-mono text-sm">Workflow</span>
+            {isRunning && (
+              <span className="text-yellow-400 text-sm font-mono">
+                [{currentStep + 1}/{steps.length}]
+              </span>
+            )}
           </button>
-          <span className="text-green-400 font-mono text-sm">Workflows</span>
-          {isRunning && (
-            <span className="text-yellow-400 text-sm font-mono">
-              [{currentStep + 1}/{steps.length}]
-            </span>
-          )}
         </div>
         
         <div className="flex gap-2">
@@ -177,8 +177,8 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
                     isRunning && index === currentStep
                       ? 'text-yellow-400'
                       : isRunning && index < currentStep
-                      ? 'text-green-500 opacity-60'
-                      : 'text-green-400'
+                      ? 'text-gray-500 opacity-60'
+                      : 'text-gray-500'
                   }`}
                 >
                   {isRunning && index < currentStep && '✓ '}
