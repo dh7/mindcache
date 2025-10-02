@@ -163,7 +163,8 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         const currentValue = mindcacheRef.current.get_value(oldKey);
         
         // Create new entry with new name (excluding tags from attributes)
-        const { tags, ...attributesWithoutTags } = attributesForm;
+        const { tags: _, ...attributesWithoutTags } = attributesForm;
+        void _; // Mark as intentionally unused
         mindcacheRef.current.set_value(newKey, currentValue, attributesWithoutTags);
         
         // Set tags separately (using final tags)
@@ -175,7 +176,8 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
         mindcacheRef.current.delete(oldKey);
       } else {
         // Just update attributes (excluding tags)
-        const { tags, ...attributesWithoutTags } = attributesForm;
+        const { tags: _, ...attributesWithoutTags } = attributesForm;
+        void _; // Mark as intentionally unused
         mindcacheRef.current.set_attributes(oldKey, attributesWithoutTags);
         
         // Update tags - remove all existing tags and add new ones (using final tags)
