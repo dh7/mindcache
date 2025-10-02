@@ -54,7 +54,7 @@ export default function ChatConversation({ messages }: ChatConversationProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2 min-h-0">
+    <div className="flex-1 overflow-y-auto p-4 border border-gray-600 rounded mb-4 space-y-2 min-h-0">
       {messages.map((message) => {
         const { sources } = renderMessageContent(message);
         return (
