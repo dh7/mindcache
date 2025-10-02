@@ -354,8 +354,9 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
                       <textarea
                         value={editingValue}
                         onChange={(e) => setEditingValue(e.target.value)}
-                        className="w-full bg-black text-green-400 font-mono px-2 py-1 focus:outline-none resize-none"
-                        rows={Math.max(2, editingValue.split('\n').length)}
+                        onBlur={saveEdit}
+                        className="w-full bg-black text-green-400 font-mono px-2 py-2 focus:outline-none resize-y border border-green-400 rounded"
+                        rows={Math.max(6, editingValue.split('\n').length + 1)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && e.ctrlKey) {
                             saveEdit();
