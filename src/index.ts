@@ -466,7 +466,7 @@ class MindCache {
         if (attributes && (attributes.type === 'image' || attributes.type === 'file')) {
           return acc; // Don't add to inputValues, placeholder will remain
         }
-        
+
         return {
           ...acc,
           [key]: this.get_value(key, _processingStack)
@@ -484,13 +484,13 @@ class MindCache {
       if (inputValues[key] !== undefined) {
         return inputValues[key];
       }
-      
+
       // Check if this is an image/file placeholder that should be preserved
       const attributes = this.get_attributes(key);
       if (attributes && (attributes.type === 'image' || attributes.type === 'file')) {
         return match; // Keep the placeholder for images/files
       }
-      
+
       // For missing or invisible keys, replace with empty string (original behavior)
       return '';
     });
@@ -903,7 +903,13 @@ class MindCache {
   toMarkdown(): string {
     const now = new Date();
     const lines: string[] = [];
-    const appendixEntries: Array<{ key: string; type: string; contentType: string; base64: string; label: string }> = [];
+    const appendixEntries: Array<{
+      key: string;
+      type: string;
+      contentType: string;
+      base64: string;
+      label: string;
+    }> = [];
     let appendixCounter = 0;
     const appendixLabels: Record<string, string> = {};
 
@@ -933,7 +939,7 @@ class MindCache {
       lines.push(`- **Readonly**: \`${entry.attributes.readonly}\``);
       lines.push(`- **Visible**: \`${entry.attributes.visible}\``);
       lines.push(`- **Template**: \`${entry.attributes.template}\``);
-      
+
       if (entry.attributes.tags && entry.attributes.tags.length > 0) {
         lines.push(`- **Tags**: \`${entry.attributes.tags.join('`, `')}\``);
       }
