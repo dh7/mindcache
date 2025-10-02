@@ -4,11 +4,10 @@ import { useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
 interface STMMenuProps {
-  onAddKey?: () => void;
   onRefresh?: () => void; // Called after load/import/clear to refresh all UI
 }
 
-export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
+export default function STMMenu({ onRefresh }: STMMenuProps) {
   const mindcacheRef = useRef(mindcache);
 
   // Global keyboard shortcuts
@@ -49,9 +48,6 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
         alert(`Key "${key.trim()}" already exists`);
       }
     }
-    if (onAddKey) {
-      onAddKey();
-    }
   };
 
   // Save STM to localStorage
@@ -71,13 +67,14 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
     try {
       const saved = localStorage.getItem('mindcache_stm');
       if (saved) {
-        // Update mindcache first
+        // Update mindcache first - this ensures STM is fully loaded
         mindcacheRef.current.fromJSON(saved);
         console.log('✅ STM loaded from localStorage');
         
-        // Then refresh all UI components
+        // Then refresh all UI components after STM is ready
         if (onRefresh) {
-          onRefresh();
+          // Use setTimeout to ensure mindcache updates propagate
+          setTimeout(() => onRefresh(), 0);
         }
       } else {
         console.log('ℹ️ No saved STM found');
@@ -92,12 +89,14 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
   // Clear STM
   const clearSTM = () => {
     try {
+      // Clear mindcache first - this ensures STM is fully cleared
       mindcacheRef.current.clear();
       console.log('🗑️ STM cleared');
       
-      // Refresh all UI components (including chat reset)
+      // Refresh all UI components (including chat reset) after clear is complete
       if (onRefresh) {
-        onRefresh();
+        // Use setTimeout to ensure mindcache updates propagate
+        setTimeout(() => onRefresh(), 0);
       }
     } catch (error) {
       console.error('❌ Failed to clear STM:', error);
@@ -139,13 +138,14 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
             try {
               const markdown = event.target?.result as string;
               
-              // Update mindcache first
+              // Update mindcache first - this ensures STM is fully imported
               mindcacheRef.current.fromMarkdown(markdown);
               console.log('✅ STM imported from markdown');
               
-              // Then refresh all UI components
+              // Then refresh all UI components after import is complete
               if (onRefresh) {
-                onRefresh();
+                // Use setTimeout to ensure mindcache updates propagate
+                setTimeout(() => onRefresh(), 0);
               }
             } catch (error) {
               console.error('❌ Failed to parse markdown:', error);
@@ -167,7 +167,7 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
   };
 
   return (
-    <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0">
+    <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0 ml-1">
       <div className="flex space-x-4 mb-2">
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
@@ -219,7 +219,7 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
       <div className="text-xs text-gray-500 mb-4">
         Auto-loads on page refresh • Ctrl+S/L/K shortcuts • Export/Import as markdown
       </div>
-      <div className="border-b border-green-400"></div>
+
     </div>
   );
 }

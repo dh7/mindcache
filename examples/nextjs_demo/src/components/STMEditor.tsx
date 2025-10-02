@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { mindcache } from 'mindcache';
-import STMMenu from './STMMenu';
 
 // Type definitions
 interface ToolSchema {
@@ -11,10 +10,9 @@ interface ToolSchema {
 
 interface STMEditorProps {
   onSTMChange?: () => void;
-  onFullRefresh?: () => void; // Called on load/import/clear to refresh chat & workflows
 }
 
-export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps) {
+export default function STMEditor({ onSTMChange }: STMEditorProps) {
   const mindcacheRef = useRef(mindcache);
   const [stmState, setSTMState] = useState(mindcacheRef.current.getAll());
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -237,21 +235,10 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
     }
   };
 
-  // Handle full refresh (load/import/clear operations)
-  const handleFullRefresh = useCallback(() => {
-    updateSTMState(); // Update local state first
-    if (onFullRefresh) {
-      onFullRefresh(); // Then trigger parent refresh (chat reset, workflows)
-    }
-  }, [onFullRefresh, updateSTMState]);
-
   return (
     <div className="flex-1 flex flex-col pl-1 min-h-0">
-      {/* STM Menu - Fixed Header */}
-      <STMMenu onRefresh={handleFullRefresh} />
-
       {/* STM Content - Scrollable */}
-      <div className="flex-1 border border-green-400 rounded-b p-4 overflow-y-auto min-h-0 border-t-0">
+      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto min-h-0">
 
         {Object.keys(stmState).length === 0 ? (
           <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>

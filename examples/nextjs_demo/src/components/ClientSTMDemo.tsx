@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { mindcache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
+import STMMenu from './STMMenu';
 import Workflows from './Workflows';
 
 // Import official types from AI SDK
@@ -486,12 +487,13 @@ export default function ClientSTMDemo() {
         title="Drag to resize panels"
       />
       
-      {/* Right Panel - STMEditor */}
+      {/* Right Panel - STM Menu + Editor */}
       <div 
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMEditor onSTMChange={handleSTMChange} onFullRefresh={handleFullRefresh} />
+        <STMMenu onRefresh={handleFullRefresh} />
+        <STMEditor onSTMChange={handleSTMChange} />
       </div>
     </div>
   );
