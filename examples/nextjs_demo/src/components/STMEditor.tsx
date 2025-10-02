@@ -25,6 +25,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   });
   const [editingKeyName, setEditingKeyName] = useState('');
   const [newTagInput, setNewTagInput] = useState('');
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
 
   // Subscribe to STM changes to update UI
   const updateSTMState = useCallback(() => {
@@ -174,6 +175,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
       setEditingAttributes(null);
       setEditingKeyName('');
       setNewTagInput('');
+      setTagSuggestions([]);
     }
   };
 
@@ -182,6 +184,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     setEditingAttributes(null);
     setEditingKeyName('');
     setNewTagInput('');
+    setTagSuggestions([]);
   };
 
   // Add a new tag
@@ -203,6 +206,23 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
     });
   };
 
+  // Handle tag input change
+  const handleTagInputChange = (value: string) => {
+    setNewTagInput(value);
+    
+    // Update suggestions based on input
+    if (value.trim()) {
+      const allTags = mindcacheRef.current.getAllTags();
+      const filtered = allTags.filter((tag: string) => 
+        tag.toLowerCase().includes(value.toLowerCase()) &&
+        !attributesForm.tags.includes(tag)
+      );
+      setTagSuggestions(filtered);
+    } else {
+      setTagSuggestions([]);
+    }
+  };
+
   // Handle tag input
   const handleTagInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -210,12 +230,22 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
       if (newTagInput.trim()) {
         addTag(newTagInput);
         setNewTagInput('');
+        setTagSuggestions([]);
       }
     } else if (e.key === 'Backspace' && newTagInput === '' && attributesForm.tags.length > 0) {
       // Remove last tag if input is empty and backspace is pressed
       const lastTag = attributesForm.tags[attributesForm.tags.length - 1];
       removeTag(lastTag);
+    } else if (e.key === 'Escape') {
+      setTagSuggestions([]);
     }
+  };
+
+  // Add tag from suggestion
+  const addTagFromSuggestion = (tag: string) => {
+    addTag(tag);
+    setNewTagInput('');
+    setTagSuggestions([]);
   };
 
   return (
@@ -560,36 +590,53 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                 </div>
                 
                 {/* Tag display and input */}
-                <div className="bg-black border border-green-400 rounded px-2 py-2 focus-within:ring-1 focus-within:ring-green-400">
-                  <div className="flex flex-wrap gap-1 items-center">
-                    {/* Existing tags */}
-                    {attributesForm.tags.map((tag, index) => (
-                      <span 
-                        key={index}
-                        className="inline-flex items-center gap-1 text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-1 rounded font-mono border border-blue-600 group hover:bg-blue-800 hover:bg-opacity-50 transition-colors"
-                      >
-                        {tag}
-                        <button
-                          onClick={() => removeTag(tag)}
-                          className="text-blue-400 hover:text-red-400 ml-1 leading-none"
-                          title="Remove tag"
+                <div className="relative">
+                  <div className="bg-black border border-green-400 rounded px-2 py-2 focus-within:ring-1 focus-within:ring-green-400">
+                    <div className="flex flex-wrap gap-1 items-center">
+                      {/* Existing tags */}
+                      {attributesForm.tags.map((tag, index) => (
+                        <span 
+                          key={index}
+                          className="inline-flex items-center gap-1 text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-1 rounded font-mono border border-blue-600 group hover:bg-blue-800 hover:bg-opacity-50 transition-colors"
                         >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                    
-                    {/* Tag input */}
-                    <input
-                      type="text"
-                      value={newTagInput}
-                      onChange={(e) => setNewTagInput(e.target.value)}
-                      onKeyDown={handleTagInput}
-                      className="bg-transparent text-green-400 font-mono text-sm focus:outline-none flex-1 min-w-0"
-                      placeholder={attributesForm.tags.length === 0 ? "Add tags..." : ""}
-                      style={{ minWidth: '80px' }}
-                    />
+                          {tag}
+                          <button
+                            onClick={() => removeTag(tag)}
+                            className="text-blue-400 hover:text-red-400 ml-1 leading-none"
+                            title="Remove tag"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      
+                      {/* Tag input */}
+                      <input
+                        type="text"
+                        value={newTagInput}
+                        onChange={(e) => handleTagInputChange(e.target.value)}
+                        onKeyDown={handleTagInput}
+                        className="bg-transparent text-green-400 font-mono text-sm focus:outline-none flex-1 min-w-0"
+                        placeholder={attributesForm.tags.length === 0 ? "Add tags..." : ""}
+                        style={{ minWidth: '80px' }}
+                      />
+                    </div>
                   </div>
+                  
+                  {/* Tag suggestions dropdown */}
+                  {tagSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-black border border-green-400 rounded shadow-lg max-h-40 overflow-y-auto">
+                      {tagSuggestions.map((tag, index) => (
+                        <button
+                          key={index}
+                          onClick={() => addTagFromSuggestion(tag)}
+                          className="w-full text-left px-3 py-2 text-sm font-mono text-green-400 hover:bg-green-900 hover:bg-opacity-30 transition-colors"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 
                 {/* Tag suggestions or help */}

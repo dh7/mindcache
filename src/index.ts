@@ -872,6 +872,19 @@ class MindCache {
     return entry?.attributes.tags || [];
   }
 
+  // Get all unique tags across all entries
+  getAllTags(): string[] {
+    const allTags = new Set<string>();
+    
+    Object.values(this.stm).forEach(entry => {
+      if (entry.attributes.tags) {
+        entry.attributes.tags.forEach(tag => allTags.add(tag));
+      }
+    });
+
+    return Array.from(allTags);
+  }
+
   // Check if a key has a specific tag
   hasTag(key: string, tag: string): boolean {
     if (key === '$date' || key === '$time') {
