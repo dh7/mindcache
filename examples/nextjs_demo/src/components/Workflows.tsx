@@ -125,7 +125,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
   }, [isExecuting, isRunning, executeNextStep]);
 
   return (
-    <div className="border border-green-400 rounded flex-shrink-0">
+    <div className="border border-gray-600 rounded flex-shrink-0">
       {/* Header */}
       <div className="flex items-center justify-between p-2 bg-black">
         <div className="flex items-center gap-2">
@@ -166,7 +166,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
 
       {/* Content */}
       {isExpanded && (
-        <div className="p-2 border-t border-green-400">
+        <div className="p-2 border-t border-gray-600">
           {/* Step preview */}
           {steps.length > 0 ? (
             <div className="space-y-1">

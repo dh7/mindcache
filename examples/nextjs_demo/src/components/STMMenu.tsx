@@ -167,7 +167,7 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
   };
 
   return (
-    <div className="border border-green-400 rounded p-4 font-mono text-sm flex-shrink-0 mb-2">
+    <div className="border border-gray-600 rounded p-4 font-mono text-sm flex-shrink-0 mb-2">
       <div className="flex space-x-4 mb-2">
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"

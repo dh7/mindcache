@@ -221,7 +221,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0 mb-2">
       {/* STM Content - Scrollable */}
-      <div className="flex-1 border border-green-400 rounded p-4 overflow-y-auto min-h-0">
+      <div className="flex-1 border border-gray-600 rounded p-4 overflow-y-auto min-h-0">
 
         {Object.keys(stmState).length === 0 ? (
           <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>
@@ -325,7 +325,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                         value={editingValue}
                         onChange={(e) => setEditingValue(e.target.value)}
                         onBlur={saveEdit}
-                        className="w-full bg-black text-green-400 font-mono px-2 py-2 focus:outline-none resize-y border border-green-400 rounded"
+                        className="w-full bg-black text-green-400 font-mono px-2 py-2 focus:outline-none resize-y border border-gray-600 rounded"
                         rows={Math.max(6, editingValue.split('\n').length + 1)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && e.ctrlKey) {
@@ -372,7 +372,7 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
                           <img 
                             src={mindcacheRef.current.get_data_url(key)} 
                             alt={`Preview of ${key}`}
-                            className="max-w-full h-auto border border-green-400 rounded"
+                            className="max-w-full h-auto border border-gray-600 rounded"
                             style={{ maxHeight: '200px' }}
                           />
                         </div>

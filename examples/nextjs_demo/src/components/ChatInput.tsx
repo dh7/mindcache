@@ -31,9 +31,9 @@ export default function ChatInput({ onSendMessage, status }: ChatInputProps) {
           setInput('');
         }
       }}
-      className="min-w-0"
+      className="min-w-0 flex-shrink-0"
     >
-      <div className="flex items-center gap-2 bg-black border border-green-400 rounded px-2 py-2">
+      <div className="flex items-center gap-2 bg-black border border-gray-600 rounded px-2 py-2">
         <input
           className="flex-1 min-w-0 bg-black text-green-400 font-mono text-sm focus:outline-none placeholder-gray-600 disabled:opacity-50"
           value={input}
