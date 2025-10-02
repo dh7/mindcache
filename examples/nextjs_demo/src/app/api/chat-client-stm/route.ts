@@ -22,6 +22,22 @@ export const POST = async (req: NextRequest) => {
     lastMessagePreview: (messages[messages.length - 1]?.parts?.[0] as any)?.text?.substring(0, 100) + '...'
   });
 
+  // Process messages: use metadata.processedText for LLM if available (keeps {{key}} in UI, sends values to LLM)
+  const processedMessages = messages.map(msg => {
+    if (msg.metadata && (msg.metadata as any).processedText) {
+      return {
+        ...msg,
+        parts: msg.parts?.map(part => {
+          if (part.type === 'text') {
+            return { ...part, text: (msg.metadata as any).processedText };
+          }
+          return part;
+        })
+      };
+    }
+    return msg;
+  });
+
   // Convert client tool schemas to server tool definitions (schema only, no execute)
   const serverTools: Record<string, unknown> = {};
   
@@ -104,7 +120,7 @@ IMPORTANT IMAGE HANDLING RULES:
   
   const result = await streamText({
     model: openai('gpt-4o'),
-    messages: convertToModelMessages(messages),
+    messages: convertToModelMessages(processedMessages),
     system: finalSystem,
     tools: allTools,
     stopWhen: [stepCountIs(5)],

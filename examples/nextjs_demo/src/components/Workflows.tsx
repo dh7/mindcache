@@ -12,14 +12,13 @@ interface WorkflowsProps {
 }
 
 export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion }: WorkflowsProps) {
-  const mindcacheRef = useRef(mindcache);
   // Get workflow from tagged content or use default
   const getWorkflowText = () => {
     if (!stmLoaded) {
       return '1. Say hello to the user';
     }
 
-    const workflowTagged = mindcacheRef.current.getTagged("Workflow");
+    const workflowTagged = mindcache.getTagged("Workflow");
     const workflowText = workflowTagged 
       ? workflowTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
       : '1. Say hello to the user';
@@ -81,10 +80,9 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
     }
 
     const rawPrompt = steps[stepIndex];
-    // Process the prompt through injectSTM to replace {key} placeholders with STM values
-    const processedPrompt = mindcacheRef.current.injectSTM(rawPrompt);
+    // Send raw prompt with {{key}} placeholders - ChatInterface will process it
     setCurrentStep(stepIndex);
-    onSendPrompt(processedPrompt);
+    onSendPrompt(rawPrompt);
   }, [steps, onExecutionComplete, onSendPrompt]);
 
   // Move to next step

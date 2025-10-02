@@ -205,10 +205,13 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   // Handle workflow prompts
   useEffect(() => {
     if (workflowPrompt && status === 'ready') {
-      // Send the workflow prompt (without automatic image attachment)
+      // Process the workflow prompt through injectSTM
+      const processedPrompt = mindcacheRef.current.injectSTM(workflowPrompt);
+      // Send the workflow prompt with original text for display, processed text in metadata
       sendMessage({
         role: 'user',
-        parts: [{ type: 'text' as const, text: workflowPrompt }]
+        parts: [{ type: 'text' as const, text: workflowPrompt }], // Original text with {{key}} for display
+        metadata: { processedText: processedPrompt } // Processed text for LLM
       });
       
       // Immediately notify that the prompt was sent to clear the workflowPrompt
