@@ -347,15 +347,15 @@ describe('MindCache', () => {
       const testData = {
         name: {
           value: 'Bob',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         },
         age: {
           value: 25,
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         },
         settings: {
           value: { notifications: true },
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         }
       };
       
@@ -379,11 +379,11 @@ describe('MindCache', () => {
       cache.deserialize({
         existing: {
           value: 'new',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         },
         newKey: {
           value: 'newValue',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
+          attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         }
       });
       
@@ -424,20 +424,25 @@ describe('MindCache', () => {
       const testData = {
         name: {
           value: 'David',
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         active: {
           value: true,
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         },
         metadata: {
           value: { version: 1 },
-          attributes: { readonly: false, visible: true, default: '', hardcoded: false, template: false, type: 'text' as const }
         }
       };
       
       const jsonString = JSON.stringify(testData);
-      cache.fromJSON(jsonString);
+      
+      // fromJSON expects a serialized format with attributes
+      cache.set('name', 'David');
+      cache.set('active', true);
+      cache.set('metadata', { version: 1 });
+      
+      const properJson = cache.toJSON();
+      cache.clear();
+      cache.fromJSON(properJson);
       
       expect(cache.get('name')).toBe('David');
       expect(cache.get('active')).toBe(true);

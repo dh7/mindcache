@@ -315,9 +315,9 @@ export default function ClientSTMDemo() {
       
       if (userKeys.length === 0) {
         console.log('Creating default STM keys...');
-        mindcacheRef.current.set_value('name', 'Anonymous User', { default: 'Anonymous User' });
-        mindcacheRef.current.set_value('preferences', 'No preferences set', { default: 'No preferences set' });
-        mindcacheRef.current.set_value('notes', 'No notes', { default: 'No notes' });
+        mindcacheRef.current.set_value('name', 'Anonymous User');
+        mindcacheRef.current.set_value('preferences', 'No preferences set');
+        mindcacheRef.current.set_value('notes', 'No notes');
         console.log('Created keys:', Object.keys(mindcacheRef.current.getAll()));
       }
       

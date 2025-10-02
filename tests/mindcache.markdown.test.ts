@@ -57,7 +57,6 @@ describe('MindCache Markdown Serialization', () => {
         readonly: true,
         visible: false,
         template: true,
-        default: 'default_value',
         tags: ['tag1', 'tag2', 'tag3']
       });
       
@@ -67,7 +66,6 @@ describe('MindCache Markdown Serialization', () => {
       expect(markdown).toContain('- Readonly: `true`');
       expect(markdown).toContain('- Visible: `false`');
       expect(markdown).toContain('- Template: `true`');
-      expect(markdown).toContain('- Default: `default_value`');
       expect(markdown).toContain('- Tags: `tag1`, `tag2`, `tag3`');
     });
 
@@ -279,7 +277,6 @@ Line 3
       expect(attrs?.readonly).toBe(true);
       expect(attrs?.visible).toBe(false);
       expect(attrs?.template).toBe(true);
-      expect(attrs?.default).toBe('default_value');
       expect(attrs?.tags).toEqual(['tag1', 'tag2', 'tag3']);
     });
 
@@ -442,7 +439,6 @@ base64data2
         readonly: true,
         visible: false,
         template: true,
-        default: 'default_val',
         tags: ['a', 'b', 'c']
       });
       
@@ -455,7 +451,6 @@ base64data2
       expect(attrs?.readonly).toBe(true);
       expect(attrs?.visible).toBe(false);
       expect(attrs?.template).toBe(true);
-      expect(attrs?.default).toBe('default_val');
       expect(attrs?.tags).toEqual(['a', 'b', 'c']);
     });
 

@@ -26,7 +26,7 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
             break;
           case 'k':
             e.preventDefault();
-            if (confirm('Clear STM? This will restore default values and reset the chat.')) {
+            if (confirm('Clear STM? This will delete all entries and reset the chat.')) {
               clearSTM();
             }
             break;
@@ -93,7 +93,7 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
   const clearSTM = () => {
     try {
       mindcacheRef.current.clear();
-      console.log('🗑️ STM cleared - defaults restored');
+      console.log('🗑️ STM cleared');
       
       // Refresh all UI components (including chat reset)
       if (onRefresh) {
@@ -193,11 +193,11 @@ export default function STMMenu({ onAddKey, onRefresh }: STMMenuProps) {
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={() => {
-            if (confirm('Clear STM? This will restore default values and reset the chat.')) {
+            if (confirm('Clear STM? This will delete all entries and reset the chat.')) {
               clearSTM();
             }
           }}
-          title="Clear STM - keeps defaults (Ctrl+K)"
+          title="Clear STM - deletes all entries (Ctrl+K)"
         >
           Clear
         </div>

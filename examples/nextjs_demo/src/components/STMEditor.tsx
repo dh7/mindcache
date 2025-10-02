@@ -23,7 +23,6 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
   const [attributesForm, setAttributesForm] = useState({
     readonly: false,
     visible: true,
-    default: '',
     hardcoded: false,
     template: false,
     type: 'text' as 'text' | 'image' | 'file' | 'json',
@@ -118,7 +117,6 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
       setAttributesForm({
         readonly: attributes.readonly,
         visible: attributes.visible,
-        default: attributes.default,
         hardcoded: attributes.hardcoded,
         template: attributes.template,
         type: attributes.type,
@@ -130,7 +128,6 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
       setAttributesForm({
         readonly: false,
         visible: true,
-        default: '',
         hardcoded: false,
         template: false,
         type: 'text',
@@ -301,9 +298,6 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
                 }
                 if (attributes.hardcoded || isSystemKey) {
                   indicators.push('H');
-                }
-                if (attributes.default !== '') {
-                  indicators.push('D');
                 }
               }
               
@@ -596,60 +590,6 @@ export default function STMEditor({ onSTMChange, onFullRefresh }: STMEditorProps
                   {attributesForm.hardcoded ? 'true' : 'false'}
                 </span>
               </div>
-
-              {/* Default - only show if not a hardcoded property */}
-              {!attributesForm.hardcoded && (
-                <div className="flex flex-col space-y-2">
-                  <div className="text-gray-400 font-mono">
-                    <span className="text-yellow-400">[D]</span> default:
-                    <div className="text-xs text-gray-500 mt-1">Value restored on clear()</div>
-                  </div>
-                  
-                  {/* Image/File default handling */}
-                  {(attributesForm.type === 'image' || attributesForm.type === 'file') ? (
-                    <div className="space-y-2">
-                      {attributesForm.default ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-green-400 font-mono text-sm">
-                            Default {attributesForm.type} set
-                          </span>
-                          <button
-                            onClick={() => setAttributesForm({ ...attributesForm, default: '' })}
-                            className="text-red-400 hover:text-red-300 font-mono text-sm px-2 py-1 border border-red-400 rounded transition-colors"
-                          >
-                            Remove Default
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            if (editingKeyName && mindcacheRef.current.has(editingKeyName)) {
-                              const currentValue = mindcacheRef.current.get_value(editingKeyName);
-                              if (currentValue) {
-                                setAttributesForm({ ...attributesForm, default: currentValue });
-                              } else {
-                                alert(`No ${attributesForm.type} data to set as default. Upload a ${attributesForm.type} first.`);
-                              }
-                            }
-                          }}
-                          className="text-green-400 hover:text-green-300 font-mono text-sm px-3 py-2 border border-green-400 rounded transition-colors"
-                        >
-                          Set Current as Default
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    /* Text/JSON default handling */
-                    <textarea
-                      value={attributesForm.default}
-                      onChange={(e) => setAttributesForm({ ...attributesForm, default: e.target.value })}
-                      className="bg-black text-green-400 font-mono border border-green-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-green-400 resize-none"
-                      placeholder="Default value..."
-                      rows={3}
-                    />
-                  )}
-                </div>
-              )}
 
               {/* Tags */}
               <div className="flex flex-col space-y-2">

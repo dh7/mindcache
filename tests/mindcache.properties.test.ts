@@ -15,7 +15,6 @@ describe('MindCache Key Properties', () => {
       expect(attributes).toEqual({
         readonly: false,
         visible: true,
-        default: '',
         hardcoded: false,
         template: false,
         type: 'text' as const,
@@ -27,7 +26,6 @@ describe('MindCache Key Properties', () => {
       const customAttributes = {
         readonly: true,
         visible: false,
-        default: 'default_value',
         hardcoded: true,
         template: true // This will be forced to false because hardcoded=true
       };
@@ -39,7 +37,6 @@ describe('MindCache Key Properties', () => {
       const expectedAttributes = {
         readonly: true,
         visible: false,
-        default: 'default_value',
         hardcoded: true,
         template: false, // Hardcoded keys cannot be templates
         type: 'text' as const,
@@ -56,7 +53,6 @@ describe('MindCache Key Properties', () => {
       expect(attributes).toEqual({
         readonly: true,
         visible: false,
-        default: '',
         hardcoded: false,
         template: false,
         type: 'text' as const,
@@ -91,7 +87,6 @@ describe('MindCache Key Properties', () => {
       expect(dateAttrs).toEqual({
         readonly: true,
         visible: true,
-        default: '',
         hardcoded: true,
         template: false,
         type: 'text' as const,
@@ -101,7 +96,6 @@ describe('MindCache Key Properties', () => {
       expect(timeAttrs).toEqual({
         readonly: true,
         visible: true,
-        default: '',
         hardcoded: true,
         template: false,
         type: 'text' as const,
@@ -349,38 +343,21 @@ describe('MindCache Key Properties', () => {
   });
 
   describe('Default Property', () => {
-    test('clear should restore default values', () => {
-      cache.set_value('with_default', 'current_value', { default: 'default_value' });
-      cache.set_value('without_default', 'another_value', { default: '' });
+    test('clear should remove all values', () => {
+      cache.set_value('with_value', 'current_value');
+      cache.set_value('another_value', 'another_value');
       
-      expect(cache.get_value('with_default')).toBe('current_value');
-      expect(cache.get_value('without_default')).toBe('another_value');
+      expect(cache.get_value('with_value')).toBe('current_value');
+      expect(cache.get_value('another_value')).toBe('another_value');
       
       cache.clear();
       
-      expect(cache.get_value('with_default')).toBe('default_value');
-      expect(cache.get_value('without_default')).toBeUndefined();
+      expect(cache.get_value('with_value')).toBeUndefined();
+      expect(cache.get_value('another_value')).toBeUndefined();
     });
 
-    test('clear should preserve attributes when restoring defaults', () => {
-      const originalAttributes = {
-        readonly: true,
-        visible: false,
-        default: 'default_val',
-        hardcoded: false,
-        template: true
-      };
-      
-      cache.set_value('test_key', 'current_val', originalAttributes);
-      cache.clear();
-      
-      const attributes = cache.get_attributes('test_key');
-      expect(attributes).toEqual({...originalAttributes, type: 'text', tags: []});
-      expect(cache.get_value('test_key')).toBe('default_val');
-    });
-
-    test('keys with empty default should be removed on clear', () => {
-      cache.set_value('temp_key', 'temp_value', { default: '' });
+    test('clear should remove all keys', () => {
+      cache.set_value('temp_key', 'temp_value');
       
       expect(cache.has('temp_key')).toBe(true);
       
@@ -388,18 +365,6 @@ describe('MindCache Key Properties', () => {
       
       expect(cache.has('temp_key')).toBe(false);
       expect(cache.get_value('temp_key')).toBeUndefined();
-    });
-
-    test('multiple keys with defaults should all be restored', () => {
-      cache.set_value('key1', 'value1', { default: 'default1' });
-      cache.set_value('key2', 'value2', { default: 'default2' });
-      cache.set_value('key3', 'value3', { default: '' });
-      
-      cache.clear();
-      
-      expect(cache.get_value('key1')).toBe('default1');
-      expect(cache.get_value('key2')).toBe('default2');
-      expect(cache.get_value('key3')).toBeUndefined();
     });
   });
 
@@ -433,7 +398,6 @@ describe('MindCache Key Properties', () => {
       cache.set_value('user_name', 'Alice', { 
         readonly: false, 
         visible: true, 
-        default: 'Guest', 
         hardcoded: false, 
         template: false 
       });
@@ -441,7 +405,6 @@ describe('MindCache Key Properties', () => {
       cache.set_value('api_secret', 'secret123', { 
         readonly: true, 
         visible: false, 
-        default: '', 
         hardcoded: false, 
         template: false 
       });
@@ -449,7 +412,6 @@ describe('MindCache Key Properties', () => {
       cache.set_value('welcome_msg', 'Welcome {{user_name}}! Date: {{$date}}', { 
         readonly: false, 
         visible: true, 
-        default: 'Welcome Guest!', 
         hardcoded: false, 
         template: true 
       });
@@ -473,11 +435,11 @@ describe('MindCache Key Properties', () => {
       expect(Object.keys(tools)).toContain('write_welcome_msg');
       expect(Object.keys(tools)).not.toContain('write_api_secret');
       
-      // Test clear with defaults
+      // Test clear removes all keys
       cache.clear();
-      expect(cache.get_value('user_name')).toBe('Guest');
-      expect(cache.get_value('welcome_msg')).toBe('Welcome Guest!');
-      expect(cache.get_value('api_secret')).toBeUndefined(); // No default
+      expect(cache.get_value('user_name')).toBeUndefined();
+      expect(cache.get_value('welcome_msg')).toBeUndefined();
+      expect(cache.get_value('api_secret')).toBeUndefined();
     });
 
     test('backward compatibility with old methods', () => {
@@ -489,7 +451,6 @@ describe('MindCache Key Properties', () => {
       expect(attributes).toEqual({
         readonly: false,
         visible: true,
-        default: '',
         hardcoded: false,
         template: false,
         type: 'text' as const,

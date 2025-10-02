@@ -17,7 +17,6 @@ declare const FileReader: {
 interface KeyAttributes {
   readonly: boolean;
   visible: boolean;
-  default: string;
   hardcoded: boolean;
   template: boolean;
   type: 'text' | 'image' | 'file' | 'json';
@@ -132,7 +131,6 @@ class MindCache {
       return {
         readonly: true,
         visible: true,
-        default: '',
         hardcoded: true,
         template: false,
         type: 'text',
@@ -154,7 +152,6 @@ class MindCache {
     const defaultAttributes: KeyAttributes = {
       readonly: false,
       visible: true,
-      default: '',
       hardcoded: false,
       template: false,
       type: 'text',
@@ -312,38 +309,10 @@ class MindCache {
     return deleted;
   }
 
-  // Clear the entire STM and restore default values
+  // Clear the entire STM
   clear(): void {
-    // Store keys that have default values
-    const keysWithDefaults: Array<{
-      key: string;
-      defaultValue: string;
-      attributes: KeyAttributes;
-    }> = [];
-
-    Object.entries(this.stm).forEach(([key, entry]) => {
-      if (entry.attributes.default !== '') {
-        keysWithDefaults.push({
-          key,
-          defaultValue: entry.attributes.default,
-          attributes: entry.attributes
-        });
-      }
-    });
-
     // Clear the STM
     this.stm = {};
-
-    // Restore default values
-    keysWithDefaults.forEach(({ key, defaultValue, attributes }) => {
-      this.stm[key] = {
-        value: defaultValue,
-        attributes: {
-          ...attributes
-          // Preserve all attributes including tags when clearing
-        }
-      };
-    });
 
     this.notifyGlobalListeners();
   }
@@ -407,7 +376,6 @@ class MindCache {
         const defaultAttributes: KeyAttributes = {
           readonly: false,
           visible: true,
-          default: '',
           hardcoded: false,
           template: false,
           type: 'text',
@@ -991,32 +959,6 @@ class MindCache {
       lines.push(`  - Visible: \`${entry.attributes.visible}\``);
       lines.push(`  - Template: \`${entry.attributes.template}\``);
       
-      // Bug fix #2 & #3: Handle default values properly (multiline text and appendix for images/files)
-      const defaultValue = entry.attributes.default || '';
-      if (defaultValue && (entryType === 'image' || entryType === 'file')) {
-        // Default image/file should go to appendix
-        const defaultLabel = String.fromCharCode(65 + appendixCounter);
-        appendixCounter++;
-        lines.push(`  - Default: [See Appendix ${defaultLabel}]`);
-        
-        appendixEntries.push({
-          key: `${key} (default)`,
-          type: entryType,
-          contentType: entry.attributes.contentType || 'application/octet-stream',
-          base64: defaultValue,
-          label: defaultLabel
-        });
-      } else if (defaultValue && defaultValue.includes('\n')) {
-        // Multiline text default
-        lines.push('  - Default:');
-        lines.push('```');
-        lines.push(defaultValue);
-        lines.push('```');
-      } else {
-        // Inline default
-        lines.push(`  - Default: \`${defaultValue}\``);
-      }
-      
       if (entry.attributes.tags && entry.attributes.tags.length > 0) {
         lines.push(`  - Tags: \`${entry.attributes.tags.join('`, `')}\``);
       } else {
@@ -1062,7 +1004,7 @@ class MindCache {
     let codeBlockType: 'value' | 'json' | 'base64' | 'default' | null = null;
     const appendixData: Record<string, { contentType: string; base64: string }> = {};
     let currentAppendixKey: string | null = null;
-    const pendingEntries: Record<string, Partial<STMEntry> & { appendixLabel?: string; defaultAppendixLabel?: string }> = {};
+    const pendingEntries: Record<string, Partial<STMEntry> & { appendixLabel?: string }> = {};
 
     // Clear existing STM first
     this.clear();
@@ -1098,9 +1040,6 @@ class MindCache {
             currentEntry.value = content;
           } else if (currentEntry && codeBlockType === 'value') {
             currentEntry.value = content;
-          } else if (currentEntry && codeBlockType === 'default') {
-            // Multiline default value
-            currentEntry.attributes!.default = content;
           }
 
           codeBlockContent = [];
@@ -1129,7 +1068,6 @@ class MindCache {
             attributes: {
               readonly: false,
               visible: true,
-              default: '',
               hardcoded: false,
               template: false,
               type: 'text',
@@ -1173,39 +1111,6 @@ class MindCache {
           const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
           if (currentEntry) {
             currentEntry.attributes!.template = value;
-          }
-        } else if (trimmed.startsWith('- Default:')) {
-          // Check if it's an appendix reference or multiline
-          if (trimmed.includes('[See Appendix ')) {
-            const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
-            if (currentEntry && labelMatch) {
-              (currentEntry as any).defaultAppendixLabel = labelMatch[1];
-            }
-          } else if (trimmed === '- Default:') {
-            // Next lines will be a code block - set type for code block handler
-            codeBlockType = 'default';
-          } else {
-            // Inline default: `- Default: `value``
-            const value = trimmed.substring(12, trimmed.length - 1);
-            if (currentEntry) {
-              currentEntry.attributes!.default = value;
-            }
-          }
-        } else if (trimmed.startsWith('  - Default: `')) {
-          const value = trimmed.substring(14, trimmed.length - 1);
-          if (currentEntry) {
-            currentEntry.attributes!.default = value;
-          }
-        } else if (trimmed.startsWith('  - Default:')) {
-          // Check if it's an appendix reference or multiline
-          if (trimmed.includes('[See Appendix ')) {
-            const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
-            if (currentEntry && labelMatch) {
-              (currentEntry as any).defaultAppendixLabel = labelMatch[1];
-            }
-          } else if (trimmed === '  - Default:') {
-            // Next lines will be a code block - set type for code block handler
-            codeBlockType = 'default';
           }
         } else if (trimmed.startsWith('- Tags: `') || trimmed.startsWith('  - Tags: `')) {
           const startPos = trimmed.startsWith('  - Tags: `') ? 11 : 9;
@@ -1257,17 +1162,6 @@ class MindCache {
           if (!entry.attributes!.contentType && appendixInfo.contentType) {
             entry.attributes!.contentType = appendixInfo.contentType;
           }
-        }
-      }
-
-      // Handle default appendix reference
-      const defaultAppendixLabel = (entry as any).defaultAppendixLabel;
-      if (defaultAppendixLabel) {
-        // Find matching appendix data for default
-        const defaultAppendixKey = `${defaultAppendixLabel}:${key} (default)`;
-        const defaultAppendixInfo = appendixData[defaultAppendixKey];
-        if (defaultAppendixInfo && defaultAppendixInfo.base64) {
-          entry.attributes!.default = defaultAppendixInfo.base64;
         }
       }
 
