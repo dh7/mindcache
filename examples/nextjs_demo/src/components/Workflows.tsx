@@ -16,7 +16,6 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
   // Get workflow from tagged content or use default
   const getWorkflowText = () => {
     if (!stmLoaded) {
-      console.log('🔄 [RELOAD DEBUG] Workflow: STM not loaded yet, using default');
       return '1. Say hello to the user';
     }
 
@@ -25,7 +24,6 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       ? workflowTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
       : '1. Say hello to the user';
     
-    console.log('🔄 [RELOAD DEBUG] Workflow:', workflowTagged ? `Found: "${workflowText}"` : 'Not found, using default');
     return workflowText;
   };
 

@@ -93,24 +93,16 @@ export default function ClientSTMDemo() {
         const result = await response.json();
         
         if (result.success) {
-          // Store analysis result in STM
-          const timestamp = Date.now();
-          const analysisKey = keyName || `image_analysis_${timestamp}`;
-          
-          console.log('💾 Storing analysis in STM:', { analysisKey, analysis: result.data.analysis });
-          mindcacheRef.current.set_value(analysisKey, result.data.analysis, {
-            type: 'text',
-            visible: true
-          });
+          // Return the analysis without storing it - let the AI write it to the desired location
+          console.log('✅ Analysis completed:', { hasAnalysis: !!result.data.analysis });
           
           return {
             success: true,
-            analysisKey,
             analysis: result.data.analysis,
             confidence: result.data.confidence,
             tags: result.data.tags,
             summary: result.data.summary,
-            message: `Image analysis completed and stored as '${analysisKey}'`
+            message: `Image analysis completed. Use the analysis result to write to your desired STM key.`
           };
         } else {
           return {
@@ -205,7 +197,10 @@ export default function ClientSTMDemo() {
           const imageKey = imageName || `generated_image_${timestamp}`;
           
           console.log('🖼️ Adding image to mindcache:', { imageKey, contentType, base64Length: base64Data.length, customName: !!imageName });
-          mindcacheRef.current.add_image(imageKey, base64Data, contentType);
+          mindcacheRef.current.add_image(imageKey, base64Data, contentType, {
+            readonly: true, // Prevent AI from overwriting the image with text
+            visible: true
+          });
           
           // Debug: Check what was actually stored
           const storedAttributes = mindcacheRef.current.get_attributes(imageKey);
@@ -274,7 +269,6 @@ export default function ClientSTMDemo() {
       ? assistantFirstMessage.split(': ').slice(1).join(': ') // Extract value part after "key: "
       : 'Hello!';
     
-    console.log('🔄 [RELOAD DEBUG] AssistantFirstMessage:', assistantFirstMessage ? `Found: "${messageText}"` : 'Not found, using default');
     
     return [
       {
@@ -454,7 +448,6 @@ export default function ClientSTMDemo() {
         className="flex flex-col min-h-0"
       >
         <ChatInterface 
-          key={`chat-${stmVersion}`}
           onToolCall={handleToolCall} 
           initialMessages={getInitialMessages()}
           workflowPrompt={workflowPrompt}
@@ -464,7 +457,6 @@ export default function ClientSTMDemo() {
           stmVersion={stmVersion}
         >
           <Workflows 
-            key={`workflow-${stmVersion}`}
             onSendPrompt={handleSendPrompt}
             isExecuting={chatStatus !== 'ready'}
             onExecutionComplete={handleExecutionComplete}

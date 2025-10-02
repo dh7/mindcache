@@ -50,7 +50,7 @@ interface ChatInterfaceProps {
   stmVersion?: number; // Track STM changes to refresh getTagged values
 }
 
-export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded, stmVersion }: ChatInterfaceProps) {
+export default function ChatInterface({ onToolCall, initialMessages, workflowPrompt, onWorkflowPromptSent, onStatusChange, children, stmLoaded }: ChatInterfaceProps) {
   const mindcacheRef = useRef(mindcache);
   
   
@@ -88,10 +88,8 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
               ? systemPromptTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
               : mindcacheRef.current.get_system_prompt();
             
-            console.log('🔄 [RELOAD DEBUG] SystemPrompt:', systemPromptTagged ? `Found: "${systemPrompt}"` : 'Not found, using default');
           } else {
             systemPrompt = mindcacheRef.current.get_system_prompt();
-            console.log('🔄 [RELOAD DEBUG] SystemPrompt: STM not loaded yet, using default');
           }
           const nextBody = { ...originalBody, toolSchemas: getToolSchemas(), systemPrompt };
           console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}), hasSystemPrompt: Boolean(systemPrompt) });

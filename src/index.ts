@@ -936,7 +936,9 @@ class MindCache {
       }
 
       lines.push(`### ${key}`);
-      lines.push(`- **Type**: \`${entry.attributes.type}\``);
+      // Bug fix #1: Ensure type is always 'text' if undefined or the string "undefined"
+      const entryType = (entry.attributes.type && (entry.attributes.type as any) !== 'undefined') ? entry.attributes.type : 'text';
+      lines.push(`- **Type**: \`${entryType}\``);
 
       // Handle content type for files/images
       if (entry.attributes.contentType) {
@@ -944,7 +946,7 @@ class MindCache {
       }
 
       // Handle value based on type
-      if (entry.attributes.type === 'image' || entry.attributes.type === 'file') {
+      if (entryType === 'image' || entryType === 'file') {
         // Create appendix reference
         const label = String.fromCharCode(65 + appendixCounter); // A, B, C, etc.
         appendixLabels[key] = label;
@@ -954,12 +956,12 @@ class MindCache {
         // Store for appendix section
         appendixEntries.push({
           key,
-          type: entry.attributes.type,
+          type: entryType,
           contentType: entry.attributes.contentType || 'application/octet-stream',
           base64: entry.value,
           label
         });
-      } else if (entry.attributes.type === 'json') {
+      } else if (entryType === 'json') {
         // Format JSON with proper indentation
         lines.push('- **Value**:');
         lines.push('```json');
@@ -988,7 +990,33 @@ class MindCache {
       lines.push(`  - Readonly: \`${entry.attributes.readonly}\``);
       lines.push(`  - Visible: \`${entry.attributes.visible}\``);
       lines.push(`  - Template: \`${entry.attributes.template}\``);
-      lines.push(`  - Default: \`${entry.attributes.default || ''}\``);
+      
+      // Bug fix #2 & #3: Handle default values properly (multiline text and appendix for images/files)
+      const defaultValue = entry.attributes.default || '';
+      if (defaultValue && (entryType === 'image' || entryType === 'file')) {
+        // Default image/file should go to appendix
+        const defaultLabel = String.fromCharCode(65 + appendixCounter);
+        appendixCounter++;
+        lines.push(`  - Default: [See Appendix ${defaultLabel}]`);
+        
+        appendixEntries.push({
+          key: `${key} (default)`,
+          type: entryType,
+          contentType: entry.attributes.contentType || 'application/octet-stream',
+          base64: defaultValue,
+          label: defaultLabel
+        });
+      } else if (defaultValue && defaultValue.includes('\n')) {
+        // Multiline text default
+        lines.push('  - Default:');
+        lines.push('```');
+        lines.push(defaultValue);
+        lines.push('```');
+      } else {
+        // Inline default
+        lines.push(`  - Default: \`${defaultValue}\``);
+      }
+      
       if (entry.attributes.tags && entry.attributes.tags.length > 0) {
         lines.push(`  - Tags: \`${entry.attributes.tags.join('`, `')}\``);
       } else {
@@ -1031,10 +1059,10 @@ class MindCache {
     let currentEntry: Partial<STMEntry> | null = null;
     let inCodeBlock = false;
     let codeBlockContent: string[] = [];
-    let codeBlockType: 'value' | 'json' | 'base64' | null = null;
+    let codeBlockType: 'value' | 'json' | 'base64' | 'default' | null = null;
     const appendixData: Record<string, { contentType: string; base64: string }> = {};
     let currentAppendixKey: string | null = null;
-    const pendingEntries: Record<string, Partial<STMEntry> & { appendixLabel?: string }> = {};
+    const pendingEntries: Record<string, Partial<STMEntry> & { appendixLabel?: string; defaultAppendixLabel?: string }> = {};
 
     // Clear existing STM first
     this.clear();
@@ -1070,6 +1098,9 @@ class MindCache {
             currentEntry.value = content;
           } else if (currentEntry && codeBlockType === 'value') {
             currentEntry.value = content;
+          } else if (currentEntry && codeBlockType === 'default') {
+            // Multiline default value
+            currentEntry.attributes!.default = content;
           }
 
           codeBlockContent = [];
@@ -1107,7 +1138,8 @@ class MindCache {
           };
         } else if (trimmed.startsWith('- **Type**: `')) {
           const type = trimmed.match(/`([^`]+)`/)?.[1] as KeyAttributes['type'];
-          if (currentEntry && type) {
+          // Don't store "undefined" string - treat it as missing and keep default 'text'
+          if (currentEntry && type && (type as any) !== 'undefined') {
             currentEntry.attributes!.type = type;
           }
         } else if (trimmed.startsWith('- **Content Type**: `')) {
@@ -1142,15 +1174,49 @@ class MindCache {
           if (currentEntry) {
             currentEntry.attributes!.template = value;
           }
-        } else if (trimmed.startsWith('- Default: `')) {
-          const value = trimmed.substring(12, trimmed.length - 1);
+        } else if (trimmed.startsWith('- Default:')) {
+          // Check if it's an appendix reference or multiline
+          if (trimmed.includes('[See Appendix ')) {
+            const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
+            if (currentEntry && labelMatch) {
+              (currentEntry as any).defaultAppendixLabel = labelMatch[1];
+            }
+          } else if (trimmed === '- Default:') {
+            // Next lines will be a code block - set type for code block handler
+            codeBlockType = 'default';
+          } else {
+            // Inline default: `- Default: `value``
+            const value = trimmed.substring(12, trimmed.length - 1);
+            if (currentEntry) {
+              currentEntry.attributes!.default = value;
+            }
+          }
+        } else if (trimmed.startsWith('  - Default: `')) {
+          const value = trimmed.substring(14, trimmed.length - 1);
           if (currentEntry) {
             currentEntry.attributes!.default = value;
           }
-        } else if (trimmed.startsWith('- Tags: `')) {
-          const tagsStr = trimmed.substring(9, trimmed.length - 1);
+        } else if (trimmed.startsWith('  - Default:')) {
+          // Check if it's an appendix reference or multiline
+          if (trimmed.includes('[See Appendix ')) {
+            const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
+            if (currentEntry && labelMatch) {
+              (currentEntry as any).defaultAppendixLabel = labelMatch[1];
+            }
+          } else if (trimmed === '  - Default:') {
+            // Next lines will be a code block - set type for code block handler
+            codeBlockType = 'default';
+          }
+        } else if (trimmed.startsWith('- Tags: `') || trimmed.startsWith('  - Tags: `')) {
+          const startPos = trimmed.startsWith('  - Tags: `') ? 11 : 9;
+          const tagsStr = trimmed.substring(startPos, trimmed.length - 1);
           if (currentEntry && tagsStr !== '(none)') {
             currentEntry.attributes!.tags = tagsStr.split('`, `');
+          }
+        } else if (trimmed === '  - Tags: (none)') {
+          // Handle indented (none) case
+          if (currentEntry) {
+            currentEntry.attributes!.tags = [];
           }
         }
       }
@@ -1191,6 +1257,17 @@ class MindCache {
           if (!entry.attributes!.contentType && appendixInfo.contentType) {
             entry.attributes!.contentType = appendixInfo.contentType;
           }
+        }
+      }
+
+      // Handle default appendix reference
+      const defaultAppendixLabel = (entry as any).defaultAppendixLabel;
+      if (defaultAppendixLabel) {
+        // Find matching appendix data for default
+        const defaultAppendixKey = `${defaultAppendixLabel}:${key} (default)`;
+        const defaultAppendixInfo = appendixData[defaultAppendixKey];
+        if (defaultAppendixInfo && defaultAppendixInfo.base64) {
+          entry.attributes!.default = defaultAppendixInfo.base64;
         }
       }
 

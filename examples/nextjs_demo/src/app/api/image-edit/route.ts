@@ -189,9 +189,9 @@ export const POST = async (req: NextRequest) => {
               headers: {
                 'Content-Type': 'image/jpeg',
                 'Content-Length': imageBuffer.byteLength.toString(),
-                'X-Request-ID': result.request_id,
-                'X-Has-Images': hasImages.toString(),
-                'X-Input-Count': (images?.length || (imageBase64 ? 1 : 0)).toString()
+                'X-Request-ID': result.request_id || '',
+                'X-Has-Images': String(hasImages),
+                'X-Input-Count': String(images?.length || (imageBase64 ? 1 : 0))
               }
             });
           }
@@ -206,6 +206,14 @@ export const POST = async (req: NextRequest) => {
           return NextResponse.json(
             { error: `Generation failed: ${pollResult.details}` },
             { status: 500 }
+          );
+        }
+        
+        if (pollResult.status === 'Request Moderated') {
+          console.warn('⚠️ Request moderated:', { requestId: result.request_id });
+          return NextResponse.json(
+            { error: 'Request was blocked by content moderation. Please try a different prompt or image.' },
+            { status: 400 }
           );
         }
       } else {
