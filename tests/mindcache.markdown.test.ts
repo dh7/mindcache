@@ -24,9 +24,9 @@ describe('MindCache Markdown Serialization', () => {
       
       expect(markdown).toContain('### username');
       expect(markdown).toContain('- **Type**: `text`');
-      expect(markdown).toContain('- **Value**: `john_doe`');
+      expect(markdown).toContain('```\njohn_doe\n```');
       expect(markdown).toContain('### email');
-      expect(markdown).toContain('- **Value**: `john@example.com`');
+      expect(markdown).toContain('```\njohn@example.com\n```');
     });
 
     test('should export multiline text with code blocks', () => {
@@ -62,11 +62,10 @@ describe('MindCache Markdown Serialization', () => {
       
       const markdown = cache.toMarkdown();
       
-      expect(markdown).toContain('- **Attributes**:');
-      expect(markdown).toContain('- Readonly: `true`');
-      expect(markdown).toContain('- Visible: `false`');
-      expect(markdown).toContain('- Template: `true`');
-      expect(markdown).toContain('- Tags: `tag1`, `tag2`, `tag3`');
+      expect(markdown).toContain('- **Readonly**: `true`');
+      expect(markdown).toContain('- **Visible**: `false`');
+      expect(markdown).toContain('- **Template**: `true`');
+      expect(markdown).toContain('- **Tags**: `tag1`, `tag2`, `tag3`');
     });
 
     test('should export image to appendix', () => {
@@ -175,13 +174,13 @@ Export Date: 2025-10-01
 
 ### username
 - **Type**: \`text\`
-- **Value**: \`john_doe\`
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
+- **Value**:
+\`\`\`
+john_doe
+\`\`\`
 
 ---
 
@@ -202,18 +201,15 @@ Export Date: 2025-10-01
 
 ### description
 - **Type**: \`text\`
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
 - **Value**:
 \`\`\`
 Line 1
 Line 2
 Line 3
 \`\`\`
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
 
 ---
 
@@ -231,16 +227,13 @@ Line 3
 
 ### config
 - **Type**: \`json\`
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
 - **Value**:
 \`\`\`json
 {"theme":"dark","count":42}
 \`\`\`
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
 
 ---
 
@@ -259,13 +252,14 @@ Line 3
 
 ### test_key
 - **Type**: \`text\`
-- **Value**: \`value\`
-- **Attributes**:
-  - Readonly: \`true\`
-  - Visible: \`false\`
-  - Template: \`true\`
-  - Default: \`default_value\`
-  - Tags: \`tag1\`, \`tag2\`, \`tag3\`
+- **Readonly**: \`true\`
+- **Visible**: \`false\`
+- **Template**: \`true\`
+- **Tags**: \`tag1\`, \`tag2\`, \`tag3\`
+- **Value**:
+\`\`\`
+value
+\`\`\`
 
 ---
 
@@ -288,14 +282,11 @@ Line 3
 
 ### profile_pic
 - **Type**: \`image\`
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
 - **Content Type**: \`image/png\`
 - **Value**: [See Appendix A]
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
 
 ---
 
@@ -327,14 +318,11 @@ ${base64Image}
 
 ### document
 - **Type**: \`file\`
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
 - **Content Type**: \`application/pdf\`
 - **Value**: [See Appendix A]
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
 
 ---
 
@@ -365,27 +353,21 @@ ${base64File}
 
 ### img1
 - **Type**: \`image\`
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
 - **Content Type**: \`image/jpeg\`
 - **Value**: [See Appendix A]
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
 
 ---
 
 ### img2
 - **Type**: \`image\`
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
 - **Content Type**: \`image/png\`
 - **Value**: [See Appendix B]
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
 
 ---
 
@@ -500,13 +482,13 @@ base64data2
 
 ### new_key
 - **Type**: \`text\`
-- **Value**: \`new_value\`
-- **Attributes**:
-  - Readonly: \`false\`
-  - Visible: \`true\`
-  - Template: \`false\`
-  - Default: \`\`
-  - Tags: (none)
+- **Readonly**: \`false\`
+- **Visible**: \`true\`
+- **Template**: \`false\`
+- **Value**:
+\`\`\`
+new_value
+\`\`\`
 
 ---
 

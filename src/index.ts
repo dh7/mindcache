@@ -929,12 +929,21 @@ class MindCache {
       const entryType = (entry.attributes.type && (entry.attributes.type as any) !== 'undefined') ? entry.attributes.type : 'text';
       lines.push(`- **Type**: \`${entryType}\``);
 
+      // Flatten attributes at the same level as Type
+      lines.push(`- **Readonly**: \`${entry.attributes.readonly}\``);
+      lines.push(`- **Visible**: \`${entry.attributes.visible}\``);
+      lines.push(`- **Template**: \`${entry.attributes.template}\``);
+      
+      if (entry.attributes.tags && entry.attributes.tags.length > 0) {
+        lines.push(`- **Tags**: \`${entry.attributes.tags.join('`, `')}\``);
+      }
+
       // Handle content type for files/images
       if (entry.attributes.contentType) {
         lines.push(`- **Content Type**: \`${entry.attributes.contentType}\``);
       }
 
-      // Handle value based on type
+      // Handle value based on type - always use code blocks for text
       if (entryType === 'image' || entryType === 'file') {
         // Create appendix reference
         const label = String.fromCharCode(65 + appendixCounter); // A, B, C, etc.
@@ -962,28 +971,12 @@ class MindCache {
         }
         lines.push('```');
       } else {
-        // Text type - handle multiline
+        // Text type - always use code blocks
         const valueStr = String(entry.value);
-        if (valueStr.includes('\n')) {
-          lines.push('- **Value**:');
-          lines.push('```');
-          lines.push(valueStr);
-          lines.push('```');
-        } else {
-          lines.push(`- **Value**: \`${valueStr}\``);
-        }
-      }
-
-      // Attributes
-      lines.push('- **Attributes**:');
-      lines.push(`  - Readonly: \`${entry.attributes.readonly}\``);
-      lines.push(`  - Visible: \`${entry.attributes.visible}\``);
-      lines.push(`  - Template: \`${entry.attributes.template}\``);
-      
-      if (entry.attributes.tags && entry.attributes.tags.length > 0) {
-        lines.push(`  - Tags: \`${entry.attributes.tags.join('`, `')}\``);
-      } else {
-        lines.push('  - Tags: (none)');
+        lines.push('- **Value**:');
+        lines.push('```');
+        lines.push(valueStr);
+        lines.push('```');
       }
 
       lines.push('');
@@ -1101,6 +1094,26 @@ class MindCache {
           if (currentEntry && type && (type as any) !== 'undefined') {
             currentEntry.attributes!.type = type;
           }
+        } else if (trimmed.startsWith('- **Readonly**: `')) {
+          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
+          if (currentEntry) {
+            currentEntry.attributes!.readonly = value;
+          }
+        } else if (trimmed.startsWith('- **Visible**: `')) {
+          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
+          if (currentEntry) {
+            currentEntry.attributes!.visible = value;
+          }
+        } else if (trimmed.startsWith('- **Template**: `')) {
+          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
+          if (currentEntry) {
+            currentEntry.attributes!.template = value;
+          }
+        } else if (trimmed.startsWith('- **Tags**: `')) {
+          const tagsStr = trimmed.substring(13, trimmed.length - 1);
+          if (currentEntry) {
+            currentEntry.attributes!.tags = tagsStr.split('`, `');
+          }
         } else if (trimmed.startsWith('- **Content Type**: `')) {
           const contentType = trimmed.match(/`([^`]+)`/)?.[1];
           if (currentEntry && contentType) {
@@ -1117,32 +1130,6 @@ class MindCache {
             (currentEntry as any).appendixLabel = labelMatch[1];
             // Set a placeholder value so the entry is saved
             currentEntry.value = '';
-          }
-        } else if (trimmed.startsWith('- Readonly: `')) {
-          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-          if (currentEntry) {
-            currentEntry.attributes!.readonly = value;
-          }
-        } else if (trimmed.startsWith('- Visible: `')) {
-          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-          if (currentEntry) {
-            currentEntry.attributes!.visible = value;
-          }
-        } else if (trimmed.startsWith('- Template: `')) {
-          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-          if (currentEntry) {
-            currentEntry.attributes!.template = value;
-          }
-        } else if (trimmed.startsWith('- Tags: `') || trimmed.startsWith('  - Tags: `')) {
-          const startPos = trimmed.startsWith('  - Tags: `') ? 11 : 9;
-          const tagsStr = trimmed.substring(startPos, trimmed.length - 1);
-          if (currentEntry && tagsStr !== '(none)') {
-            currentEntry.attributes!.tags = tagsStr.split('`, `');
-          }
-        } else if (trimmed === '  - Tags: (none)') {
-          // Handle indented (none) case
-          if (currentEntry) {
-            currentEntry.attributes!.tags = [];
           }
         }
       }
