@@ -21,7 +21,6 @@
             </div>
             <div class="nav-links">
                 <a href="#features">Features</a>
-                <a href="#quickstart">Quick Start</a>
                 <a href="#examples">Examples</a>
                 <a href="#docs">Docs</a>
                 <a href="https://github.com/dh7/mindcache" target="_blank" class="github-link">
@@ -56,7 +55,7 @@
                             <path d="m5 15-4-4 4-4"></path>
                         </svg>
                     </button>
-                    <a href="#quickstart" class="btn-secondary">Get Started</a>
+                    <a href="#examples" class="btn-secondary">View Examples</a>
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
@@ -64,8 +63,8 @@
                         <span class="stat-label">Test Coverage</span>
                     </div>
                     <div class="stat">
-                        <span class="stat-number">5.4kB</span>
-                        <span class="stat-label">Bundle Size</span>
+                        <span class="stat-number">18.9kB</span>
+                        <span class="stat-label">Package Size</span>
                     </div>
                     <div class="stat">
                         <span class="stat-number">TypeScript</span>
@@ -87,23 +86,23 @@
                         <div class="demo-code">
                             <pre><code id="demo-code">import { mindcache } from 'mindcache';
 
-// Set user context
-mindcache.set('user', 'Alice');
-mindcache.set('mood', 'excited');
-mindcache.set('task', 'planning vacation');
+// Store user context with tags
+mindcache.set_value('user', 'Alice', { tags: ['profile'] });
+mindcache.set_value('mood', 'excited');
+mindcache.set_value('task', 'planning vacation');
 
 // Template injection for AI prompts
-const prompt = mindcache.injectSTM(
-  'User {user} is {mood} about {task}'
+const prompt = mindcache.inject_stm(
+  'User {user} is {mood} about {task} on {$date}'
 );
 
 console.log(prompt);
-// "User Alice is excited about planning vacation"</code></pre>
+// "User Alice is excited about planning vacation on 2025-10-03"</code></pre>
                         </div>
                         <div class="demo-output">
                             <div class="output-line">
                                 <span class="output-prompt">></span>
-                                <span id="demo-output">User Alice is excited about planning vacation</span>
+                                <span id="demo-output">User Alice is excited about planning vacation on 2025-10-03</span>
                             </div>
                         </div>
                     </div>
@@ -121,91 +120,34 @@ console.log(prompt);
             </div>
             <div class="features-grid">
                 <div class="feature-card">
-                    <div class="feature-icon">🧠</div>
-                    <h3>LLM-Optimized</h3>
-                    <p>Data formats designed for optimal AI agent comprehension and reasoning</p>
+                    <div class="feature-icon">💾</div>
+                    <h3>Universal Storage</h3>
+                    <p>Store text, images, files, and JSON with automatic type handling and validation</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⚡</div>
                     <h3>Template Injection</h3>
-                    <p>Dynamic placeholder replacement perfect for generating context-aware AI prompts</p>
+                    <p>Dynamic {placeholder} replacement with recursive resolution for context-aware prompts</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>Auto Tool Generation</h3>
+                    <p>Automatically generate LLM tool schemas for AI agents to read and write memory</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔄</div>
                     <h3>Reactive Updates</h3>
-                    <p>Event-driven system with listeners for real-time memory state changes</p>
+                    <p>Subscribe to specific keys or all changes with event-driven listeners</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">🕒</div>
-                    <h3>Temporal Context</h3>
-                    <p>Built-in $date and $time values automatically available in all operations</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🛠️</div>
-                    <h3>Tool Integration</h3>
-                    <p>Direct integration with LLM tool calling systems and Vercel AI SDK</p>
+                    <div class="feature-icon">🏷️</div>
+                    <h3>Tags & Search</h3>
+                    <p>Organize memory with tags and search by category for efficient retrieval</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📝</div>
                     <h3>TypeScript First</h3>
-                    <p>Full type safety with excellent developer experience and IntelliSense</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Quick Start Section -->
-    <section id="quickstart" class="quickstart">
-        <div class="container">
-            <div class="section-header">
-                <h2>Quick Start</h2>
-                <p>Get up and running in minutes</p>
-            </div>
-            <div class="quickstart-steps">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <h3>Install</h3>
-                        <div class="code-block">
-                            <code>npm install mindcache</code>
-                            <button class="copy-btn" onclick="copyToClipboard('npm install mindcache')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                    <path d="m5 15-4-4 4-4"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <h3>Import</h3>
-                        <div class="code-block">
-                            <code>import { mindcache } from 'mindcache';</code>
-                            <button class="copy-btn" onclick="copyToClipboard('import { mindcache } from \'mindcache\';')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                    <path d="m5 15-4-4 4-4"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <h3>Use</h3>
-                        <div class="code-block">
-                            <code>mindcache.set('user', 'Alice');<br>mindcache.get('user'); // 'Alice'</code>
-                            <button class="copy-btn" onclick="copyToClipboard('mindcache.set(\'user\', \'Alice\');\nmindcache.get(\'user\'); // \'Alice\'')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                    <path d="m5 15-4-4 4-4"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
+                    <p>Full type safety, Zod validation, and excellent developer experience</p>
                 </div>
             </div>
         </div>
@@ -219,92 +161,87 @@ console.log(prompt);
                 <p>Real-world use cases for AI agents</p>
             </div>
             <div class="examples-tabs">
-                <button class="tab-btn active" onclick="showExample('chatbot')">Chatbot Memory</button>
-                <button class="tab-btn" onclick="showExample('prompt')">Dynamic Prompts</button>
-                <button class="tab-btn" onclick="showExample('workflow')">Agent Workflow</button>
+                <button class="tab-btn active" onclick="showExample('chatbot')">LLM Tools</button>
+                <button class="tab-btn" onclick="showExample('prompt')">Templates</button>
+                <button class="tab-btn" onclick="showExample('workflow')">Tags & Events</button>
             </div>
             <div class="example-content">
                 <div id="example-chatbot" class="example active">
                     <div class="example-code">
-                        <pre><code>// Chatbot with conversation memory
+                        <pre><code>// LLM Tool Integration
 import { mindcache } from 'mindcache';
 
-// Store conversation context
-mindcache.update({
-  userName: 'Alice',
-  lastTopic: 'travel planning',
-  userPreferences: { destination: 'Japan', budget: 5000 },
-  conversationStage: 'gathering requirements'
-});
+// Set up memory with tags
+mindcache.set_value('userName', 'Alice', { tags: ['user'] });
+mindcache.set_value('favoriteColor', 'blue', { tags: ['preferences'] });
 
-// Generate contextual response
-const context = mindcache.getSTM();
-const systemPrompt = `You are a travel assistant. Context: ${context}`;
+// Auto-generate LLM tools for AI agents
+const tools = mindcache.get_tools();
 
-// Use template injection
-const greeting = mindcache.injectSTM(
-  'Hello {userName}! Let\'s continue planning your trip to {userPreferences.destination}'
-);</code></pre>
+// AI can now call write_userName() to update memory
+// Tools are automatically generated for all writable keys
+
+// Generate system prompt with all context
+const systemPrompt = mindcache.get_system_prompt();
+// "userName: Alice. You can rewrite userName by using..."
+// "favoriteColor: blue. You can rewrite favoriteColor by..."</code></pre>
                     </div>
                     <div class="example-description">
-                        <h4>Persistent Conversation Memory</h4>
-                        <p>Keep track of user context, preferences, and conversation state across multiple interactions.</p>
+                        <h4>Auto Tool Generation</h4>
+                        <p>Automatically generate LLM tool schemas so AI agents can read and write memory using function calls.</p>
                     </div>
                 </div>
                 <div id="example-prompt" class="example">
                     <div class="example-code">
-                        <pre><code>// Dynamic AI prompt generation
+                        <pre><code>// Template Injection with Recursion
 import { mindcache } from 'mindcache';
 
-// Set current context
-mindcache.set('userMood', 'frustrated');
-mindcache.set('issueType', 'billing');
-mindcache.set('priority', 'high');
+// Set up nested templates
+mindcache.set_value('firstName', 'Alice', { template: true });
+mindcache.set_value('greeting', 'Hello {firstName}!', { template: true });
+mindcache.set_value('message', '{greeting} Welcome to our app.');
 
-// Generate dynamic system prompt
-const systemPrompt = mindcache.injectSTM(`
-  You are a customer service AI. The user is {{userMood}} about a {{issueType}} issue.
-  Priority level: {{priority}}. Today is {{$date}} at {{$time}}.
-  
-  Respond with empathy and urgency appropriate to the situation.
-`);
+// Recursive template resolution
+const result = mindcache.inject_stm('{message}');
+// "Hello Alice! Welcome to our app."
 
-console.log(systemPrompt);</code></pre>
+// Use temporal keys
+const prompt = mindcache.inject_stm(
+  'Today is {$date} at {$time}. User: {firstName}'
+);
+// "Today is 2025-10-03 at 14:30:00. User: Alice"</code></pre>
                     </div>
                     <div class="example-description">
-                        <h4>Context-Aware Prompts</h4>
-                        <p>Generate dynamic AI prompts that adapt to current context and temporal information.</p>
+                        <h4>Recursive Template Injection</h4>
+                        <p>Build complex prompts with nested templates and automatic temporal context injection.</p>
                     </div>
                 </div>
                 <div id="example-workflow" class="example">
                     <div class="example-code">
-                        <pre><code>// Multi-step AI agent workflow
+                        <pre><code>// Reactive Updates & Tag Search
 import { mindcache } from 'mindcache';
 
-// Track workflow state
-mindcache.update({
-  workflowId: 'order-processing',
-  currentStep: 'payment-verification',
-  stepProgress: 3,
-  totalSteps: 5,
-  userEmail: 'alice@example.com',
-  orderAmount: 299.99
+// Subscribe to specific key changes
+mindcache.subscribe('userName', (newValue) => {
+  console.log(`Name changed to: ${newValue}`);
 });
 
-// Listen for state changes
-mindcache.subscribeToAll(() => {
-  const progress = mindcache.get('stepProgress');
-  const total = mindcache.get('totalSteps');
-  console.log(`Workflow progress: ${progress}/${total}`);
-  
-  if (progress === total) {
-    console.log('Workflow completed!');
-  }
-});</code></pre>
+// Subscribe to all changes
+mindcache.subscribe_to_all(() => {
+  console.log('Memory state updated');
+});
+
+// Organize with tags
+mindcache.set_value('age', 25, { tags: ['user', 'demographics'] });
+mindcache.set_value('city', 'NYC', { tags: ['user', 'location'] });
+
+// Search by tag
+const userKeys = mindcache.get_keys_by_tag('user');
+// ['age', 'city']</code></pre>
                     </div>
                     <div class="example-description">
-                        <h4>Agent Workflow Management</h4>
-                        <p>Manage complex multi-step workflows with state tracking and event-driven updates.</p>
+                        <h4>Reactive Updates & Tags</h4>
+                        <p>React to memory changes in real-time and organize data with tags for efficient categorization.</p>
                     </div>
                 </div>
             </div>
@@ -319,22 +256,22 @@ mindcache.subscribeToAll(() => {
                 <p>Complete API reference and guides</p>
             </div>
             <div class="docs-grid">
-                <a href="https://github.com/your-username/mindcache#api" class="doc-card">
+                <a href="https://github.com/dh7/mindcache#api" class="doc-card">
                     <div class="doc-icon">📚</div>
                     <h3>API Reference</h3>
                     <p>Complete documentation of all methods and types</p>
                 </a>
-                <a href="https://github.com/your-username/mindcache/tree/main/examples" class="doc-card">
+                <a href="https://github.com/dh7/mindcache/tree/main/examples" class="doc-card">
                     <div class="doc-icon">💡</div>
                     <h3>Examples</h3>
                     <p>Real-world examples and integration patterns</p>
                 </a>
-                <a href="https://github.com/your-username/mindcache#vercel-ai-sdk" class="doc-card">
+                <a href="https://github.com/dh7/mindcache#vercel-ai-sdk" class="doc-card">
                     <div class="doc-icon">🔗</div>
                     <h3>Vercel AI SDK</h3>
                     <p>Integration guide for Vercel AI SDK and Next.js</p>
                 </a>
-                <a href="https://github.com/your-username/mindcache/blob/main/CONTRIBUTING.md" class="doc-card">
+                <a href="https://github.com/dh7/mindcache/blob/main/CONTRIBUTING.md" class="doc-card">
                     <div class="doc-icon">🤝</div>
                     <h3>Contributing</h3>
                     <p>How to contribute to the MindCache project</p>
@@ -352,14 +289,14 @@ mindcache.subscribeToAll(() => {
                     <span class="footer-title">MindCache</span>
                 </div>
                 <div class="footer-links">
-                    <a href="https://github.com/your-username/mindcache">GitHub</a>
+                    <a href="https://github.com/dh7/mindcache">GitHub</a>
                     <a href="https://www.npmjs.com/package/mindcache">npm</a>
-                    <a href="https://github.com/your-username/mindcache/issues">Issues</a>
-                    <a href="https://github.com/your-username/mindcache/blob/main/LICENSE">License</a>
+                    <a href="https://github.com/dh7/mindcache/issues">Issues</a>
+                    <a href="https://github.com/dh7/mindcache/blob/main/LICENSE">License</a>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 MindCache. Released under the MIT License.</p>
+                <p>&copy; 2025 MindCache. Released under the MIT License. Made with ❤️ by <a href="https://damien-henry.com" target="_blank" style="color: inherit; text-decoration: underline;">Damien Henry</a></p>
             </div>
         </div>
     </footer>
