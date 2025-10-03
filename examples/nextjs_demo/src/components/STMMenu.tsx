@@ -29,7 +29,9 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
 
   // Toggle tag selection
   const toggleTag = (tag: string) => {
-    if (!onSelectedTagsChange) return;
+    if (!onSelectedTagsChange) {
+      return;
+    }
     
     if (selectedTags.includes(tag)) {
       onSelectedTagsChange(selectedTags.filter(t => t !== tag));

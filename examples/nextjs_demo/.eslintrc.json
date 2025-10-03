@@ -8,7 +8,7 @@
     "comma-dangle": "off",
     "no-trailing-spaces": "off",
     "max-len": "off",
-    "no-console": "warn",
+    "no-console": "off",
     "@typescript-eslint/no-explicit-any": "warn",
     "no-undef": "off",
     "eol-last": "off"

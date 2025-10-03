@@ -13,7 +13,7 @@ interface WorkflowsProps {
 
 export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion }: WorkflowsProps) {
   // Get workflow from tagged content or use default
-  const getWorkflowText = () => {
+  const getWorkflowText = useCallback(() => {
     if (!stmLoaded) {
       return '1. Say hello to the user';
     }
@@ -24,7 +24,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       : '1. Say hello to the user';
     
     return workflowText;
-  };
+  }, [stmLoaded]);
 
   const [workflowText, setWorkflowText] = useState('1. Say hello to the user'); // Start with default
   const [currentStep, setCurrentStep] = useState(0);
@@ -38,7 +38,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       const newWorkflowText = getWorkflowText();
       setWorkflowText(newWorkflowText);
     }
-  }, [stmLoaded, stmVersion]);
+  }, [stmLoaded, stmVersion, getWorkflowText]);
 
   // Parse workflow text into individual prompts
   const parseWorkflowSteps = (text: string): string[] => {

@@ -3,14 +3,16 @@
 import React, { useState } from 'react'
 import ClientSTMDemo from '@/components/ClientSTMDemo'
 import FormExample from '@/components/FormExample'
+import ImageExample from '@/components/ImageExample'
 
-type DemoType = 'form' | 'read' | 'write' | 'images' | 'workflow' | 'mindcache-editor'
+type DemoType = 'form' | 'image' | 'read' | 'write' | 'images' | 'workflow' | 'mindcache-editor'
 
 export default function Home() {
   const [selectedDemo, setSelectedDemo] = useState<DemoType>('form')
 
   const demos = [
     { id: 'form' as DemoType, label: 'Form' },
+    { id: 'image' as DemoType, label: 'Image' },
     { id: 'read' as DemoType, label: 'Read' },
     { id: 'write' as DemoType, label: 'Write' },
     { id: 'images' as DemoType, label: 'Images' },
@@ -47,9 +49,10 @@ export default function Home() {
       {/* Main Content Area */}
       <div className="flex-1 min-w-0">
         {selectedDemo === 'form' && <FormExample />}
+        {selectedDemo === 'image' && <ImageExample />}
         {selectedDemo === 'mindcache-editor' && <ClientSTMDemo />}
         
-        {selectedDemo !== 'form' && selectedDemo !== 'mindcache-editor' && (
+        {selectedDemo !== 'form' && selectedDemo !== 'image' && selectedDemo !== 'mindcache-editor' && (
           <div className="h-screen flex items-center justify-center bg-black">
             <div className="text-center">
               <div className="text-2xl text-green-400 mb-4">

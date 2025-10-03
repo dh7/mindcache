@@ -1,12 +1,12 @@
 'use client';
 
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { mindcache } from 'mindcache';
+import { useRef, useEffect, useState } from 'react';
+import { MindCache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import type { TypedToolCall, ToolSet } from 'ai';
 
 export default function FormExample() {
-  const mindcacheRef = useRef(mindcache);
+  const mindcacheRef = useRef(new MindCache());
   const [formData, setFormData] = useState({
     name: '',
     role: '',
@@ -98,6 +98,8 @@ export default function FormExample() {
           initialMessages={getInitialMessages()}
           stmLoaded={true}
           stmVersion={stmVersion}
+          systemPrompt="You are a helpful assistant that can read and update form fields. The user has a form with the following fields: name, role, age, and company. These fields are stored in a short-term memory (STM) system. You can read the current values and update them using the available tools. Be helpful and conversational."
+          mindcacheInstance={mindcacheRef.current}
         />
       </div>
 
