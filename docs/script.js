@@ -107,9 +107,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Animate demo output
     function animateDemo() {
         const outputs = [
-            'User Alice is excited about planning vacation',
-            'User Bob is curious about learning TypeScript',
-            'User Carol is focused on building AI agents'
+            'User Alice is excited about planning vacation on 2025-10-03',
+            'User Bob is curious about learning TypeScript on 2025-10-03',
+            'User Carol is focused on building AI agents on 2025-10-03'
         ];
         
         let currentIndex = 0;

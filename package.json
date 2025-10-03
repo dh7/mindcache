@@ -39,9 +39,9 @@
     "url": "git+https://github.com/dh7/mindcache.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/mindcache/issues"
+    "url": "https://github.com/dh7/mindcache/issues"
   },
-  "homepage": "https://github.com/your-username/mindcache#readme",
+  "homepage": "https://github.com/dh7/mindcache#readme",
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
