@@ -1,14 +1,42 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
 interface STMMenuProps {
   onRefresh?: () => void; // Called after load/import/clear to refresh all UI
+  selectedTags?: string[];
+  onSelectedTagsChange?: (tags: string[]) => void;
 }
 
-export default function STMMenu({ onRefresh }: STMMenuProps) {
+export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsChange }: STMMenuProps) {
   const mindcacheRef = useRef(mindcache);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+
+  // Update available tags when STM changes
+  useEffect(() => {
+    const updateTags = () => {
+      setAvailableTags(mindcacheRef.current.getAllTags());
+    };
+    
+    // Initial load
+    updateTags();
+    
+    // Subscribe to STM changes
+    mindcacheRef.current.subscribeToAll(updateTags);
+    return () => mindcacheRef.current.unsubscribeFromAll(updateTags);
+  }, []);
+
+  // Toggle tag selection
+  const toggleTag = (tag: string) => {
+    if (!onSelectedTagsChange) return;
+    
+    if (selectedTags.includes(tag)) {
+      onSelectedTagsChange(selectedTags.filter(t => t !== tag));
+    } else {
+      onSelectedTagsChange([...selectedTags, tag]);
+    }
+  };
 
   // Add a new STM key
   const handleAddKey = () => {
@@ -189,6 +217,34 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
           Import
         </div>
       </div>
+      
+      {/* Tag Filter Section */}
+      {availableTags.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-700">
+          <div className="text-gray-400 text-xs mb-2">Filter by tags:</div>
+          <div className="flex flex-wrap gap-2">
+            {availableTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => toggleTag(tag)}
+                className={`text-xs px-2 py-1 rounded font-mono border transition-colors ${
+                  selectedTags.includes(tag)
+                    ? 'bg-blue-900 bg-opacity-50 text-blue-300 border-blue-600'
+                    : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-500'
+                }`}
+                title={selectedTags.includes(tag) ? 'Click to unselect' : 'Click to select'}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          {selectedTags.length > 0 && (
+            <div className="mt-2 text-xs text-gray-500">
+              Filtering by: {selectedTags.join(', ')}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

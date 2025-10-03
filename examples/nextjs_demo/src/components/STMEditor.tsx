@@ -6,9 +6,10 @@ import { mindcache } from 'mindcache';
 // Type definitions
 interface STMEditorProps {
   onSTMChange?: () => void;
+  selectedTags?: string[]; // Filter keys by these tags (OR logic); undefined/empty = show all
 }
 
-export default function STMEditor({ onSTMChange }: STMEditorProps) {
+export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps) {
   const mindcacheRef = useRef(mindcache);
   const [stmState, setSTMState] = useState(mindcacheRef.current.getAll());
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -257,7 +258,17 @@ export default function STMEditor({ onSTMChange }: STMEditorProps) {
           <div className="text-gray-500">No STM data yet. Use &quot;Add Key&quot; above or chat to create memories.</div>
         ) : (
           <div className="space-y-2">
-            {Object.entries(stmState).map(([key, value]) => {
+            {Object.entries(stmState)
+              .filter(([key]) => {
+                // If no tags selected, show all keys
+                if (!selectedTags || selectedTags.length === 0) {
+                  return true;
+                }
+                // Show key if it has ANY of the selected tags (OR logic)
+                const keyTags = mindcacheRef.current.getTags(key);
+                return selectedTags.some(selectedTag => keyTags.includes(selectedTag));
+              })
+              .map(([key, value]) => {
               const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
               const attributes = mindcacheRef.current.get_attributes(key);
               const isSystemKey = key.startsWith('$');

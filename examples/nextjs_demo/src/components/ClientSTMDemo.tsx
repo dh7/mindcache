@@ -17,6 +17,7 @@ export default function ClientSTMDemo() {
   const [stmLoaded, setStmLoaded] = useState(false); // Track STM loading state
   const [stmVersion, setStmVersion] = useState(0); // Force refresh of getTagged values
   const [chatKey, setChatKey] = useState(0); // Force chat remount on load/import/clear
+  const [selectedTags, setSelectedTags] = useState<string[]>([]); // Tag filter for STM Editor
   
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
@@ -484,8 +485,15 @@ export default function ClientSTMDemo() {
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMMenu onRefresh={handleFullRefresh} />
-        <STMEditor onSTMChange={handleSTMChange} />
+        <STMMenu 
+          onRefresh={handleFullRefresh} 
+          selectedTags={selectedTags}
+          onSelectedTagsChange={setSelectedTags}
+        />
+        <STMEditor 
+          onSTMChange={handleSTMChange} 
+          selectedTags={selectedTags}
+        />
         <Workflows 
           onSendPrompt={handleSendPrompt}
           isExecuting={chatStatus !== 'ready'}
