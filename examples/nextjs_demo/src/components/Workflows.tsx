@@ -9,11 +9,17 @@ interface WorkflowsProps {
   onExecutionComplete: () => void;
   stmLoaded?: boolean; // Track STM loading state
   stmVersion?: number; // Track STM changes to refresh getTagged values
+  workflow?: string; // Optional workflow text (overrides STM)
 }
 
-export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion }: WorkflowsProps) {
+export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion, workflow }: WorkflowsProps) {
   // Get workflow from tagged content or use default
   const getWorkflowText = useCallback(() => {
+    // If workflow prop is provided, use it
+    if (workflow) {
+      return workflow;
+    }
+    
     if (!stmLoaded) {
       return '1. Say hello to the user';
     }
@@ -24,7 +30,7 @@ export default function Workflows({ onSendPrompt, isExecuting, onExecutionComple
       : '1. Say hello to the user';
     
     return workflowText;
-  }, [stmLoaded]);
+  }, [stmLoaded, workflow]);
 
   const [workflowText, setWorkflowText] = useState('1. Say hello to the user'); // Start with default
   const [currentStep, setCurrentStep] = useState(0);

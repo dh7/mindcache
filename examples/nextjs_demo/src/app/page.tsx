@@ -4,8 +4,9 @@ import React, { useState } from 'react'
 import ClientSTMDemo from '@/components/ClientSTMDemo'
 import FormExample from '@/components/FormExample'
 import ImageExample from '@/components/ImageExample'
+import TweetWorkflowExample from '@/components/TweetWorkflowExample'
 
-type DemoType = 'form' | 'image' | 'read' | 'write' | 'images' | 'workflow' | 'mindcache-editor'
+type DemoType = 'form' | 'image' | 'workflow' | 'mindcache-editor'
 
 export default function Home() {
   const [selectedDemo, setSelectedDemo] = useState<DemoType>('form')
@@ -13,9 +14,6 @@ export default function Home() {
   const demos = [
     { id: 'form' as DemoType, label: 'Form' },
     { id: 'image' as DemoType, label: 'Image' },
-    { id: 'read' as DemoType, label: 'Read' },
-    { id: 'write' as DemoType, label: 'Write' },
-    { id: 'images' as DemoType, label: 'Images' },
     { id: 'workflow' as DemoType, label: 'Workflow' },
     { id: 'mindcache-editor' as DemoType, label: 'MindCache Editor' },
   ]
@@ -50,9 +48,10 @@ export default function Home() {
       <div className="flex-1 min-w-0">
         {selectedDemo === 'form' && <FormExample />}
         {selectedDemo === 'image' && <ImageExample />}
+        {selectedDemo === 'workflow' && <TweetWorkflowExample />}
         {selectedDemo === 'mindcache-editor' && <ClientSTMDemo />}
         
-        {selectedDemo !== 'form' && selectedDemo !== 'image' && selectedDemo !== 'mindcache-editor' && (
+        {selectedDemo !== 'form' && selectedDemo !== 'image' && selectedDemo !== 'workflow' && selectedDemo !== 'mindcache-editor' && (
           <div className="h-screen flex items-center justify-center bg-black">
             <div className="text-center">
               <div className="text-2xl text-green-400 mb-4">
