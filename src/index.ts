@@ -879,7 +879,7 @@ class MindCache {
   // Get all unique tags across all entries
   getAllTags(): string[] {
     const allTags = new Set<string>();
-    
+
     Object.values(this.stm).forEach(entry => {
       if (entry.attributes.tags) {
         entry.attributes.tags.forEach(tag => allTags.add(tag));
