@@ -643,7 +643,11 @@ class MindCache {
     Object.entries(this.stm).forEach(([key, entry]) => {
       if (entry.attributes.visible) {
         // Skip images and large files in system prompt to save context
-        if (entry.attributes.type === 'image' || entry.attributes.type === 'file') {
+        if (entry.attributes.type === 'image') {
+          promptLines.push(`image ${key} available`);
+          return;
+        }
+        if (entry.attributes.type === 'file') {
           if (entry.attributes.readonly) {
             promptLines.push(`${key}: [${entry.attributes.type.toUpperCase()}] - ${entry.attributes.contentType || 'unknown format'}`);
           } else {
