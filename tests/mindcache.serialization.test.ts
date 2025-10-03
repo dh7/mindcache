@@ -188,10 +188,10 @@ describe('MindCache Complete Serialization', () => {
 
   describe('toJSON() and fromJSON()', () => {
     test('should serialize to JSON string with complete state', () => {
-      cache.set_value('test_key', 'test_value', { 
-        readonly: true, 
-        visible: false, 
-        template: true 
+      cache.set_value('test_key', 'test_value', {
+        readonly: true,
+        visible: false,
+        template: true
       });
 
       const jsonString = cache.toJSON();
@@ -243,14 +243,14 @@ describe('MindCache Complete Serialization', () => {
 
     test('should handle invalid JSON gracefully', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-      
+
       cache.set_value('existing', 'value');
       cache.fromJSON('invalid json');
 
       // Should not crash and existing data should remain
       expect(cache.get_value('existing')).toBe('value');
       expect(consoleSpy).toHaveBeenCalledWith(
-        'MindCache: Failed to deserialize JSON:', 
+        'MindCache: Failed to deserialize JSON:',
         expect.any(Error)
       );
 
@@ -278,18 +278,18 @@ describe('MindCache Complete Serialization', () => {
       cache.set_value('name', 'Anonymous User');
 
       const serialized = cache.serialize();
-      
+
       // Verify defaults are in serialized data
     });
 
     test('should preserve all existing attributes when updating value only', () => {
       // Create key with complex attributes
-      cache.set_value('config', 'initial', { 
-        readonly: true, 
-        visible: false, 
+      cache.set_value('config', 'initial', {
+        readonly: true,
+        visible: false,
         template: true
       });
-      
+
       // Verify initial state
       const initialAttrs = cache.get_attributes('config');
       expect(initialAttrs).toEqual({
@@ -300,10 +300,10 @@ describe('MindCache Complete Serialization', () => {
         type: 'text',
         tags: []
       });
-      
+
       // Update value only (should preserve all attributes)
       cache.set_value('config', 'updated');
-      
+
       // All attributes should be preserved
       expect(cache.get_value('config')).toBe('updated');
       expect(cache.get_attributes('config')).toEqual({
@@ -318,15 +318,15 @@ describe('MindCache Complete Serialization', () => {
 
     test('should allow partial attribute updates while preserving others', () => {
       // Create key with defaults
-      cache.set_value('setting', 'value', { 
+      cache.set_value('setting', 'value', {
         readonly: false,
         visible: true,
         template: false
       });
-      
+
       // Update only one attribute
       cache.set_value('setting', 'new_value', { readonly: true });
-      
+
       // Should preserve other attributes while updating the specified one
       expect(cache.get_value('setting')).toBe('new_value');
       expect(cache.get_attributes('setting')).toEqual({
@@ -345,13 +345,13 @@ describe('MindCache Complete Serialization', () => {
     test('should process templates correctly after deserialization', () => {
       const data = {
         name: {
-          value: 'World',
+          value: 'World'
         },
         greeting: {
-          value: 'Hello {{name}}!',
+          value: 'Hello {{name}}!'
         },
         nested: {
-          value: '{{greeting}} Welcome!',
+          value: '{{greeting}} Welcome!'
         }
       };
 
