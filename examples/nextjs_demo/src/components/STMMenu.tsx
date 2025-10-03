@@ -1,41 +1,44 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { mindcache } from 'mindcache';
 
 interface STMMenuProps {
   onRefresh?: () => void; // Called after load/import/clear to refresh all UI
+  selectedTags?: string[];
+  onSelectedTagsChange?: (tags: string[]) => void;
 }
 
-export default function STMMenu({ onRefresh }: STMMenuProps) {
+export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsChange }: STMMenuProps) {
   const mindcacheRef = useRef(mindcache);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
-  // Global keyboard shortcuts
+  // Update available tags when STM changes
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 's':
-            e.preventDefault();
-            saveSTM();
-            break;
-          case 'l':
-            e.preventDefault();
-            loadSTM();
-            break;
-          case 'k':
-            e.preventDefault();
-            if (confirm('Clear STM? This will delete all entries and reset the chat.')) {
-              clearSTM();
-            }
-            break;
-        }
-      }
+    const updateTags = () => {
+      setAvailableTags(mindcacheRef.current.getAllTags());
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    
+    // Initial load
+    updateTags();
+    
+    // Subscribe to STM changes
+    mindcacheRef.current.subscribeToAll(updateTags);
+    return () => mindcacheRef.current.unsubscribeFromAll(updateTags);
   }, []);
+
+  // Toggle tag selection
+  const toggleTag = (tag: string) => {
+    if (!onSelectedTagsChange) {
+      return;
+    }
+    
+    if (selectedTags.includes(tag)) {
+      onSelectedTagsChange(selectedTags.filter(t => t !== tag));
+    } else {
+      onSelectedTagsChange([...selectedTags, tag]);
+    }
+  };
 
   // Add a new STM key
   const handleAddKey = () => {
@@ -167,7 +170,7 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
   };
 
   return (
-    <div className="border border-green-400 rounded-t p-4 border-b-0 font-mono text-sm flex-shrink-0 ml-1">
+    <div className="border border-gray-600 rounded p-4 font-mono text-sm flex-shrink-0 mb-2">
       <div className="flex space-x-4 mb-2">
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
@@ -179,14 +182,14 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={loadSTM}
-          title="Load STM from localStorage (Ctrl+L)"
+          title="Load STM from localStorage"
         >
           Load
         </div>
         <div 
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={saveSTM}
-          title="Save STM to localStorage (Ctrl+S)"
+          title="Save STM to localStorage"
         >
           Save
         </div>
@@ -197,7 +200,7 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
               clearSTM();
             }
           }}
-          title="Clear STM - deletes all entries (Ctrl+K)"
+          title="Clear STM - deletes all entries"
         >
           Clear
         </div>
@@ -216,10 +219,34 @@ export default function STMMenu({ onRefresh }: STMMenuProps) {
           Import
         </div>
       </div>
-      <div className="text-xs text-gray-500 mb-4">
-        Auto-loads on page refresh • Ctrl+S/L/K shortcuts • Export/Import as markdown
-      </div>
-
+      
+      {/* Tag Filter Section */}
+      {availableTags.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-700">
+          <div className="text-gray-400 text-xs mb-2">Filter by tags:</div>
+          <div className="flex flex-wrap gap-2">
+            {availableTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => toggleTag(tag)}
+                className={`text-xs px-2 py-1 rounded font-mono border transition-colors ${
+                  selectedTags.includes(tag)
+                    ? 'bg-blue-900 bg-opacity-50 text-blue-300 border-blue-600'
+                    : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-500'
+                }`}
+                title={selectedTags.includes(tag) ? 'Click to unselect' : 'Click to select'}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          {selectedTags.length > 0 && (
+            <div className="mt-2 text-xs text-gray-500">
+              Filtering by: {selectedTags.join(', ')}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

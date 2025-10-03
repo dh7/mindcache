@@ -17,6 +17,7 @@ export default function ClientSTMDemo() {
   const [stmLoaded, setStmLoaded] = useState(false); // Track STM loading state
   const [stmVersion, setStmVersion] = useState(0); // Force refresh of getTagged values
   const [chatKey, setChatKey] = useState(0); // Force chat remount on load/import/clear
+  const [selectedTags, setSelectedTags] = useState<string[]>([]); // Tag filter for STM Editor
   
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
@@ -37,225 +38,6 @@ export default function ClientSTMDemo() {
   }, []);
 
 
-  // Analyze image tool function
-  const analyzeImageWithSTM = async (prompt: string) => {
-    try {
-      console.log('🔍 Starting image analysis with STM integration');
-      
-      // Extract image references from prompt ({{image_name}})
-      const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
-      const imageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
-      
-      console.log('📝 Found image references:', imageRefs);
-      
-      // Only analyze images with explicit references
-      let imagesToAnalyze: string[] = [];
-      if (imageRefs.length === 0) {
-        // NO EXPLICIT REFERENCES: Don't attach any images
-        console.log('🚫 No explicit image references found - no images will be analyzed');
-        return {
-          success: false,
-          error: 'No explicit image references found. Please use {{image_name}} syntax to specify which image to analyze (e.g., "Analyze {{my_image}} and describe what you see").'
-        };
-      } else {
-        // EXPLICIT REFERENCES: Get specific referenced images (ignore visibility)
-        console.log('🎯 Using explicit image references:', imageRefs);
-        imageRefs.forEach(ref => {
-          const base64Data = mindcacheRef.current.get_base64(ref);
-          if (base64Data) {
-            imagesToAnalyze.push(base64Data);
-            console.log(`✅ Found referenced image: ${ref}`);
-          } else {
-            console.warn(`❌ Referenced image not found: ${ref}`);
-          }
-        });
-      }
-      
-      if (imagesToAnalyze.length === 0) {
-        return {
-          success: false,
-          error: 'No images found to analyze. Make sure images are stored in STM and referenced correctly.'
-        };
-      }
-      
-      // Create FormData for the analysis API
-      const formData = new FormData();
-      
-      // Convert first base64 to blob for the API (for now, analyze first image)
-      const base64Data = imagesToAnalyze[0];
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'image/jpeg' });
-      
-      formData.append('image', blob, 'image.jpg');
-      formData.append('prompt', prompt);
-      
-      console.log('🚀 Calling image analysis API');
-      const response = await fetch('/api/image-analysis', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        
-        if (result.success) {
-          // Return the analysis without storing it - let the AI write it to the desired location
-          console.log('✅ Analysis completed:', { hasAnalysis: !!result.data.analysis });
-          
-          return {
-            success: true,
-            analysis: result.data.analysis,
-            confidence: result.data.confidence,
-            tags: result.data.tags,
-            summary: result.data.summary,
-            message: `Image analysis completed. Use the analysis result to write to your desired STM key.`
-          };
-        } else {
-          return {
-            success: false,
-            error: result.error || 'Analysis failed'
-          };
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        return {
-          success: false,
-          error: errorData.error || `API error: ${response.status}`
-        };
-      }
-    } catch (error) {
-      console.error('❌ Image analysis error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  };
-
-  // Generate image tool function with pre-resolved images
-  const generateImageWithImages = async (prompt: string, images: string[] = [], imageName?: string) => {
-    try {
-      // Auto-detect mode based on whether images are provided
-      const mode = images.length > 0 ? 'edit' : 'generate';
-      
-      console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length, imageName });
-      
-      // Use provided images instead of parsing prompt
-      const cleanPrompt = prompt; // Don't modify the prompt since images are provided separately
-      
-      const requestBody: any = {
-        prompt: cleanPrompt,
-        mode,
-        seed: -1,
-      };
-
-      if (mode === 'edit' && images.length > 0) {
-        if (images.length === 1) {
-          requestBody.imageBase64 = images[0];
-        } else {
-          requestBody.images = images;
-        }
-        requestBody.promptUpsampling = false;
-        requestBody.safetyTolerance = 2;
-      } else if (mode === 'generate') {
-        requestBody.aspectRatio = "1:1";
-      }
-
-      console.log('📤 Sending request:', { 
-        mode, 
-        hasImages: images.length > 0, 
-        imageCount: images.length,
-        promptLength: cleanPrompt.length 
-      });
-
-      const response = await fetch('/api/image-edit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (response.ok) {
-        // Check if response is an image (binary data)
-        const contentType = response.headers.get('Content-Type');
-        if (contentType && contentType.startsWith('image/')) {
-          // Handle binary image response
-          const imageBlob = await response.blob();
-          const requestId = response.headers.get('X-Request-ID');
-          const responseMode = response.headers.get('X-Mode');
-          const inputCount = parseInt(response.headers.get('X-Input-Count') || '0');
-          
-          // Convert blob to base64
-          const base64Data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const dataUrl = reader.result as string;
-              const base64 = dataUrl.split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(imageBlob);
-          });
-          
-          // Store the generated image in mindcache
-          const timestamp = Date.now();
-          const imageKey = imageName || `generated_image_${timestamp}`;
-          
-          console.log('🖼️ Adding image to mindcache:', { imageKey, contentType, base64Length: base64Data.length, customName: !!imageName });
-          mindcacheRef.current.add_image(imageKey, base64Data, contentType, {
-            readonly: true, // Prevent AI from overwriting the image with text
-            visible: true
-          });
-          
-          // Debug: Check what was actually stored
-          const storedAttributes = mindcacheRef.current.get_attributes(imageKey);
-          console.log('🔍 Stored attributes:', storedAttributes);
-
-          return {
-            success: true,
-            imageKey,
-            mode: responseMode || mode,
-            inputCount,
-            requestId,
-            message: `Image ${mode === 'edit' ? 'edited' : 'generated'} successfully and stored as '${imageKey}'`
-          };
-        } else {
-          // Handle JSON error response
-          const result = await response.json();
-          return {
-            success: false,
-            error: result.error || 'Unknown error occurred'
-          };
-        }
-      } else {
-        // Handle HTTP error
-        try {
-          const result = await response.json();
-          return {
-            success: false,
-            error: result.error || `HTTP ${response.status}: ${response.statusText}`
-          };
-        } catch {
-          return {
-            success: false,
-            error: `HTTP ${response.status}: ${response.statusText}`
-          };
-        }
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
-    }
-  };
-  
   // Define initial assistant message using tagged content
   const getInitialMessages = () => {
     if (!stmLoaded) {
@@ -331,53 +113,7 @@ export default function ClientSTMDemo() {
 
   const handleToolCall = async (toolCall: TypedToolCall<ToolSet>) => {
     console.log('🔧 Tool call executed:', toolCall);
-    
-    // Handle generate_image tool calls
-    if (toolCall.toolName === 'generate_image') {
-      const { prompt, imageName } = toolCall.input as { prompt: string; imageName?: string };
-      
-      // Extract explicit image references from prompt ({{image_name}})
-      const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
-      const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
-      
-      console.log('📝 Found explicit image references:', explicitImageRefs);
-      
-      let imagesToInclude: string[] = [];
-      
-      if (explicitImageRefs.length > 0) {
-        // EXPLICIT REFERENCES: Get specific referenced images (ignore visibility)
-        console.log('🎯 Using explicit image references:', explicitImageRefs);
-        explicitImageRefs.forEach(ref => {
-          const base64Data = mindcacheRef.current.get_base64(ref);
-          if (base64Data) {
-            imagesToInclude.push(base64Data);
-            console.log(`✅ Found referenced image: ${ref}`);
-          } else {
-            console.warn(`❌ Referenced image not found: ${ref}`);
-          }
-        });
-      } else {
-        // NO EXPLICIT REFERENCES: Don't include any images (generate new image)
-        console.log('🚫 No explicit image references - will generate new image without input images');
-      }
-      
-      console.log(`🎯 Images to include: ${imagesToInclude.length} (explicitRefs: ${explicitImageRefs.length})`);
-      
-      const result = await generateImageWithImages(prompt, imagesToInclude, imageName);
-      console.log('🖼️ Image generation result:', result);
-      return result;
-    }
-
-    // Handle analyze_image tool calls
-    if (toolCall.toolName === 'analyze_image') {
-      const { prompt } = toolCall.input as { prompt: string; analysisName?: string };
-      
-      console.log('🔍 Analyzing image with prompt:', prompt);
-      
-      const result = await analyzeImageWithSTM(prompt);
-      console.log('🔍 Image analysis result:', result);
-      return result;
-    }
+    // ChatInterface now handles all tool calls including analyze_image and generate_image
   };
 
   // Workflow handlers
@@ -453,7 +189,7 @@ export default function ClientSTMDemo() {
 
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden resize-container">
-      {/* Left Panel - ChatInterface with Workflows in between */}
+      {/* Left Panel - ChatInterface */}
       <div 
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
@@ -467,15 +203,8 @@ export default function ClientSTMDemo() {
           onStatusChange={handleStatusChange}
           stmLoaded={stmLoaded}
           stmVersion={stmVersion}
-        >
-          <Workflows 
-            onSendPrompt={handleSendPrompt}
-            isExecuting={chatStatus !== 'ready'}
-            onExecutionComplete={handleExecutionComplete}
-            stmLoaded={stmLoaded}
-            stmVersion={stmVersion}
-          />
-        </ChatInterface>
+          mindcacheInstance={mindcacheRef.current}
+        />
       </div>
       
       {/* Resizer - invisible but functional */}
@@ -487,13 +216,27 @@ export default function ClientSTMDemo() {
         title="Drag to resize panels"
       />
       
-      {/* Right Panel - STM Menu + Editor */}
+      {/* Right Panel - STM Menu + Editor + Workflows */}
       <div 
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMMenu onRefresh={handleFullRefresh} />
-        <STMEditor onSTMChange={handleSTMChange} />
+        <STMMenu 
+          onRefresh={handleFullRefresh} 
+          selectedTags={selectedTags}
+          onSelectedTagsChange={setSelectedTags}
+        />
+        <STMEditor 
+          onSTMChange={handleSTMChange} 
+          selectedTags={selectedTags}
+        />
+        <Workflows 
+          onSendPrompt={handleSendPrompt}
+          isExecuting={chatStatus !== 'ready'}
+          onExecutionComplete={handleExecutionComplete}
+          stmLoaded={stmLoaded}
+          stmVersion={stmVersion}
+        />
       </div>
     </div>
   );

@@ -12,10 +12,10 @@ describe('MindCache Tooling', () => {
     test('should generate tools for writable keys only', () => {
       cache.set_value('writable_key', 'value1', { readonly: false });
       cache.set_value('readonly_key', 'value2', { readonly: true });
-      
+
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
-      
+
       expect(toolNames).toContain('write_writable_key');
       expect(toolNames).not.toContain('write_readonly_key');
     });
@@ -23,7 +23,7 @@ describe('MindCache Tooling', () => {
     test('should not generate tools for system keys', () => {
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
-      
+
       expect(toolNames).not.toContain('write_$date');
       expect(toolNames).not.toContain('write_$time');
     });
@@ -32,15 +32,15 @@ describe('MindCache Tooling', () => {
       cache.set_value('my-special@key!', 'value1');
       cache.set_value('normal_key', 'value2');
       cache.set_value('key with spaces', 'value3');
-      
+
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
-      
+
       // Should sanitize special characters to underscores (but preserve dashes)
       expect(toolNames).toContain('write_my-special_key_');
       expect(toolNames).toContain('write_normal_key');
       expect(toolNames).toContain('write_key_with_spaces');
-      
+
       // Should not contain original unsanitized names
       expect(toolNames).not.toContain('write_my-special@key!');
       expect(toolNames).not.toContain('write_key with spaces');
@@ -50,18 +50,18 @@ describe('MindCache Tooling', () => {
       // Only add readonly keys
       cache.set_value('readonly1', 'value1', { readonly: true });
       cache.set_value('readonly2', 'value2', { readonly: true });
-      
+
       const tools = cache.get_aisdk_tools();
-      
+
       expect(Object.keys(tools)).toHaveLength(0);
     });
 
     test('should include proper tool descriptions and schemas', () => {
       cache.set_value('test_key', 'test_value');
-      
+
       const tools = cache.get_aisdk_tools();
       const tool = tools['write_test_key'];
-      
+
       expect(tool).toBeDefined();
       expect(tool.description).toBe('Write a value to the STM key: test_key');
       expect(tool.inputSchema).toBeDefined();
@@ -70,12 +70,12 @@ describe('MindCache Tooling', () => {
 
     test('should execute tools correctly', async () => {
       cache.set_value('editable', 'old_value', { readonly: false });
-      
+
       const tools = cache.get_aisdk_tools();
       const editableTool = tools['write_editable'];
-      
+
       const result = await editableTool.execute({ value: 'new_value' });
-      
+
       // Test the specialized success message for text type
       expect(result.result).toBe('Successfully wrote "new_value" to editable');
       expect(result.key).toBe('editable');
@@ -87,15 +87,15 @@ describe('MindCache Tooling', () => {
   describe('executeToolCall', () => {
     test('should work with sanitized tool names', () => {
       cache.set_value('my-special@key!', 'original_value');
-      
+
       // Execute tool call with sanitized name
       const result = cache.executeToolCall('write_my-special_key_', 'new_value');
-      
+
       expect(result).not.toBeNull();
       expect(result!.result).toContain('Successfully wrote "new_value" to my-special@key!');
       expect(result!.key).toBe('my-special@key!'); // Should return original key
       expect(result!.value).toBe('new_value');
-      
+
       // Value should be updated in STM
       expect(cache.get_value('my-special@key!')).toBe('new_value');
     });
@@ -104,7 +104,7 @@ describe('MindCache Tooling', () => {
       const result1 = cache.executeToolCall('invalid_tool', 'value');
       const result2 = cache.executeToolCall('write_nonexistent_key', 'value');
       const result3 = cache.executeToolCall('not_write_tool', 'value');
-      
+
       expect(result1).toBeNull();
       expect(result2).toBeNull();
       expect(result3).toBeNull();
@@ -112,9 +112,9 @@ describe('MindCache Tooling', () => {
 
     test('should not work with readonly keys', () => {
       cache.set_value('readonly_key', 'original', { readonly: true });
-      
+
       const result = cache.executeToolCall('write_readonly_key', 'new_value');
-      
+
       expect(result).toBeNull();
       expect(cache.get_value('readonly_key')).toBe('original'); // Should remain unchanged
     });
@@ -129,16 +129,16 @@ describe('MindCache Tooling', () => {
         { original: 'MixedCASE', sanitized: 'MixedCASE' },
         { original: 'unicode-café', sanitized: 'unicode-caf_' }
       ];
-      
+
       testCases.forEach(({ original, sanitized }) => {
         cache.set_value(original, 'test_value');
-        
+
         const result = cache.executeToolCall(`write_${sanitized}`, 'updated_value');
-        
+
         expect(result).not.toBeNull();
         expect(result!.key).toBe(original);
         expect(cache.get_value(original)).toBe('updated_value');
-        
+
         // Clean up
         cache.delete(original);
       });
@@ -146,13 +146,13 @@ describe('MindCache Tooling', () => {
 
     test('should handle non-string values', () => {
       cache.set_value('test_key', 'original');
-      
+
       // Test with number
       const result1 = cache.executeToolCall('write_test_key', 123);
       expect(result1).not.toBeNull();
       expect(result1!.value).toBe(123);
       expect(cache.get_value('test_key')).toBe(123);
-      
+
       // Test with object
       const testObject = { nested: 'value' };
       const result2 = cache.executeToolCall('write_test_key', testObject);
@@ -168,13 +168,13 @@ describe('MindCache Tooling', () => {
         hardcoded: false,
         template: false
       });
-      
+
       const result = cache.executeToolCall('write_special_key', 'updated');
-      
+
       expect(result).not.toBeNull();
       expect(result!.key).toBe('special_key');
       expect(cache.get_value('special_key')).toBe('updated');
-      
+
       // Attributes should be preserved
       const attributes = cache.get_attributes('special_key');
       expect(attributes).toBeDefined();
@@ -186,17 +186,17 @@ describe('MindCache Tooling', () => {
     test('should consistently sanitize keys across methods', () => {
       const originalKey = 'test@key#with$special%chars!';
       cache.set_value(originalKey, 'test_value');
-      
+
       // Check tool generation
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
       const expectedToolName = 'write_test_key_with_special_chars_';
-      
+
       expect(toolNames).toContain(expectedToolName);
-      
+
       // Check executeToolCall works with same sanitization
       const result = cache.executeToolCall(expectedToolName, 'new_value');
-      
+
       expect(result).not.toBeNull();
       expect(result!.key).toBe(originalKey);
       expect(cache.get_value(originalKey)).toBe('new_value');
@@ -205,7 +205,7 @@ describe('MindCache Tooling', () => {
     test('should handle edge case sanitization patterns', () => {
       const edgeCases = [
         'key___multiple___underscores',
-        'key---multiple---dashes', 
+        'key---multiple---dashes',
         'key...dots...everywhere',
         'key   spaces   everywhere',
         'key\t\n\r\fwhitespace',
@@ -214,22 +214,22 @@ describe('MindCache Tooling', () => {
         'mixedCASE123',
         ''
       ];
-      
+
       edgeCases.forEach((key, index) => {
         if (key) { // Skip empty string
           cache.set_value(key, `value_${index}`);
-          
+
           const tools = cache.get_aisdk_tools();
           const toolNames = Object.keys(tools);
-          
+
           // Should have at least one tool for this key
           const matchingTools = toolNames.filter(name => {
             const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
             return name === `write_${sanitizedKey}`;
           });
-          
+
           expect(matchingTools).toHaveLength(1);
-          
+
           // Clean up
           cache.delete(key);
         }
@@ -242,16 +242,16 @@ describe('MindCache Tooling', () => {
       cache.set_value('writable_key', 'writable_value', { readonly: false, visible: true });
       cache.set_value('readonly_key', 'readonly_value', { readonly: true, visible: true });
       cache.set_value('hidden_key', 'hidden_value', { readonly: false, visible: false });
-      
+
       const prompt = cache.get_system_prompt();
-      
+
       // Should mention tool for writable key
       expect(prompt).toContain('writable_key: writable_value. You can rewrite "writable_key" by using the write_writable_key tool');
-      
+
       // Should not mention tool for readonly key
       expect(prompt).toContain('readonly_key: readonly_value');
       expect(prompt).not.toContain('write_readonly_key tool');
-      
+
       // Should not include hidden key at all
       expect(prompt).not.toContain('hidden_key');
       expect(prompt).not.toContain('hidden_value');
@@ -259,9 +259,9 @@ describe('MindCache Tooling', () => {
 
     test('should handle sanitized tool names in system prompt', () => {
       cache.set_value('special@key!', 'test_value', { readonly: false, visible: true });
-      
+
       const prompt = cache.get_system_prompt();
-      
+
       // Should reference the sanitized tool name in the prompt
       expect(prompt).toContain('special@key!: test_value. You can rewrite "special@key!" by using the write_special_key_ tool');
     });

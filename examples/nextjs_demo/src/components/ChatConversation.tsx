@@ -54,12 +54,12 @@ export default function ChatConversation({ messages }: ChatConversationProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 border border-green-400 rounded mb-4 space-y-2 min-h-0">
+    <div className="flex-1 overflow-y-auto p-4 border border-gray-600 rounded space-y-2 min-h-0 mb-2">
       {messages.map((message) => {
         const { sources } = renderMessageContent(message);
         return (
           <div key={message.id} className="whitespace-pre-wrap mb-4">
-            <div className={`ml-2 ${message.role === 'user' ? 'text-green-400' : 'text-gray-400'}`}>
+            <div className={`ml-2 font-mono text-sm ${message.role === 'user' ? 'text-green-400' : 'text-gray-400'}`}>
               {message.role === 'user' ? '< ' : '> '}
               {message.parts?.map((part: MessagePart, index: number) => {
                 if (part.type === 'text') {

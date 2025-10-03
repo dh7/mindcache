@@ -19,15 +19,15 @@ describe('MindCache System Prompt Generation', () => {
       // Should include writable keys with tool mention
       expect(systemPrompt).toContain('user_name: Alice. You can rewrite "user_name" by using the write_user_name tool');
       expect(systemPrompt).toContain('notes: Important info. You can rewrite "notes" by using the write_notes tool');
-      
+
       // Should include readonly keys without tool mention
       expect(systemPrompt).toContain('config: production');
       expect(systemPrompt).not.toContain('write_config tool');
-      
+
       // Should not include hidden keys
       expect(systemPrompt).not.toContain('hidden');
       expect(systemPrompt).not.toContain('secret');
-      
+
       // Should include system keys
       expect(systemPrompt).toMatch(/\$date: \d{4}-\d{2}-\d{2}/);
       expect(systemPrompt).toMatch(/\$time: \d{2}:\d{2}:\d{2}/);
@@ -117,7 +117,7 @@ describe('MindCache System Prompt Generation', () => {
       // Only visible keys should appear
       expect(systemPrompt).toContain('public_readonly: visible');
       expect(systemPrompt).toContain('public_writable: visible. You can rewrite "public_writable" by using the write_public_writable tool');
-      
+
       // Hidden keys should not appear
       expect(systemPrompt).not.toContain('private_readonly');
       expect(systemPrompt).not.toContain('private_writable');
@@ -138,24 +138,24 @@ describe('MindCache System Prompt Generation', () => {
       expect(dateLineIndex).toBeGreaterThan(-1);
       expect(timeLineIndex).toBeGreaterThan(-1);
       expect(timeLineIndex).toBe(dateLineIndex + 1); // time should be right after date
-      
+
       // System keys should be readonly format (no tool mention)
       expect(lines[dateLineIndex]).toMatch(/^\$date: \d{4}-\d{2}-\d{2}$/);
       expect(lines[timeLineIndex]).toMatch(/^\$time: \d{2}:\d{2}:\d{2}$/);
     });
 
     test('should handle template with system keys', () => {
-      cache.set_value('today_message', 'Today is {{$date}} at {{$time}}', { 
-        readonly: true, 
-        visible: true, 
-        template: true 
+      cache.set_value('today_message', 'Today is {{$date}} at {{$time}}', {
+        readonly: true,
+        visible: true,
+        template: true
       });
 
       const systemPrompt = cache.get_system_prompt();
 
       // Template should process system keys
       expect(systemPrompt).toMatch(/today_message: Today is \d{4}-\d{2}-\d{2} at \d{2}:\d{2}:\d{2}/);
-      
+
       // Regular system keys should still appear
       expect(systemPrompt).toMatch(/\$date: \d{4}-\d{2}-\d{2}/);
       expect(systemPrompt).toMatch(/\$time: \d{2}:\d{2}:\d{2}/);
