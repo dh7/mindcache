@@ -1,6 +1,6 @@
 {
   "name": "mindcache",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -56,7 +56,7 @@
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "ai": "^3.0.0"
+    "ai": ">=3.0.0"
   },
   "peerDependenciesMeta": {
     "ai": {
