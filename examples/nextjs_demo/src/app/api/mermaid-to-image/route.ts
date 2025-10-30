@@ -19,13 +19,21 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // Add handDrawn look configuration
+    // Add handDrawn look configuration with custom styling
     let finalMermaidCode = mermaidCode.trim();
     if (!finalMermaidCode.startsWith('---')) {
       const handDrawnConfig = `---
 config:
   look: handDrawn
-  theme: neutral
+  theme: base
+  handDrawnSeed: ${Math.floor(Math.random() * 1000)}
+  themeVariables:
+    fontFamily: 'Segoe Print, Bradley Hand, Marker Felt, Chalkboard, cursive'
+    fontSize: '16px'
+    primaryColor: '#f9f9f9'
+    primaryBorderColor: '#333'
+    lineColor: '#333'
+    strokeWidth: '2px'
 ---
 `;
       finalMermaidCode = handDrawnConfig + finalMermaidCode;
