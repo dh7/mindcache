@@ -19,12 +19,19 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
+    // Add theme configuration if not already present
+    let finalMermaidCode = mermaidCode.trim();
+    if (!finalMermaidCode.includes('%%{init:')) {
+      const themeConfig = `%%{init: {'theme':'neutral', 'themeVariables': { 'primaryColor':'#1f2937','primaryTextColor':'#fff','primaryBorderColor':'#374151','lineColor':'#6b7280','secondaryColor':'#374151','tertiaryColor':'#4b5563'}}}%%\n`;
+      finalMermaidCode = themeConfig + finalMermaidCode;
+    }
+
     // Create temp directory and write mermaid file
     tempDir = mkdtempSync(join(tmpdir(), 'mermaid-'));
     const mmdPath = join(tempDir, 'diagram.mmd');
     const pngPath = join(tempDir, 'diagram.png');
     
-    writeFileSync(mmdPath, mermaidCode, 'utf8');
+    writeFileSync(mmdPath, finalMermaidCode, 'utf8');
 
     // Convert Mermaid directly to PNG using mermaid-cli
     const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
