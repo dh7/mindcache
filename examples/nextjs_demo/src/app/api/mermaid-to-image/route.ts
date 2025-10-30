@@ -11,6 +11,10 @@ export const POST = async (req: NextRequest) => {
   
   try {
     const { mermaidCode } = await req.json();
+    
+    // Fixed high-quality export settings
+    const width = 2400;  // viewport width
+    const scale = 2;     // 2x scale = 4800px final width
 
     if (!mermaidCode) {
       return NextResponse.json(
@@ -21,19 +25,21 @@ export const POST = async (req: NextRequest) => {
 
     // Add handDrawn look configuration with custom styling
     let finalMermaidCode = mermaidCode.trim();
-    if (!finalMermaidCode.startsWith('---')) {
+    if (!finalMermaidCode.startsWith('---') && !finalMermaidCode.includes('%%{init:')) {
+      // Try both YAML frontmatter (newer) and init directive (legacy) for compatibility
       const handDrawnConfig = `---
 config:
   look: handDrawn
   theme: base
-  handDrawnSeed: ${Math.floor(Math.random() * 1000)}
   themeVariables:
     fontFamily: 'Segoe Print, Bradley Hand, Marker Felt, Chalkboard, cursive'
-    fontSize: '16px'
-    primaryColor: '#f9f9f9'
-    primaryBorderColor: '#333'
-    lineColor: '#333'
-    strokeWidth: '2px'
+    fontSize: 16px
+    primaryColor: '#ffffff'
+    primaryTextColor: '#000000'
+    primaryBorderColor: '#000000'
+    lineColor: '#000000'
+    secondaryColor: '#f5f5f5'
+    tertiaryColor: '#e5e5e5'
 ---
 `;
       finalMermaidCode = handDrawnConfig + finalMermaidCode;
@@ -42,20 +48,35 @@ config:
     // Create temp directory and write mermaid file
     tempDir = mkdtempSync(join(tmpdir(), 'mermaid-'));
     const mmdPath = join(tempDir, 'diagram.mmd');
-    const outputPath = join(tempDir, 'diagram.svg');
+    const outputPath = join(tempDir, 'diagram.png');
     
     writeFileSync(mmdPath, finalMermaidCode, 'utf8');
+    console.log('🎨 Mermaid config applied:', finalMermaidCode.substring(0, 200));
+    console.log('📐 Fixed PNG size: 4800px wide (2400×2 scale) for high quality');
 
-    // Convert Mermaid to SVG
+    // Convert Mermaid to PNG using puppeteer with custom size
     const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
     const result = spawnSync(
       npxCmd,
-      ['@mermaid-js/mermaid-cli', '-i', mmdPath, '-o', outputPath],
+      [
+        '@mermaid-js/mermaid-cli', 
+        '-i', mmdPath, 
+        '-o', outputPath, 
+        '-b', 'puppeteer',
+        '-w', String(width),
+        '-s', String(scale)
+      ],
       { stdio: 'pipe' }
     );
 
+    // Log any warnings/errors from mermaid-cli
+    const stderr = result.stderr?.toString();
+    const stdout = result.stdout?.toString();
+    if (stderr) console.log('⚠️ Mermaid stderr:', stderr);
+    if (stdout) console.log('📝 Mermaid stdout:', stdout);
+
     if (result.status !== 0) {
-      const error = result.stderr?.toString() || result.stdout?.toString() || 'Mermaid conversion failed';
+      const error = stderr || stdout || 'Mermaid conversion failed';
       console.error('Mermaid conversion error:', error);
       return NextResponse.json(
         { error: `Failed to generate diagram: ${error}` },
@@ -63,15 +84,15 @@ config:
       );
     }
 
-    // Read SVG with handDrawn look applied by mermaid-cli
-    const svgContent = readFileSync(outputPath, 'utf8');
+    // Read PNG with handDrawn look applied by mermaid-cli
+    const pngContent = readFileSync(outputPath);
     
-    console.log('📊 Generated SVG diagram, length:', svgContent.length);
+    console.log('📊 Generated PNG diagram, size:', pngContent.length, 'bytes');
     
-    return new NextResponse(svgContent, {
+    return new NextResponse(pngContent, {
       status: 200,
       headers: {
-        'Content-Type': 'image/svg+xml',
+        'Content-Type': 'image/png',
       }
     });
 
