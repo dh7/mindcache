@@ -428,6 +428,91 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
         return;
       }
 
+      // Handle generate_mermaid_diagram tool
+      if (toolName === 'generate_mermaid_diagram') {
+        console.log('📊 Handling generate_mermaid_diagram tool call');
+        const { mermaidCode, imageName } = typedToolCall.input as { 
+          mermaidCode: string; 
+          imageName?: string;
+        };
+        
+        try {
+          const response = await fetch('/api/mermaid-to-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mermaidCode })
+          });
+
+          if (response.ok) {
+            const imageBlob = await response.blob();
+            
+            // Convert blob to base64
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const dataUrl = reader.result as string;
+                const base64 = dataUrl.split(',')[1];
+                resolve(base64);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(imageBlob);
+            });
+            
+            // Store the diagram in mindcache
+            const timestamp = Date.now();
+            const imageKey = imageName || `diagram_${timestamp}`;
+            
+            console.log('📊 Adding diagram to mindcache:', { imageKey, base64Length: base64Data.length });
+            mindcacheRef.add_image(imageKey, base64Data, 'image/png', {
+              readonly: true,
+              visible: true
+            });
+            
+            const result = {
+              success: true,
+              imageKey,
+              message: `Diagram generated successfully and stored as '${imageKey}'`
+            };
+            
+            // Notify parent if callback exists
+            if (onToolCall) {
+              onToolCall(typedToolCall);
+            }
+            
+            addToolResult({
+              tool: toolName,
+              toolCallId: typedToolCall.toolCallId,
+              output: result
+            });
+          } else {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            const result = {
+              success: false,
+              error: errorData.error || `API error: ${response.status}`
+            };
+            
+            addToolResult({
+              tool: toolName,
+              toolCallId: typedToolCall.toolCallId,
+              output: result
+            });
+          }
+        } catch (error) {
+          console.error('❌ Mermaid diagram generation error:', error);
+          const result = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error occurred'
+          };
+          
+          addToolResult({
+            tool: toolName,
+            toolCallId: typedToolCall.toolCallId,
+            output: result
+          });
+        }
+        return;
+      }
+
       // Handle other potential tools
       console.warn('Unknown tool:', toolName);
     }
