@@ -19,25 +19,30 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // Add theme configuration if not already present
+    // Add handDrawn look configuration
     let finalMermaidCode = mermaidCode.trim();
-    if (!finalMermaidCode.includes('%%{init:')) {
-      const themeConfig = `%%{init: {'theme':'neutral', 'themeVariables': { 'primaryColor':'#1f2937','primaryTextColor':'#fff','primaryBorderColor':'#374151','lineColor':'#6b7280','secondaryColor':'#374151','tertiaryColor':'#4b5563'}}}%%\n`;
-      finalMermaidCode = themeConfig + finalMermaidCode;
+    if (!finalMermaidCode.startsWith('---')) {
+      const handDrawnConfig = `---
+config:
+  look: handDrawn
+  theme: neutral
+---
+`;
+      finalMermaidCode = handDrawnConfig + finalMermaidCode;
     }
 
     // Create temp directory and write mermaid file
     tempDir = mkdtempSync(join(tmpdir(), 'mermaid-'));
     const mmdPath = join(tempDir, 'diagram.mmd');
-    const pngPath = join(tempDir, 'diagram.png');
+    const outputPath = join(tempDir, 'diagram.svg');
     
     writeFileSync(mmdPath, finalMermaidCode, 'utf8');
 
-    // Convert Mermaid directly to PNG using mermaid-cli
+    // Convert Mermaid to SVG
     const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
     const result = spawnSync(
       npxCmd,
-      ['@mermaid-js/mermaid-cli', '-i', mmdPath, '-o', pngPath],
+      ['@mermaid-js/mermaid-cli', '-i', mmdPath, '-o', outputPath],
       { stdio: 'pipe' }
     );
 
@@ -50,20 +55,15 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // Read the generated PNG
-    const pngBuffer = readFileSync(pngPath);
-
-    // Return the image (convert Buffer to ArrayBuffer)
-    const arrayBuffer = pngBuffer.buffer.slice(
-      pngBuffer.byteOffset,
-      pngBuffer.byteOffset + pngBuffer.byteLength
-    ) as ArrayBuffer;
+    // Read SVG with handDrawn look applied by mermaid-cli
+    const svgContent = readFileSync(outputPath, 'utf8');
     
-    return new NextResponse(arrayBuffer, {
+    console.log('📊 Generated SVG diagram, length:', svgContent.length);
+    
+    return new NextResponse(svgContent, {
       status: 200,
       headers: {
-        'Content-Type': 'image/png',
-        'Content-Length': pngBuffer.length.toString(),
+        'Content-Type': 'image/svg+xml',
       }
     });
 
