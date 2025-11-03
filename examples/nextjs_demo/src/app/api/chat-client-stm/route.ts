@@ -60,6 +60,16 @@ export const POST = async (req: NextRequest) => {
     }),
     // NO execute function - this forces client-side execution via onToolCall
   });
+
+  // Add generate_mermaid_diagram tool directly on server
+  serverTools['generate_mermaid_diagram'] = tool({
+    description: 'Generate a professional diagram image from Mermaid diagram code. Creates clean, high-quality diagrams with proper text rendering. The generated image will be stored in STM.',
+    inputSchema: z.object({
+      mermaidCode: z.string().describe('The Mermaid diagram code (e.g., "graph TD\\n  A[Start] --> B[End]")'),
+      imageName: z.string().optional().describe('Optional name for storing the generated diagram image in STM (defaults to diagram_timestamp)')
+    }),
+    // NO execute function - this forces client-side execution via onToolCall
+  });
   
   if (toolSchemas && typeof toolSchemas === 'object') {
     console.log('🔧 Processing tool schemas:', Object.keys(toolSchemas));
@@ -92,7 +102,16 @@ IMPORTANT IMAGE HANDLING RULES:
 - BOTH tools only include images when explicitly referenced with @image_name - they never auto-include visible images
 - The analyze_image tool REQUIRES explicit @image_name references and will fail without them
 - NEVER say you cannot edit or analyze images - you have both generate_image and analyze_image tools available
-- Always use explicit @image_name references when working with specific images from STM`;
+- Always use explicit @image_name references when working with specific images from STM
+
+DIAGRAM GENERATION:
+- When users ask to create diagrams, flowcharts, or visualizations, use the generate_mermaid_diagram tool
+- This tool creates clean, professional diagrams with proper text rendering using Mermaid syntax
+- DO NOT include %%{init:...}%% or --- config frontmatter - it's automatically applied with handDrawn styling
+- For better layouts, prefer simple linear flows (graph TD) instead of complex subgraphs when possible
+- If using subgraphs, connect them with arrows to force vertical stacking (subgraph1 --> subgraph2)
+- The generated diagram will be stored as an image in STM for future reference
+- Examples: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, gantt charts, etc.`;
 
   const finalSystem = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
     ? `${baseInstructions}\n\n${systemPrompt}`
