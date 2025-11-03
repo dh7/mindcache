@@ -76,8 +76,12 @@ config:
     // Log any warnings/errors from mermaid-cli
     const stderr = result.stderr?.toString();
     const stdout = result.stdout?.toString();
-    if (stderr) console.log('⚠️ Mermaid stderr:', stderr);
-    if (stdout) console.log('📝 Mermaid stdout:', stdout);
+    if (stderr) {
+      console.log('⚠️ Mermaid stderr:', stderr);
+    }
+    if (stdout) {
+      console.log('📝 Mermaid stdout:', stdout);
+    }
 
     if (result.status !== 0) {
       const error = stderr || stdout || 'Mermaid conversion failed';
