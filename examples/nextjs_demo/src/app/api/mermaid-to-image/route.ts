@@ -12,9 +12,8 @@ export const POST = async (req: NextRequest) => {
   try {
     const { mermaidCode } = await req.json();
     
-    // Fixed high-quality export settings
-    const width = 2400;  // viewport width
-    const scale = 2;     // 2x scale = 4800px final width
+    // High-quality export settings - let Mermaid auto-size based on content
+    const scale = 2;     // 2x scale for quality
 
     if (!mermaidCode) {
       return NextResponse.json(
@@ -31,6 +30,12 @@ export const POST = async (req: NextRequest) => {
 config:
   look: handDrawn
   theme: base
+  flowchart:
+    rankSpacing: 60
+    nodeSpacing: 80
+    padding: 20
+    diagramPadding: 20
+    curve: basis
   themeVariables:
     fontFamily: 'Segoe Print, Bradley Hand, Marker Felt, Chalkboard, cursive'
     fontSize: 16px
@@ -52,9 +57,9 @@ config:
     
     writeFileSync(mmdPath, finalMermaidCode, 'utf8');
     console.log('🎨 Mermaid config applied:', finalMermaidCode.substring(0, 200));
-    console.log('📐 Fixed PNG size: 4800px wide (2400×2 scale) for high quality');
+    console.log('📐 PNG scale: 2x (auto-sizing to content)');
 
-    // Convert Mermaid to PNG using puppeteer with custom size
+    // Convert Mermaid to PNG using puppeteer (auto-size to content)
     const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
     const result = spawnSync(
       npxCmd,
@@ -63,7 +68,6 @@ config:
         '-i', mmdPath, 
         '-o', outputPath, 
         '-b', 'puppeteer',
-        '-w', String(width),
         '-s', String(scale)
       ],
       { stdio: 'pipe' }

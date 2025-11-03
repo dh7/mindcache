@@ -107,7 +107,9 @@ IMPORTANT IMAGE HANDLING RULES:
 DIAGRAM GENERATION:
 - When users ask to create diagrams, flowcharts, or visualizations, use the generate_mermaid_diagram tool
 - This tool creates clean, professional diagrams with proper text rendering using Mermaid syntax
-- DO NOT include %%{init:...}%% theme configuration - it's automatically applied with a neutral theme
+- DO NOT include %%{init:...}%% or --- config frontmatter - it's automatically applied with handDrawn styling
+- For better layouts, prefer simple linear flows (graph TD) instead of complex subgraphs when possible
+- If using subgraphs, connect them with arrows to force vertical stacking (subgraph1 --> subgraph2)
 - The generated diagram will be stored as an image in STM for future reference
 - Examples: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, gantt charts, etc.`;
 
