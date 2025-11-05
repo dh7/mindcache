@@ -72,42 +72,6 @@
                     </div>
                 </div>
             </div>
-            <div class="hero-demo">
-                <div class="demo-window">
-                    <div class="demo-header">
-                        <div class="demo-dots">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
-                        <span class="demo-title">Live Demo</span>
-                    </div>
-                    <div class="demo-content">
-                        <div class="demo-code">
-                            <pre><code id="demo-code">import { mindcache } from 'mindcache';
-
-// Store user context with tags
-mindcache.set_value('user', 'Alice', { tags: ['profile'] });
-mindcache.set_value('mood', 'excited');
-mindcache.set_value('task', 'planning vacation');
-
-// Template injection for AI prompts
-const prompt = mindcache.inject_stm(
-  'User {user} is {mood} about {task} on {$date}'
-);
-
-console.log(prompt);
-// "User Alice is excited about planning vacation on 2025-10-03"</code></pre>
-                        </div>
-                        <div class="demo-output">
-                            <div class="output-line">
-                                <span class="output-prompt">></span>
-                                <span id="demo-output">User Alice is excited about planning vacation on 2025-10-03</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </section>
 
@@ -120,19 +84,24 @@ console.log(prompt);
             </div>
             <div class="features-grid">
                 <div class="feature-card">
-                    <div class="feature-icon">💾</div>
-                    <h3>Universal Storage</h3>
-                    <p>Store text, images, files, and JSON with automatic type handling and validation</p>
+                    <div class="feature-icon">🤖</div>
+                    <h3>Auto Tool Generation</h3>
+                    <p>Automatically generate LLM tool schemas for AI agents to read and write memory with zero configuration</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>Auto Context Management</h3>
+                    <p>Intelligent context tracking and memory organization that adapts to your AI agent's needs</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📋</div>
+                    <h3>Auto System Prompt Generation</h3>
+                    <p>Dynamically generate system prompts with all memory context and tool instructions included</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⚡</div>
                     <h3>Template Injection</h3>
                     <p>Dynamic {placeholder} replacement with recursive resolution for context-aware prompts</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🤖</div>
-                    <h3>Auto Tool Generation</h3>
-                    <p>Automatically generate LLM tool schemas for AI agents to read and write memory</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔄</div>
@@ -143,11 +112,6 @@ console.log(prompt);
                     <div class="feature-icon">🏷️</div>
                     <h3>Tags & Search</h3>
                     <p>Organize memory with tags and search by category for efficient retrieval</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📝</div>
-                    <h3>TypeScript First</h3>
-                    <p>Full type safety, Zod validation, and excellent developer experience</p>
                 </div>
             </div>
         </div>
@@ -161,87 +125,91 @@ console.log(prompt);
                 <p>Real-world use cases for AI agents</p>
             </div>
             <div class="examples-tabs">
-                <button class="tab-btn active" onclick="showExample('chatbot')">LLM Tools</button>
-                <button class="tab-btn" onclick="showExample('prompt')">Templates</button>
-                <button class="tab-btn" onclick="showExample('workflow')">Tags & Events</button>
+                <button class="tab-btn active" onclick="showExample('tools')">LLM Tools</button>
+                <button class="tab-btn" onclick="showExample('context')">Context Management</button>
             </div>
             <div class="example-content">
-                <div id="example-chatbot" class="example active">
+                <div id="example-tools" class="example active">
                     <div class="example-code">
-                        <pre><code>// LLM Tool Integration
+                        <pre><code>// Auto Tool Generation for AI Agents
 import { mindcache } from 'mindcache';
+import { generateText } from 'ai';
 
-// Set up memory with tags
+// Store user preferences and context
 mindcache.set_value('userName', 'Alice', { tags: ['user'] });
 mindcache.set_value('favoriteColor', 'blue', { tags: ['preferences'] });
+mindcache.set_value('lastTask', 'planning vacation', { tags: ['context'] });
 
-// Auto-generate LLM tools for AI agents
-const tools = mindcache.get_tools();
+// Automatically generate tool schemas for Vercel AI SDK
+const tools = mindcache.get_aisdk_tools();
+// Returns: {
+//   write_userName: { description: "...", parameters: {...} },
+//   write_favoriteColor: { description: "...", parameters: {...} },
+//   write_lastTask: { description: "...", parameters: {...} }
+// }
 
-// AI can now call write_userName() to update memory
-// Tools are automatically generated for all writable keys
-
-// Generate system prompt with all context
+// Generate system prompt with memory context
 const systemPrompt = mindcache.get_system_prompt();
-// "userName: Alice. You can rewrite userName by using..."
-// "favoriteColor: blue. You can rewrite favoriteColor by..."</code></pre>
+// "userName: Alice. You can rewrite \"userName\" by using..."
+// "favoriteColor: blue. You can rewrite \"favoriteColor\" by..."
+// "$date: 2025-01-15"
+
+// Use with AI SDK - tools are automatically available
+const { text, toolCalls } = await generateText({
+  model: openai('gpt-4'),
+  tools: tools, // AI can now call write_userName(), etc.
+  system: systemPrompt,
+  prompt: 'Remember that I love green now, not blue.'
+});
+
+// AI will automatically call write_favoriteColor('green')
+// and the memory is updated automatically</code></pre>
                     </div>
                     <div class="example-description">
                         <h4>Auto Tool Generation</h4>
-                        <p>Automatically generate LLM tool schemas so AI agents can read and write memory using function calls.</p>
+                        <p>Automatically generate LLM tool schemas so AI agents can read and write memory using function calls. No manual tool definitions needed - tools are created for every writable key in your memory.</p>
                     </div>
                 </div>
-                <div id="example-prompt" class="example">
+                <div id="example-context" class="example">
                     <div class="example-code">
-                        <pre><code>// Template Injection with Recursion
+                        <pre><code>// Context Management with Tags & System Prompts
 import { mindcache } from 'mindcache';
 
-// Set up nested templates
-mindcache.set_value('firstName', 'Alice', { template: true });
-mindcache.set_value('greeting', 'Hello {firstName}!', { template: true });
-mindcache.set_value('message', '{greeting} Welcome to our app.');
+// Mark context items with tags
+mindcache.set_value('userName', 'Alice', { tags: ['context'] });
+mindcache.set_value('userRole', 'developer', { tags: ['context'] });
+mindcache.set_value('projectName', 'MindCache', { tags: ['context'] });
 
-// Recursive template resolution
-const result = mindcache.inject_stm('{message}');
-// "Hello Alice! Welcome to our app."
+// Store non-context data without tags
+mindcache.set_value('tempNote', 'Meeting at 3pm');
+mindcache.set_value('cacheVersion', '1.0.0');
 
-// Use temporal keys
-const prompt = mindcache.inject_stm(
-  'Today is {$date} at {$time}. User: {firstName}'
+// Extract only tagged context for focused prompts
+const contextData = mindcache.getTagged('context');
+// "userName: Alice, userRole: developer, projectName: MindCache"
+
+// Generate system prompt with all visible keys
+const fullSystemPrompt = mindcache.get_system_prompt();
+// Includes all keys: userName, userRole, projectName, tempNote, cacheVersion
+
+// Or create focused context from tagged items only
+const focusedContext = `Context: ${contextData}
+Instructions: You are helping ${mindcache.get_value('userName')} 
+with their ${mindcache.get_value('projectName')} project.`;
+
+// Use focused context for specific workflows
+// Or use full system prompt for comprehensive memory access
+
+// Filter keys by tag programmatically
+const allKeys = Object.keys(mindcache.getAll());
+const contextKeys = allKeys.filter(key => 
+  mindcache.hasTag(key, 'context')
 );
-// "Today is 2025-10-03 at 14:30:00. User: Alice"</code></pre>
+// ['userName', 'userRole', 'projectName']</code></pre>
                     </div>
                     <div class="example-description">
-                        <h4>Recursive Template Injection</h4>
-                        <p>Build complex prompts with nested templates and automatic temporal context injection.</p>
-                    </div>
-                </div>
-                <div id="example-workflow" class="example">
-                    <div class="example-code">
-                        <pre><code>// Reactive Updates & Tag Search
-import { mindcache } from 'mindcache';
-
-// Subscribe to specific key changes
-mindcache.subscribe('userName', (newValue) => {
-  console.log(`Name changed to: ${newValue}`);
-});
-
-// Subscribe to all changes
-mindcache.subscribe_to_all(() => {
-  console.log('Memory state updated');
-});
-
-// Organize with tags
-mindcache.set_value('age', 25, { tags: ['user', 'demographics'] });
-mindcache.set_value('city', 'NYC', { tags: ['user', 'location'] });
-
-// Search by tag
-const userKeys = mindcache.get_keys_by_tag('user');
-// ['age', 'city']</code></pre>
-                    </div>
-                    <div class="example-description">
-                        <h4>Reactive Updates & Tags</h4>
-                        <p>React to memory changes in real-time and organize data with tags for efficient categorization.</p>
+                        <h4>Context Management & System Prompts</h4>
+                        <p>Use tags to mark important context items, extract only tagged content when needed, and automatically generate system prompts with all memory context. Perfect for building focused AI workflows while maintaining full memory access.</p>
                     </div>
                 </div>
             </div>

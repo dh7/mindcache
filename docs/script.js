@@ -83,52 +83,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Live demo functionality
-document.addEventListener('DOMContentLoaded', function() {
-    const demoCode = document.getElementById('demo-code');
-    const demoOutput = document.getElementById('demo-output');
-    
-    // Simulate typing effect for demo
-    function typeText(element, text, speed = 50) {
-        element.textContent = '';
-        let i = 0;
-        
-        function type() {
-            if (i < text.length) {
-                element.textContent += text.charAt(i);
-                i++;
-                setTimeout(type, speed);
-            }
-        }
-        
-        type();
-    }
-    
-    // Animate demo output
-    function animateDemo() {
-        const outputs = [
-            'User Alice is excited about planning vacation on 2025-10-03',
-            'User Bob is curious about learning TypeScript on 2025-10-03',
-            'User Carol is focused on building AI agents on 2025-10-03'
-        ];
-        
-        let currentIndex = 0;
-        
-        function showNextOutput() {
-            typeText(demoOutput, outputs[currentIndex], 30);
-            currentIndex = (currentIndex + 1) % outputs.length;
-        }
-        
-        // Initial output
-        showNextOutput();
-        
-        // Change output every 4 seconds
-        setInterval(showNextOutput, 4000);
-    }
-    
-    // Start demo animation after a short delay
-    setTimeout(animateDemo, 1000);
-});
 
 // Navbar scroll effect
 window.addEventListener('scroll', function() {
