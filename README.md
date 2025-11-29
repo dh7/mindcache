@@ -1,53 +1,226 @@
 # MindCache
 
-A TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository.
+A TypeScript library for managing short-term memory in AI agents through an LLM-friendly key-value repository.
 
-MindCache aims to solve one of the fundamental challenges in AI agent development: **memory management**. As AI agents interact with users and process information, they need a way to store, retrieve, and reason about contextual data.
+## Motivation
 
-This library is opinionated and enforced good practices to ease and accelerate the development of AI agents.
+MindCache was born from three core motivations:
 
-Managing cross-session memory is out of scope for this library. This is for short-term memory only.
+1. **Learning by Doing**: Building real-world AI agent applications reveals patterns and challenges that theoretical knowledge alone cannot provide. This library captures those learnings.
+
+2. **Code Mutualization**: Instead of rewriting memory management logic for each project, MindCache provides a shared foundation that can be reused across various AI agent applications.
+
+3. **Pattern Discovery**: Through practical use, MindCache explores and implements patterns that are essential for effective context window management and tools orchestration in AI systems.
+
+## What Problem Does It Solve?
+
+AI agents need to maintain context during conversations and across tool calls. MindCache provides:
+
+- **Short-term memory management** for session-based context
+- **LLM-optimized storage** that agents can easily read and write
+- **Automatic tool generation** so agents can interact with memory without manual tool definitions
+- **System prompt generation** that summarizes memory state efficiently
+- **Context window optimization** through visibility controls and smart formatting
+
+> **Note**: Cross-session persistence is out of scope. MindCache focuses on short-term memory within a single session.
 
 ## Core Concepts
 
-MindCache operates as an intelligent key-value repository designed specifically for AI agents:
+### Universal Storage
+Store any data type an LLM can process: text, JSON, images, and files. All data is stored in an LLM-friendly format.
 
-- **Universal Storage**: Store any data type that an LLM can process - text, images, value of any kind.
-- **LLM-Readable**: The storage format is optimized for LLM consumption, allowing agents to easily understand and reason about stored information
-- **LLM-Writable**: Agents can directly read from and write to the memory store using simple tool calls
-- **System Prompt Generation**: Automatically generate system prompts that summarize the entire memory state, giving your AI agent instant context
-- **Markdown-Friendly**: Markdown is the preferred format for storing data.
+### LLM-Native Interface
+- **Readable**: Memory is formatted for easy LLM consumption
+- **Writable**: Agents can directly modify memory through automatically generated tools
+- **Template Injection**: Use `{{key}}` syntax to inject memory values into prompts and templates
 
-## Integration & Compatibility
+### Smart Context Management
+- **Visibility Controls**: Mark keys as visible/invisible to control what appears in system prompts
+- **Read-only Keys**: Protect certain values from modification
+- **Tags**: Organize and filter memory entries by category
+- **Templates**: Enable dynamic value resolution with circular reference protection
 
-MindCache is built with modern web development in mind:
+### Automatic Tool Generation
+Tools are automatically generated for each writable key, allowing agents to read and write memory without manual tool definitions. Tools integrate seamlessly with Vercel AI SDK.
 
-- **Vercel AI SDK**: Native compatibility with Vercel's AI SDK for seamless integration
-- **Next.js Ready**: Drop-in support for Next.js projects with minimal configuration
-- **Framework Agnostic**: Works with any TypeScript/JavaScript environment
-- **Edge Compatible**: Designed to work in serverless and edge environments
+## Quick Start
 
-## What's Included
+```typescript
+import { mindcache } from 'mindcache';
 
-This project will ship with:
+// Store values
+mindcache.set_value('userName', 'Alice');
+mindcache.set_value('favoriteColor', 'blue');
 
-- **Core Library**: The main MindCache TypeScript library
-- **Documentation**: Comprehensive guides and API documentation  
-- **Examples**: Multiple implementation examples including:
-  - Next.js + Vercel AI SDK integration
-  - Basic usage patterns
-  - Advanced memory management strategies
-  - Real-world use cases
+// Generate system prompt for your AI agent
+const systemPrompt = mindcache.get_system_prompt();
+// "userName: Alice. You can rewrite \"userName\" by using the write_userName tool..."
 
-## 🚧 Development Status
+// Generate tools for Vercel AI SDK
+const tools = mindcache.get_aisdk_tools();
+// { write_userName: {...}, write_favoriteColor: {...} }
 
-This project is currently in development. The readme file is just there to guide the AI that is writing the code.
+// Use with AI SDK
+import { generateText } from 'ai';
+const { text } = await generateText({
+  model: openai('gpt-4'),
+  tools: tools,
+  system: systemPrompt,
+  prompt: 'Remember that I love green now, not blue.'
+});
+// AI automatically calls write_favoriteColor('green')
+```
 
-## 📄 License
+## Key Features
+
+### Template Injection
+```typescript
+mindcache.set_value('name', 'Alice');
+mindcache.set_value('city', 'New York');
+
+const message = mindcache.injectSTM('Hello {{name}} from {{city}}!');
+// "Hello Alice from New York!"
+```
+
+### Attributes & Metadata
+```typescript
+// Set with attributes
+mindcache.set_value('apiKey', 'secret123', {
+  readonly: true,
+  visible: false,
+  tags: ['credentials']
+});
+
+// Mark as template for dynamic resolution
+mindcache.set_value('greeting', 'Hello {{name}}!', {
+  template: true
+});
+```
+
+### Image & File Support
+```typescript
+// Store images
+mindcache.add_image('profilePic', base64Data, 'image/png');
+
+// Store files
+mindcache.set_base64('document', base64Data, 'application/pdf', 'file');
+
+// Get as data URL
+const imageUrl = mindcache.get_data_url('profilePic');
+```
+
+### Tag-Based Organization
+```typescript
+mindcache.set_value('userName', 'Alice', { tags: ['user'] });
+mindcache.set_value('userRole', 'developer', { tags: ['user'] });
+mindcache.set_value('tempNote', 'Meeting at 3pm'); // No tags
+
+// Get only tagged entries
+const userData = mindcache.getTagged('user');
+// "userName: Alice, userRole: developer"
+```
+
+### Markdown Serialization
+```typescript
+// Export to markdown
+const markdown = mindcache.toMarkdown();
+
+// Import from markdown
+mindcache.fromMarkdown(markdown);
+```
+
+### Temporal Context
+Built-in `$date` and `$time` keys provide current date and time:
+```typescript
+mindcache.get('$date'); // "2025-01-15"
+mindcache.get('$time'); // "14:30:00"
+```
+
+## Integration
+
+### Vercel AI SDK
+```typescript
+import { streamText } from 'ai';
+import { mindcache } from 'mindcache';
+
+const tools = mindcache.get_aisdk_tools();
+const systemPrompt = mindcache.get_system_prompt();
+
+const result = await streamText({
+  model: openai('gpt-4'),
+  tools: tools,
+  system: systemPrompt,
+  prompt: userMessage
+});
+```
+
+### Next.js
+See the [Next.js example](./examples/nextjs_demo) for a complete integration.
+
+### Framework Agnostic
+MindCache works in any TypeScript/JavaScript environment, including:
+- Serverless functions
+- Edge runtimes
+- Browser applications
+- Node.js servers
+
+## API Reference
+
+### Core Methods
+- `set_value(key, value, attributes?)` - Store a value with optional attributes
+- `get_value(key)` - Retrieve a value (supports template processing)
+- `delete(key)` - Remove a key-value pair
+- `has(key)` - Check if a key exists
+- `clear()` - Clear all memory
+
+### Memory Management
+- `get_system_prompt()` - Generate system prompt from visible keys
+- `get_aisdk_tools()` - Generate tools for Vercel AI SDK
+- `injectSTM(template)` - Inject memory values into template strings
+- `getSTM()` - Get formatted string of all visible entries
+
+### Serialization
+- `toJSON()` - Serialize to JSON string
+- `fromJSON(jsonString)` - Deserialize from JSON string
+- `toMarkdown()` - Export to markdown format
+- `fromMarkdown(markdown)` - Import from markdown format
+- `serialize()` - Get complete state object
+- `deserialize(data)` - Restore complete state
+
+### Attributes & Tags
+- `set_attributes(key, attributes)` - Update key attributes
+- `get_attributes(key)` - Get key attributes
+- `addTag(key, tag)` - Add a tag to a key
+- `removeTag(key, tag)` - Remove a tag from a key
+- `getTags(key)` - Get all tags for a key
+- `getTagged(tag)` - Get all entries with a specific tag
+
+### Event System
+- `subscribe(key, listener)` - Subscribe to changes for a specific key
+- `unsubscribe(key, listener)` - Unsubscribe from key changes
+- `subscribeToAll(listener)` - Subscribe to all changes
+- `unsubscribeFromAll(listener)` - Unsubscribe from all changes
+
+## Examples
+
+See the [examples directory](./examples) for complete implementations:
+- Form management with AI assistant
+- Image processing workflows
+- Multi-step workflows with memory persistence
+- Client-side STM editor
+
+## Installation
+
+```bash
+npm install mindcache
+```
+
+## Requirements
+
+- Node.js >= 18.0.0
+- TypeScript >= 5.0.0
+- Optional: `ai` package >= 3.0.0 for Vercel AI SDK integration
+
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-
-
-
-
