@@ -192,24 +192,224 @@ MindCache 2.0 will be deployable on user's own infrastructure.
 
 ---
 
-## Architecture
+## Architecture & Tech Stack
 
-### Proposed Stack
+### Requirements Summary
 
-| Component | Technology | Reason |
-|-----------|------------|--------|
-| **Hosting** | Vercel | Edge functions, easy deployment |
-| **Database** | Supabase (Postgres) | SQL, Row-level security, familiar |
-| **Auth** | Supabase Auth | Google, GitHub, API keys built-in |
-| **Real-time** | Supabase Realtime | Native Postgres integration |
-| **Workflows** | Temporal (optional) | Durable execution for backend workflows |
-| **Offline Sync** | TBD | Need to evaluate options |
+| Requirement | Priority | Notes |
+|-------------|----------|-------|
+| Real-time sync | **Critical** | WebSocket for instant key updates |
+| Strong consistency | **Critical** | No conflicts within an instance |
+| OAuth + API keys | **High** | Google, GitHub + scoped API keys |
+| Global low-latency | **High** | Edge deployment |
+| Workflow execution | **Medium** | Sequential steps, durable execution |
+| Offline-first | **Phase 2** | Queue changes locally, sync when online |
 
-### Alternative: Durable Objects
-For real-time collaboration and conflict resolution, Cloudflare Durable Objects could be considered:
-- Per-instance WebSocket connections
-- Built-in conflict resolution
-- Edge-first architecture
+---
+
+### Chosen Stack: Cloudflare Durable Objects + D1
+
+**Why Durable Objects are a perfect fit for MindCache:**
+
+| MindCache Concept | Durable Object Mapping |
+|-------------------|------------------------|
+| 1 MindCache Instance | = 1 Durable Object |
+| Keys in instance | = Rows in DO's SQLite |
+| Real-time updates | = WebSocket connections to DO |
+| Strong consistency | = Built-in (single-threaded) |
+
+**Key discovery**: Durable Objects now have **SQLite storage** — not just simple key-value!
+
+---
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Cloudflare Edge Network                      │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                    Workers (API Layer)                      │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │ │
+│  │  │  Auth Worker │  │  API Routes  │  │  Chat Worker     │  │ │
+│  │  │  - JWT verify│  │  /api/keys   │  │  /api/chat       │  │ │
+│  │  │  - API keys  │  │  /api/share  │  │  /api/transform  │  │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────────┘  │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│         ┌────────────────────┴────────────────────┐             │
+│         ▼                                         ▼             │
+│  ┌─────────────────────┐          ┌─────────────────────────┐  │
+│  │   Cloudflare D1     │          │    Durable Objects      │  │
+│  │  (Global SQLite)    │          │  (Per-Instance State)   │  │
+│  │                     │          │                         │  │
+│  │  ┌───────────────┐  │          │  ┌───────────────────┐  │  │
+│  │  │ users         │  │          │  │ DO: instance-abc  │  │  │
+│  │  │ projects      │  │          │  │ ┌───────────────┐ │  │  │
+│  │  │ shares        │  │          │  │ │ SQLite DB     │ │  │  │
+│  │  │ api_keys      │  │          │  │ │ - keys table  │ │  │  │
+│  │  │ groups        │  │          │  │ │ - values      │ │  │  │
+│  │  │ usage_logs    │  │          │  │ │ - tags        │ │  │  │
+│  │  └───────────────┘  │          │  │ └───────────────┘ │  │  │
+│  │                     │          │  │ ┌───────────────┐ │  │  │
+│  └─────────────────────┘          │  │ │ WebSocket Hub │ │  │  │
+│                                   │  │ │ - Connections │ │  │  │
+│                                   │  │ │ - Broadcast   │ │  │  │
+│                                   │  │ └───────────────┘ │  │  │
+│                                   │  └───────────────────┘  │  │
+│                                   │                         │  │
+│                                   │  ┌───────────────────┐  │  │
+│                                   │  │ DO: instance-def  │  │  │
+│                                   │  │ (same structure)  │  │  │
+│                                   │  └───────────────────┘  │  │
+│                                   └─────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │    Clients      │
+                    │  - Web UI       │
+                    │  - Apps (API)   │
+                    │  - Agents       │
+                    └─────────────────┘
+```
+
+---
+
+### Component Responsibilities
+
+| Component | Technology | Responsibility |
+|-----------|------------|----------------|
+| **API Layer** | Cloudflare Workers | Auth, routing, API endpoints |
+| **Global Data** | Cloudflare D1 | Users, projects, shares, API keys, groups |
+| **Instance Data** | Durable Objects | Keys, values, tags (per MindCache Instance) |
+| **Real-time** | Durable Objects | WebSocket connections, broadcast updates |
+| **Auth** | Workers + D1 | JWT verification, OAuth (via external), API key validation |
+| **Workflows** | Client-side (MVP) | Sequential step execution |
+| **Workflows** | Temporal (Phase 2) | Durable backend execution when needed |
+
+---
+
+### Why This Architecture
+
+| Benefit | Explanation |
+|---------|-------------|
+| **Natural isolation** | Each MindCache Instance = 1 Durable Object. No RLS complexity. |
+| **Best real-time** | Native WebSocket per DO, not bolted-on like Postgres |
+| **Strong consistency** | Single-threaded DO = no conflicts within instance |
+| **Low latency** | Edge-deployed globally, ~10-20ms |
+| **SQLite per instance** | Complex queries on keys (tags, filtering) |
+| **Simple scaling** | Millions of DOs, each independent |
+| **Cost effective** | Pay per use, generous free tier |
+
+---
+
+### Data Split
+
+**D1 (Global queries needed):**
+```sql
+users, projects, shares, api_keys, groups, usage_logs
+```
+
+**Durable Objects (Per-instance, isolated):**
+```sql
+-- Each DO has its own SQLite with:
+keys (name, value, type, content_type, readonly, visible, hardcoded, tags, updated_at)
+```
+
+---
+
+### Auth Strategy
+
+```
+Client Request
+     │
+     ▼
+┌─────────────────────────────────────┐
+│  Auth Worker                        │
+│  1. Extract JWT or API key          │
+│  2. Validate against D1             │
+│  3. Check permissions for resource  │
+│  4. Route to Durable Object         │
+└─────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│  Durable Object                     │
+│  - Receives pre-validated request   │
+│  - Executes operation               │
+│  - Broadcasts to WebSocket clients  │
+└─────────────────────────────────────┘
+```
+
+**OAuth flow**: Use Cloudflare Access or external OAuth provider (Google), store user in D1, issue JWT.
+
+---
+
+### Workflow Execution (Temporal Integration)
+
+**Phase 1 (MVP)**: Client-side orchestration
+```
+Client → Step 1 → DO → Step 2 → DO → Step 3 → DO
+```
+
+**Phase 2**: Add Temporal for durable backend workflows
+```
+Client → Trigger Workflow
+              │
+              ▼
+         ┌─────────┐
+         │Temporal │ (hosted or Temporal Cloud)
+         │Workflow │
+         └─────────┘
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+  Step 1    Step 2    Step 3
+(API call) (API call) (API call)
+    │         │         │
+    └─────────┴─────────┘
+              │
+              ▼
+      Durable Objects
+      (read/write keys)
+```
+
+**Temporal works perfectly** because:
+- It just calls your APIs (doesn't care about DB)
+- Handles retries, timeouts, state
+- Add it later without changing DO architecture
+
+---
+
+### Pricing Estimate
+
+| Resource | Free Tier | Paid | Notes |
+|----------|-----------|------|-------|
+| **Workers Requests** | 100K/day | $0.30/million | API calls |
+| **DO Requests** | 1M/month | $0.15/million | Per-instance ops |
+| **DO Duration** | 400K GB-s | $12.50/M GB-s | WebSocket time |
+| **DO Storage** | 1GB | $0.20/GB/month | SQLite data |
+| **D1 Reads** | 5M/day | $0.001/million | User/project queries |
+| **D1 Storage** | 5GB | $0.75/GB/month | Global data |
+
+**For MindCache scale**: Very affordable, likely stay in free tier for MVP.
+
+---
+
+### Comparison: Final Decision
+
+| Aspect | Supabase | **Durable Objects + D1** |
+|--------|----------|--------------------------|
+| Real-time | Good | **Excellent** |
+| Latency | ~50-100ms | **~10-20ms** |
+| Per-instance isolation | Rows + RLS | **True isolation** |
+| Consistency | Transactions | **Strong (single-threaded)** |
+| Auth | Built-in | Build with Workers |
+| Complexity | Lower | Slightly higher |
+| Offline | PowerSync | Build later |
+
+**Winner: Durable Objects + D1** — better real-time, simpler per-instance model.
 
 ---
 
