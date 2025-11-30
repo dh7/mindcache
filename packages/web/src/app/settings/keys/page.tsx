@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
-import { listApiKeys, createApiKey, deleteApiKey, type ApiKey } from '@/lib/api';
+import { listApiKeys, createApiKey, deleteApiKey, listProjects, listInstances, type ApiKey } from '@/lib/api';
 
 export default function ApiKeysPage() {
   const { getToken } = useAuth();
@@ -150,13 +150,65 @@ function CreateKeyModal({
   const { getToken } = useAuth();
   const [name, setName] = useState('');
   const [scopeType, setScopeType] = useState<'account' | 'project' | 'instance'>('account');
+  const [scopeId, setScopeId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [permissions, setPermissions] = useState<string[]>(['read', 'write']);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // For project/instance selection
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [instances, setInstances] = useState<{ id: string; name: string }[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingInstances, setLoadingInstances] = useState(false);
+
+  // Fetch projects when scope type changes to project or instance
+  useEffect(() => {
+    if (scopeType === 'project' || scopeType === 'instance') {
+      fetchProjects();
+    }
+  }, [scopeType]);
+
+  // Fetch instances when project is selected (for instance scope)
+  useEffect(() => {
+    if (scopeType === 'instance' && selectedProjectId) {
+      fetchInstances(selectedProjectId);
+    }
+  }, [scopeType, selectedProjectId]);
+
+  const fetchProjects = async () => {
+    try {
+      setLoadingProjects(true);
+      const token = await getToken();
+      if (!token) return;
+      const data = await listProjects(token);
+      setProjects(data);
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  const fetchInstances = async (projectId: string) => {
+    try {
+      setLoadingInstances(true);
+      const token = await getToken();
+      if (!token) return;
+      const data = await listInstances(token, projectId);
+      setInstances(data);
+    } catch (err) {
+      console.error('Failed to load instances:', err);
+    } finally {
+      setLoadingInstances(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (scopeType === 'project' && !scopeId) return;
+    if (scopeType === 'instance' && !scopeId) return;
 
     try {
       setSubmitting(true);
@@ -166,6 +218,7 @@ function CreateKeyModal({
       const key = await createApiKey(token, {
         name: name.trim(),
         scopeType,
+        scopeId: scopeType === 'account' ? undefined : scopeId,
         permissions,
       });
       onCreated(key);
@@ -182,6 +235,13 @@ function CreateKeyModal({
     } else {
       setPermissions([...permissions, perm]);
     }
+  };
+
+  const handleScopeTypeChange = (newType: 'account' | 'project' | 'instance') => {
+    setScopeType(newType);
+    setScopeId('');
+    setSelectedProjectId('');
+    setInstances([]);
   };
 
   return (
@@ -205,7 +265,7 @@ function CreateKeyModal({
             <label className="block text-sm text-gray-400 mb-1">Scope</label>
             <select
               value={scopeType}
-              onChange={(e) => setScopeType(e.target.value as 'account' | 'project' | 'instance')}
+              onChange={(e) => handleScopeTypeChange(e.target.value as 'account' | 'project' | 'instance')}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none"
             >
               <option value="account">Full Account Access</option>
@@ -213,6 +273,57 @@ function CreateKeyModal({
               <option value="instance">Specific Instance</option>
             </select>
           </div>
+
+          {/* Project selector (for project or instance scope) */}
+          {(scopeType === 'project' || scopeType === 'instance') && (
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">
+                {scopeType === 'project' ? 'Select Project' : 'Select Project (then Instance)'}
+              </label>
+              {loadingProjects ? (
+                <p className="text-gray-500 text-sm">Loading projects...</p>
+              ) : (
+                <select
+                  value={scopeType === 'project' ? scopeId : selectedProjectId}
+                  onChange={(e) => {
+                    if (scopeType === 'project') {
+                      setScopeId(e.target.value);
+                    } else {
+                      setSelectedProjectId(e.target.value);
+                      setScopeId(''); // Reset instance selection
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none"
+                >
+                  <option value="">-- Select a project --</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* Instance selector (only for instance scope) */}
+          {scopeType === 'instance' && selectedProjectId && (
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Select Instance</label>
+              {loadingInstances ? (
+                <p className="text-gray-500 text-sm">Loading instances...</p>
+              ) : (
+                <select
+                  value={scopeId}
+                  onChange={(e) => setScopeId(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none"
+                >
+                  <option value="">-- Select an instance --</option>
+                  {instances.map(i => (
+                    <option key={i.id} value={i.id}>{i.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           <div className="mb-4">
             <label className="block text-sm text-gray-400 mb-2">Permissions</label>
@@ -243,7 +354,12 @@ function CreateKeyModal({
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || submitting}
+              disabled={
+                !name.trim() || 
+                submitting || 
+                (scopeType === 'project' && !scopeId) ||
+                (scopeType === 'instance' && !scopeId)
+              }
               className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 disabled:opacity-50"
             >
               {submitting ? 'Creating...' : 'Create Key'}

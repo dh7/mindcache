@@ -147,13 +147,17 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
 
   // ============= PROJECTS =============
   
-  // List projects
+  // List projects (owned + shared)
   if (path === '/api/projects' && request.method === 'GET') {
     const { results } = await env.DB.prepare(`
-      SELECT id, name, description, created_at, updated_at
-      FROM projects WHERE owner_id = ?
-      ORDER BY updated_at DESC
-    `).bind(userId).all();
+      SELECT DISTINCT p.id, p.name, p.description, p.created_at, p.updated_at,
+             CASE WHEN p.owner_id = ? THEN 'owner' ELSE s.permission END as role
+      FROM projects p
+      LEFT JOIN shares s ON s.resource_type = 'project' AND s.resource_id = p.id 
+                        AND (s.target_type = 'user' AND s.target_id = ? OR s.target_type = 'public')
+      WHERE p.owner_id = ? OR s.id IS NOT NULL
+      ORDER BY p.updated_at DESC
+    `).bind(userId, userId, userId).all();
     return Response.json({ projects: results }, { headers: corsHeaders });
   }
 
@@ -187,14 +191,18 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     }, { status: 201, headers: corsHeaders });
   }
 
-  // Get single project
+  // Get single project (owned or shared)
   const projectMatch = path.match(/^\/api\/projects\/([\w-]+)$/);
   if (projectMatch && request.method === 'GET') {
     const projectId = projectMatch[1];
     const project = await env.DB.prepare(`
-      SELECT id, name, description, created_at, updated_at
-      FROM projects WHERE id = ? AND owner_id = ?
-    `).bind(projectId, userId).first();
+      SELECT DISTINCT p.id, p.name, p.description, p.created_at, p.updated_at,
+             CASE WHEN p.owner_id = ? THEN 'owner' ELSE s.permission END as role
+      FROM projects p
+      LEFT JOIN shares s ON s.resource_type = 'project' AND s.resource_id = p.id 
+                        AND (s.target_type = 'user' AND s.target_id = ? OR s.target_type = 'public')
+      WHERE p.id = ? AND (p.owner_id = ? OR s.id IS NOT NULL)
+    `).bind(userId, userId, projectId, userId).first();
     if (!project) {
       return Response.json({ error: 'Project not found' }, { status: 404, headers: corsHeaders });
     }
@@ -228,17 +236,28 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
 
   // ============= INSTANCES =============
   
-  // List instances for a project
+  // List instances for a project (if user has access)
   const instancesMatch = path.match(/^\/api\/projects\/([\w-]+)\/instances$/);
   if (instancesMatch && request.method === 'GET') {
     const projectId = instancesMatch[1];
+    // Check user has access to project
+    const hasAccess = await env.DB.prepare(`
+      SELECT 1 FROM projects p
+      LEFT JOIN shares s ON s.resource_type = 'project' AND s.resource_id = p.id 
+                        AND (s.target_type = 'user' AND s.target_id = ? OR s.target_type = 'public')
+      WHERE p.id = ? AND (p.owner_id = ? OR s.id IS NOT NULL)
+    `).bind(userId, projectId, userId).first();
+    
+    if (!hasAccess) {
+      return Response.json({ error: 'Project not found' }, { status: 404, headers: corsHeaders });
+    }
+    
     const { results } = await env.DB.prepare(`
       SELECT i.id, i.name, i.is_readonly, i.created_at, i.updated_at
       FROM instances i
-      JOIN projects p ON p.id = i.project_id
-      WHERE i.project_id = ? AND p.owner_id = ?
+      WHERE i.project_id = ?
       ORDER BY i.created_at DESC
-    `).bind(projectId, userId).all();
+    `).bind(projectId).all();
     return Response.json({ instances: results }, { headers: corsHeaders });
   }
 
@@ -266,16 +285,25 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     return Response.json({ id, name: body.name }, { status: 201, headers: corsHeaders });
   }
 
-  // Get single instance
+  // Get single instance (owned or shared via project/instance)
   const instanceMatch = path.match(/^\/api\/instances\/([\w-]+)$/);
   if (instanceMatch && request.method === 'GET') {
     const instanceId = instanceMatch[1];
     const instance = await env.DB.prepare(`
-      SELECT i.id, i.project_id, i.name, i.is_readonly, i.created_at, i.updated_at
+      SELECT DISTINCT i.id, i.project_id, i.name, i.is_readonly, i.created_at, i.updated_at,
+             CASE 
+               WHEN p.owner_id = ? THEN 'owner'
+               WHEN si.permission IS NOT NULL THEN si.permission
+               ELSE sp.permission 
+             END as role
       FROM instances i
       JOIN projects p ON p.id = i.project_id
-      WHERE i.id = ? AND p.owner_id = ?
-    `).bind(instanceId, userId).first();
+      LEFT JOIN shares sp ON sp.resource_type = 'project' AND sp.resource_id = p.id 
+                         AND (sp.target_type = 'user' AND sp.target_id = ? OR sp.target_type = 'public')
+      LEFT JOIN shares si ON si.resource_type = 'instance' AND si.resource_id = i.id 
+                         AND (si.target_type = 'user' AND si.target_id = ? OR si.target_type = 'public')
+      WHERE i.id = ? AND (p.owner_id = ? OR sp.id IS NOT NULL OR si.id IS NOT NULL)
+    `).bind(userId, userId, userId, instanceId, userId).first();
     if (!instance) {
       return Response.json({ error: 'Instance not found' }, { status: 404, headers: corsHeaders });
     }
