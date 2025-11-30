@@ -13,7 +13,8 @@ bindings = [
 [[d1_databases]]
 binding = "DB"
 database_name = "mindcache-db"
-database_id = "TODO_REPLACE_WITH_DATABASE_ID"
+database_id = "29e53281-6ad2-4c90-b7de-27d55fcad594"
+migrations_dir = "migrations"
 
 # Migrations
 [[ migrations ]]
@@ -22,8 +23,12 @@ new_sqlite_classes = ["MindCacheInstanceDO"]
 
 # Environment variables (set via wrangler secret)
 # CLERK_SECRET_KEY - for JWT verification
-# CLERK_PUBLISHABLE_KEY - for frontend
+# CLERK_WEBHOOK_SECRET - for webhook signature verification
 
 [vars]
 ENVIRONMENT = "development"
+
+# To set secrets, run:
+# wrangler secret put CLERK_SECRET_KEY
+# wrangler secret put CLERK_WEBHOOK_SECRET
 

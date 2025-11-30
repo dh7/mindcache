@@ -1,6 +1,6 @@
 # MindCache 2.0 Specification
 
-**Version**: 0.7  
+**Version**: 0.8  
 **Last Updated**: 2024-11-30
 
 ## Overview
@@ -756,7 +756,7 @@ cloudMc.deserialize(data);
 6. ~~Create cloud adapter~~ ✅ → `packages/mindcache/src/cloud/`
 7. ~~Create server scaffold~~ ✅ → `packages/server/` (Cloudflare Worker + DO)
 8. ~~Create web scaffold~~ ✅ → `packages/web/` (Next.js + Clerk)
-9. **Set up Clerk** → configure OAuth providers, webhooks
+9. ~~Add Clerk auth to server~~ ✅ → JWT verification + webhook handlers
 10. **Deploy Cloudflare infrastructure**:
     - Create D1 database and run migrations
     - Deploy Worker + Durable Object
@@ -773,6 +773,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-11-30 | 0.8 | Added Clerk JWT verification, API key auth, and webhook handlers to server |
 | 2024-11-30 | 0.7 | Implemented monorepo structure, refactored core, created cloud adapter, server (DO), and web scaffolds |
 | 2024-11-30 | 0.6 | Finalized: DO + D1 + Clerk. Removed comparison options. |
 | 2024-11-30 | 0.5 | Added Clerk for auth, simplified tech comparison |

@@ -8,6 +8,8 @@
  */
 
 import { MindCacheInstanceDO } from './durable-objects/MindCacheInstance';
+import { extractAuth, verifyClerkJWT, verifyApiKey } from './auth/clerk';
+import { handleClerkWebhook } from './webhooks/clerk';
 
 export { MindCacheInstanceDO };
 
@@ -24,6 +26,7 @@ export interface Env {
   // Clerk (set via wrangler secret)
   CLERK_SECRET_KEY?: string;
   CLERK_PUBLISHABLE_KEY?: string;
+  CLERK_WEBHOOK_SECRET?: string;
 }
 
 export default {
@@ -47,6 +50,11 @@ export default {
       // Health check
       if (path === '/health') {
         return Response.json({ status: 'ok', environment: env.ENVIRONMENT });
+      }
+
+      // Clerk webhook endpoint
+      if (path === '/webhooks/clerk' && request.method === 'POST') {
+        return handleClerkWebhook(request, env);
       }
 
       // WebSocket upgrade for real-time sync
@@ -86,11 +94,27 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     'Content-Type': 'application/json',
   };
 
-  // TODO: Add authentication middleware
-  // const auth = await verifyAuth(request, env);
-  // if (!auth.valid) {
-  //   return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
+  // Authenticate request
+  const authData = extractAuth(request);
+  if (!authData) {
+    return Response.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders });
+  }
+
+  let auth;
+  if (authData.type === 'jwt') {
+    if (!env.CLERK_SECRET_KEY) {
+      return Response.json({ error: 'Auth not configured' }, { status: 500, headers: corsHeaders });
+    }
+    auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
+  } else {
+    auth = await verifyApiKey(authData.token, env.DB);
+  }
+
+  if (!auth.valid) {
+    return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+  }
+
+  const userId = auth.userId!;
 
   // API routes
   if (path === '/api/projects' && request.method === 'GET') {
