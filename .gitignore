@@ -1,5 +1,12 @@
 # Dependencies
 node_modules/
+
+# Turborepo
+.turbo
+
+# Cloudflare
+.wrangler
+.dev.vars
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

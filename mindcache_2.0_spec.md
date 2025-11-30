@@ -1,6 +1,6 @@
 # MindCache 2.0 Specification
 
-**Version**: 0.6  
+**Version**: 0.7  
 **Last Updated**: 2024-11-30
 
 ## Overview
@@ -751,16 +751,16 @@ cloudMc.deserialize(data);
 1. ~~Align on open questions~~ ✅
 2. ~~Choose tech stack~~ ✅ (Durable Objects + D1 + Clerk)
 3. ~~Define package architecture~~ ✅ (Core + Subpath exports)
-4. **Set up monorepo** (Turborepo + pnpm)
-5. **Refactor mindcache 1.0** → `packages/mindcache/src/core/`
-6. **Set up Clerk** → configure OAuth providers
-7. **Build Cloudflare infrastructure**:
-   - D1 schema (users, projects, shares, api_keys)
-   - Worker for auth (Clerk JWT + API key verification)
-   - Durable Object for MindCache Instance
-8. **Build cloud adapter** → `packages/mindcache/src/cloud/`
-9. **Build web UI** → `packages/web/` (Next.js + Clerk)
-10. **Phases**:
+4. ~~Set up monorepo~~ ✅ (Turborepo + pnpm)
+5. ~~Refactor mindcache 1.0~~ ✅ → `packages/mindcache/src/core/`
+6. ~~Create cloud adapter~~ ✅ → `packages/mindcache/src/cloud/`
+7. ~~Create server scaffold~~ ✅ → `packages/server/` (Cloudflare Worker + DO)
+8. ~~Create web scaffold~~ ✅ → `packages/web/` (Next.js + Clerk)
+9. **Set up Clerk** → configure OAuth providers, webhooks
+10. **Deploy Cloudflare infrastructure**:
+    - Create D1 database and run migrations
+    - Deploy Worker + Durable Object
+11. **Phases**:
     - Phase 1: Auth (Clerk) + basic CRUD + real-time sync
     - Phase 2: Sharing + permissions
     - Phase 3: Chat API + Tools
@@ -773,6 +773,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-11-30 | 0.7 | Implemented monorepo structure, refactored core, created cloud adapter, server (DO), and web scaffolds |
 | 2024-11-30 | 0.6 | Finalized: DO + D1 + Clerk. Removed comparison options. |
 | 2024-11-30 | 0.5 | Added Clerk for auth, simplified tech comparison |
 | 2024-11-30 | 0.4 | Added repository architecture (Core + Subpath exports pattern) |

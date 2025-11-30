@@ -1,0 +1,29 @@
+name = "mindcache-api"
+main = "src/worker.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects
+[durable_objects]
+bindings = [
+  { name = "MINDCACHE_INSTANCE", class_name = "MindCacheInstanceDO" }
+]
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "mindcache-db"
+database_id = "TODO_REPLACE_WITH_DATABASE_ID"
+
+# Migrations
+[[ migrations ]]
+tag = "v1"
+new_sqlite_classes = ["MindCacheInstanceDO"]
+
+# Environment variables (set via wrangler secret)
+# CLERK_SECRET_KEY - for JWT verification
+# CLERK_PUBLISHABLE_KEY - for frontend
+
+[vars]
+ENVIRONMENT = "development"
+
