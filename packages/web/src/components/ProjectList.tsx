@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { listProjects, createProject, deleteProject, type Project } from '@/lib/api';
+import { ShareModal } from './ShareModal';
 
 export function ProjectList() {
   const { getToken } = useAuth();
@@ -10,6 +11,7 @@ export function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [sharingProject, setSharingProject] = useState<Project | null>(null);
 
   const fetchProjects = async () => {
     try {
@@ -101,6 +103,12 @@ export function ProjectList() {
                     Open
                   </a>
                   <button
+                    onClick={() => setSharingProject(project)}
+                    className="px-3 py-1 bg-blue-900/50 rounded hover:bg-blue-900 text-sm"
+                  >
+                    Share
+                  </button>
+                  <button
                     onClick={() => handleDelete(project.id)}
                     className="px-3 py-1 bg-red-900/50 rounded hover:bg-red-900 text-sm"
                   >
@@ -120,6 +128,15 @@ export function ProjectList() {
             setProjects([project, ...projects]);
             setShowCreateModal(false);
           }}
+        />
+      )}
+
+      {sharingProject && (
+        <ShareModal
+          resourceType="projects"
+          resourceId={sharingProject.id}
+          resourceName={sharingProject.name}
+          onClose={() => setSharingProject(null)}
         />
       )}
     </div>

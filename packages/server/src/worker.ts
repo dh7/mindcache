@@ -291,6 +291,131 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     return Response.json({ success: true }, { headers: corsHeaders });
   }
 
+  // ============= SHARES =============
+
+  // List shares for a resource
+  const sharesMatch = path.match(/^\/api\/(projects|instances)\/([\w-]+)\/shares$/);
+  if (sharesMatch && request.method === 'GET') {
+    const [, resourceType, resourceId] = sharesMatch;
+    const { results } = await env.DB.prepare(`
+      SELECT s.id, s.target_type, s.target_id, s.permission, s.created_at,
+             u.email as target_email, u.name as target_name
+      FROM shares s
+      LEFT JOIN users u ON s.target_type = 'user' AND s.target_id = u.id
+      WHERE s.resource_type = ? AND s.resource_id = ?
+    `).bind(resourceType === 'projects' ? 'project' : 'instance', resourceId).all();
+    return Response.json({ shares: results }, { headers: corsHeaders });
+  }
+
+  // Create share
+  if (sharesMatch && request.method === 'POST') {
+    const [, resourceType, resourceId] = sharesMatch;
+    const body = await request.json() as { 
+      targetType: 'user' | 'public'; 
+      targetId?: string; 
+      targetEmail?: string;
+      permission: 'read' | 'write' | 'admin' 
+    };
+
+    // If sharing by email, look up user
+    let targetId = body.targetId;
+    if (body.targetType === 'user' && body.targetEmail && !targetId) {
+      const user = await env.DB.prepare(`
+        SELECT id FROM users WHERE email = ?
+      `).bind(body.targetEmail).first<{ id: string }>();
+      if (!user) {
+        return Response.json({ error: 'User not found' }, { status: 404, headers: corsHeaders });
+      }
+      targetId = user.id;
+    }
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO shares (id, resource_type, resource_id, target_type, target_id, permission)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, 
+      resourceType === 'projects' ? 'project' : 'instance',
+      resourceId,
+      body.targetType,
+      body.targetType === 'public' ? null : targetId,
+      body.permission
+    ).run();
+
+    return Response.json({ id, ...body }, { status: 201, headers: corsHeaders });
+  }
+
+  // Delete share
+  const shareDeleteMatch = path.match(/^\/api\/shares\/([\w-]+)$/);
+  if (shareDeleteMatch && request.method === 'DELETE') {
+    const shareId = shareDeleteMatch[1];
+    await env.DB.prepare(`DELETE FROM shares WHERE id = ?`).bind(shareId).run();
+    return Response.json({ success: true }, { headers: corsHeaders });
+  }
+
+  // ============= API KEYS =============
+
+  // List API keys
+  if (path === '/api/keys' && request.method === 'GET') {
+    const { results } = await env.DB.prepare(`
+      SELECT id, name, key_prefix, scope_type, scope_id, permissions, created_at, last_used_at
+      FROM api_keys WHERE user_id = ?
+      ORDER BY created_at DESC
+    `).bind(userId).all();
+    return Response.json({ keys: results }, { headers: corsHeaders });
+  }
+
+  // Create API key
+  if (path === '/api/keys' && request.method === 'POST') {
+    const body = await request.json() as { 
+      name: string;
+      scopeType: 'account' | 'project' | 'instance';
+      scopeId?: string;
+      permissions: string[];
+    };
+
+    // Generate API key: mc_live_<random>
+    const keyRandom = crypto.randomUUID().replace(/-/g, '');
+    const apiKey = `mc_live_${keyRandom}`;
+    const keyPrefix = apiKey.substring(0, 12);
+
+    // Hash the key for storage
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(apiKey));
+    const keyHash = Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO api_keys (id, user_id, name, key_hash, key_prefix, scope_type, scope_id, permissions)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id, userId, body.name, keyHash, keyPrefix,
+      body.scopeType, body.scopeId || null, JSON.stringify(body.permissions)
+    ).run();
+
+    // Return the full key only once (won't be retrievable later)
+    return Response.json({ 
+      id, 
+      name: body.name,
+      key: apiKey,
+      keyPrefix,
+      scopeType: body.scopeType,
+      scopeId: body.scopeId,
+      permissions: body.permissions
+    }, { status: 201, headers: corsHeaders });
+  }
+
+  // Delete API key
+  const keyDeleteMatch = path.match(/^\/api\/keys\/([\w-]+)$/);
+  if (keyDeleteMatch && request.method === 'DELETE') {
+    const keyId = keyDeleteMatch[1];
+    await env.DB.prepare(`
+      DELETE FROM api_keys WHERE id = ? AND user_id = ?
+    `).bind(keyId, userId).run();
+    return Response.json({ success: true }, { headers: corsHeaders });
+  }
+
   return Response.json({ error: 'Not found' }, { status: 404, headers: corsHeaders });
   } catch (error) {
     console.error('API error:', error);

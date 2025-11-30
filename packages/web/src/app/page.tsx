@@ -1,12 +1,13 @@
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 import { ProjectList } from '@/components/ProjectList';
+import Link from 'next/link';
 
 export default function Home() {
   return (
     <main className="min-h-screen p-8">
       <nav className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold">MindCache</h1>
-        <div>
+        <div className="flex items-center gap-4">
           <SignedOut>
             <SignInButton mode="modal">
               <button className="px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition">
@@ -15,6 +16,12 @@ export default function Home() {
             </SignInButton>
           </SignedOut>
           <SignedIn>
+            <Link 
+              href="/settings/keys" 
+              className="text-gray-400 hover:text-white text-sm"
+            >
+              API Keys
+            </Link>
             <UserButton afterSignOutUrl="/" />
           </SignedIn>
         </div>

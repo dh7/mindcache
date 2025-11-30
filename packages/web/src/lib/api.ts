@@ -86,5 +86,78 @@ export async function createInstance(
   });
 }
 
-export type { Project, Instance };
+// ============= SHARES =============
+
+interface Share {
+  id: string;
+  target_type: 'user' | 'public';
+  target_id?: string;
+  target_email?: string;
+  target_name?: string;
+  permission: 'read' | 'write' | 'admin';
+  created_at: number;
+}
+
+export async function listShares(
+  token: string,
+  resourceType: 'projects' | 'instances',
+  resourceId: string
+): Promise<Share[]> {
+  const data = await fetchApi<{ shares: Share[] }>(
+    `/api/${resourceType}/${resourceId}/shares`,
+    token
+  );
+  return data.shares;
+}
+
+export async function createShare(
+  token: string,
+  resourceType: 'projects' | 'instances',
+  resourceId: string,
+  share: { targetType: 'user' | 'public'; targetEmail?: string; permission: 'read' | 'write' | 'admin' }
+): Promise<Share> {
+  return fetchApi<Share>(`/api/${resourceType}/${resourceId}/shares`, token, {
+    method: 'POST',
+    body: JSON.stringify(share),
+  });
+}
+
+export async function deleteShare(token: string, shareId: string): Promise<void> {
+  await fetchApi(`/api/shares/${shareId}`, token, { method: 'DELETE' });
+}
+
+// ============= API KEYS =============
+
+interface ApiKey {
+  id: string;
+  name: string;
+  key?: string; // Only returned on creation
+  key_prefix: string;
+  scope_type: 'account' | 'project' | 'instance';
+  scope_id?: string;
+  permissions: string[];
+  created_at: number;
+  last_used_at?: number;
+}
+
+export async function listApiKeys(token: string): Promise<ApiKey[]> {
+  const data = await fetchApi<{ keys: ApiKey[] }>('/api/keys', token);
+  return data.keys;
+}
+
+export async function createApiKey(
+  token: string,
+  key: { name: string; scopeType: 'account' | 'project' | 'instance'; scopeId?: string; permissions: string[] }
+): Promise<ApiKey> {
+  return fetchApi<ApiKey>('/api/keys', token, {
+    method: 'POST',
+    body: JSON.stringify(key),
+  });
+}
+
+export async function deleteApiKey(token: string, keyId: string): Promise<void> {
+  await fetchApi(`/api/keys/${keyId}`, token, { method: 'DELETE' });
+}
+
+export type { Project, Instance, Share, ApiKey };
 
