@@ -164,23 +164,26 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       return Response.json({ error: 'Name required' }, { status: 400, headers: corsHeaders });
     }
     const id = crypto.randomUUID();
+    const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(`
-      INSERT INTO projects (id, owner_id, name, description)
-      VALUES (?, ?, ?, ?)
-    `).bind(id, userId, body.name, body.description || null).run();
+      INSERT INTO projects (id, owner_id, name, description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(id, userId, body.name, body.description || null, now, now).run();
     
     // Create default instance
     const instanceId = crypto.randomUUID();
     await env.DB.prepare(`
-      INSERT INTO instances (id, project_id, owner_id, name)
-      VALUES (?, ?, ?, ?)
-    `).bind(instanceId, id, userId, 'main').run();
+      INSERT INTO instances (id, project_id, owner_id, name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(instanceId, id, userId, 'main', now, now).run();
     
     return Response.json({ 
       id, 
       name: body.name, 
       description: body.description,
-      defaultInstanceId: instanceId 
+      defaultInstanceId: instanceId,
+      created_at: now,
+      updated_at: now
     }, { status: 201, headers: corsHeaders });
   }
 
