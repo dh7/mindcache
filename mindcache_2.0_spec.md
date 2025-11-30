@@ -1,7 +1,7 @@
 # MindCache 2.0 Specification
 
-**Version**: 0.2  
-**Last Updated**: 2024-11-29
+**Version**: 0.6  
+**Last Updated**: 2024-11-30
 
 ## Overview
 
@@ -185,238 +185,138 @@ Web UI for:
 - Full project export (all instances, keys, metadata)
 - Markdown export (compatible with 1.0)
 - JSON export
-- Import to migrate between platforms or for self-hosting
-
-### 9. Self-Hosting
-MindCache 2.0 will be deployable on user's own infrastructure.
+- Import from local MindCache 1.0 instances
 
 ---
 
 ## Architecture & Tech Stack
 
-### Requirements Summary
+### Core Decision: Durable Objects for Real-Time
 
-| Requirement | Priority | Notes |
-|-------------|----------|-------|
-| Real-time sync | **Critical** | WebSocket for instant key updates |
-| Strong consistency | **Critical** | No conflicts within an instance |
-| OAuth + API keys | **High** | Google, GitHub + scoped API keys |
-| Global low-latency | **High** | Edge deployment |
-| Workflow execution | **Medium** | Sequential steps, durable execution |
-| Offline-first | **Phase 2** | Queue changes locally, sync when online |
+**Cloudflare Durable Objects** are the foundation for MindCache 2.0:
+- ✅ 1 MindCache Instance = 1 Durable Object (natural mapping)
+- ✅ SQLite per DO for complex key queries
+- ✅ Native WebSocket (best real-time)
+- ✅ Strong consistency (single-threaded, no conflicts)
+- ✅ Edge-deployed (low latency globally)
 
 ---
 
-### Chosen Stack: Cloudflare Durable Objects + D1
+### Authentication: Clerk
 
-**Why Durable Objects are a perfect fit for MindCache:**
+Using **Clerk** for authentication (standard auth provider):
 
-| MindCache Concept | Durable Object Mapping |
-|-------------------|------------------------|
-| 1 MindCache Instance | = 1 Durable Object |
-| Keys in instance | = Rows in DO's SQLite |
-| Real-time updates | = WebSocket connections to DO |
-| Strong consistency | = Built-in (single-threaded) |
+| Auth Type | Solution |
+|-----------|----------|
+| **Human users** | Clerk — handles OAuth (Google, GitHub), sessions, UI |
+| **Apps/Agents** | API Keys — stored in database, hashed |
 
-**Key discovery**: Durable Objects now have **SQLite storage** — not just simple key-value!
+**Why Clerk**:
+- ✅ Great Next.js integration (for web UI)
+- ✅ Works with Cloudflare Workers (JWT verification)
+- ✅ OAuth providers built-in (Google, GitHub, etc.)
+- ✅ User management UI included
+- ✅ Generous free tier (10K MAU)
 
----
-
-### Architecture Diagram
-
+**Auth Flow**:
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Cloudflare Edge Network                      │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │                    Workers (API Layer)                      │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │ │
-│  │  │  Auth Worker │  │  API Routes  │  │  Chat Worker     │  │ │
-│  │  │  - JWT verify│  │  /api/keys   │  │  /api/chat       │  │ │
-│  │  │  - API keys  │  │  /api/share  │  │  /api/transform  │  │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────────┘  │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                   │
-│         ┌────────────────────┴────────────────────┐             │
-│         ▼                                         ▼             │
-│  ┌─────────────────────┐          ┌─────────────────────────┐  │
-│  │   Cloudflare D1     │          │    Durable Objects      │  │
-│  │  (Global SQLite)    │          │  (Per-Instance State)   │  │
-│  │                     │          │                         │  │
-│  │  ┌───────────────┐  │          │  ┌───────────────────┐  │  │
-│  │  │ users         │  │          │  │ DO: instance-abc  │  │  │
-│  │  │ projects      │  │          │  │ ┌───────────────┐ │  │  │
-│  │  │ shares        │  │          │  │ │ SQLite DB     │ │  │  │
-│  │  │ api_keys      │  │          │  │ │ - keys table  │ │  │  │
-│  │  │ groups        │  │          │  │ │ - values      │ │  │  │
-│  │  │ usage_logs    │  │          │  │ │ - tags        │ │  │  │
-│  │  └───────────────┘  │          │  │ └───────────────┘ │  │  │
-│  │                     │          │  │ ┌───────────────┐ │  │  │
-│  └─────────────────────┘          │  │ │ WebSocket Hub │ │  │  │
-│                                   │  │ │ - Connections │ │  │  │
-│                                   │  │ │ - Broadcast   │ │  │  │
-│                                   │  │ └───────────────┘ │  │  │
-│                                   │  └───────────────────┘  │  │
-│                                   │                         │  │
-│                                   │  ┌───────────────────┐  │  │
-│                                   │  │ DO: instance-def  │  │  │
-│                                   │  │ (same structure)  │  │  │
-│                                   │  └───────────────────┘  │  │
-│                                   └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Web UI (Vercel)                               │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Clerk handles:                                                 │  │
+│  │  - Login UI (Google, GitHub, email)                            │  │
+│  │  - Session management                                          │  │
+│  │  - User profiles                                               │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
                               │
+                              │ JWT token in header
                               ▼
-                    ┌─────────────────┐
-                    │    Clients      │
-                    │  - Web UI       │
-                    │  - Apps (API)   │
-                    │  - Agents       │
-                    └─────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Cloudflare Workers                                 │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Auth Worker:                                                   │  │
+│  │  1. Verify Clerk JWT (using Clerk's public key)                │  │
+│  │  2. OR verify API key (hash lookup in DB)                      │  │
+│  │  3. Check permissions                                          │  │
+│  │  4. Route to Durable Object                                    │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Component Responsibilities
+### Global Database: Cloudflare D1
 
-| Component | Technology | Responsibility |
-|-----------|------------|----------------|
-| **API Layer** | Cloudflare Workers | Auth, routing, API endpoints |
-| **Global Data** | Cloudflare D1 | Users, projects, shares, API keys, groups |
-| **Instance Data** | Durable Objects | Keys, values, tags (per MindCache Instance) |
-| **Real-time** | Durable Objects | WebSocket connections, broadcast updates |
-| **Auth** | Workers + D1 | JWT verification, OAuth (via external), API key validation |
-| **Workflows** | Client-side (MVP) | Sequential step execution |
-| **Workflows** | Temporal (Phase 2) | Durable backend execution when needed |
+**Cloudflare D1** for global data (users, projects, shares, API keys):
+- ✅ All on Cloudflare (simple architecture)
+- ✅ Edge-deployed everywhere (low latency)
+- ✅ Single billing
+- ✅ SQLite syntax (portable if needed later)
 
 ---
 
-### Why This Architecture
-
-| Benefit | Explanation |
-|---------|-------------|
-| **Natural isolation** | Each MindCache Instance = 1 Durable Object. No RLS complexity. |
-| **Best real-time** | Native WebSocket per DO, not bolted-on like Postgres |
-| **Strong consistency** | Single-threaded DO = no conflicts within instance |
-| **Low latency** | Edge-deployed globally, ~10-20ms |
-| **SQLite per instance** | Complex queries on keys (tags, filtering) |
-| **Simple scaling** | Millions of DOs, each independent |
-| **Cost effective** | Pay per use, generous free tier |
-
----
-
-### Data Split
-
-**D1 (Global queries needed):**
-```sql
-users, projects, shares, api_keys, groups, usage_logs
-```
-
-**Durable Objects (Per-instance, isolated):**
-```sql
--- Each DO has its own SQLite with:
-keys (name, value, type, content_type, readonly, visible, hardcoded, tags, updated_at)
-```
-
----
-
-### Auth Strategy
+### Full Architecture
 
 ```
-Client Request
-     │
-     ▼
-┌─────────────────────────────────────┐
-│  Auth Worker                        │
-│  1. Extract JWT or API key          │
-│  2. Validate against D1             │
-│  3. Check permissions for resource  │
-│  4. Route to Durable Object         │
-└─────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────┐
-│  Durable Object                     │
-│  - Receives pre-validated request   │
-│  - Executes operation               │
-│  - Broadcasts to WebSocket clients  │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Web UI (Vercel + Clerk)                       │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Clerk handles:                                                 │  │
+│  │  - Login UI (Google, GitHub, email)                            │  │
+│  │  - Session management                                          │  │
+│  │  - User profiles                                               │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+                              │
+                              │ JWT token in header
+                              ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Cloudflare Workers                                 │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Auth Worker:                                                   │  │
+│  │  1. Verify Clerk JWT (using Clerk's public key)                │  │
+│  │  2. OR verify API key (hash lookup in D1)                      │  │
+│  │  3. Check permissions in D1                                    │  │
+│  │  4. Route to correct Durable Object                            │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+         │                              │
+         ▼                              ▼
+┌─────────────────────┐    ┌─────────────────────────────────┐
+│    Cloudflare D1    │    │      Durable Objects            │
+│  (Global SQLite)    │    │                                 │
+│  ┌───────────────┐  │    │  ┌─────────────────────────┐   │
+│  │ users (sync   │  │    │  │ DO: instance-abc123     │   │
+│  │   from Clerk) │  │    │  │ - SQLite (keys, values) │   │
+│  │ projects      │  │    │  │ - WebSocket connections │   │
+│  │ shares        │  │    │  │ - Real-time broadcast   │   │
+│  │ api_keys      │  │    │  └─────────────────────────┘   │
+│  │ groups        │  │    │  ┌─────────────────────────┐   │
+│  │ webhooks      │  │    │  │ DO: instance-def456     │   │
+│  │ usage_logs    │  │    │  │ - SQLite (keys, values) │   │
+│  └───────────────┘  │    │  │ - WebSocket connections │   │
+└─────────────────────┘    │  └─────────────────────────┘   │
+                           └─────────────────────────────────┘
 ```
 
-**OAuth flow**: Use Cloudflare Access or external OAuth provider (Google), store user in D1, issue JWT.
+### Tech Stack Summary
 
----
-
-### Workflow Execution (Temporal Integration)
-
-**Phase 1 (MVP)**: Client-side orchestration
-```
-Client → Step 1 → DO → Step 2 → DO → Step 3 → DO
-```
-
-**Phase 2**: Add Temporal for durable backend workflows
-```
-Client → Trigger Workflow
-              │
-              ▼
-         ┌─────────┐
-         │Temporal │ (hosted or Temporal Cloud)
-         │Workflow │
-         └─────────┘
-              │
-    ┌─────────┼─────────┐
-    ▼         ▼         ▼
-  Step 1    Step 2    Step 3
-(API call) (API call) (API call)
-    │         │         │
-    └─────────┴─────────┘
-              │
-              ▼
-      Durable Objects
-      (read/write keys)
-```
-
-**Temporal works perfectly** because:
-- It just calls your APIs (doesn't care about DB)
-- Handles retries, timeouts, state
-- Add it later without changing DO architecture
-
----
-
-### Pricing Estimate
-
-| Resource | Free Tier | Paid | Notes |
-|----------|-----------|------|-------|
-| **Workers Requests** | 100K/day | $0.30/million | API calls |
-| **DO Requests** | 1M/month | $0.15/million | Per-instance ops |
-| **DO Duration** | 400K GB-s | $12.50/M GB-s | WebSocket time |
-| **DO Storage** | 1GB | $0.20/GB/month | SQLite data |
-| **D1 Reads** | 5M/day | $0.001/million | User/project queries |
-| **D1 Storage** | 5GB | $0.75/GB/month | Global data |
-
-**For MindCache scale**: Very affordable, likely stay in free tier for MVP.
-
----
-
-### Comparison: Final Decision
-
-| Aspect | Supabase | **Durable Objects + D1** |
-|--------|----------|--------------------------|
-| Real-time | Good | **Excellent** |
-| Latency | ~50-100ms | **~10-20ms** |
-| Per-instance isolation | Rows + RLS | **True isolation** |
-| Consistency | Transactions | **Strong (single-threaded)** |
-| Auth | Built-in | Build with Workers |
-| Complexity | Lower | Slightly higher |
-| Offline | PowerSync | Build later |
-
-**Winner: Durable Objects + D1** — better real-time, simpler per-instance model.
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Web UI** | Vercel + Next.js | Dashboard, editor, chatbot |
+| **Auth (humans)** | Clerk | OAuth, sessions, user management |
+| **Auth (apps)** | API Keys | Hashed in D1, verified in Worker |
+| **Global Data** | Cloudflare D1 | Users, projects, shares, API keys |
+| **Instance Data** | Durable Objects | Keys, values, WebSocket, real-time |
+| **Real-time** | DO WebSocket | Native, best-in-class |
 
 ---
 
 ## Data Model
 
 ```sql
--- Users (managed by Supabase Auth)
+-- Users (synced from Clerk via webhooks)
 users (
   id UUID PRIMARY KEY,
   email TEXT,
@@ -559,19 +459,281 @@ usage_logs (
 
 ---
 
-## Open Questions (Resolved)
+## Decisions Summary
 
 | Question | Decision |
 |----------|----------|
 | What is a session? | **MindCache Instance** — a fork-able, clonable key-value store |
 | Are keys schema-defined? | **No** — instances can have any keys dynamically |
 | Who gets notified on updates? | **Instance subscribers only** |
-| Conflict resolution? | **TBD** — evaluate Durable Objects or CRDT |
+| Conflict resolution? | **Durable Objects** — single-threaded, no conflicts within instance |
 | API key scope? | **Account, Project, or Instance level** |
 | Key-level sharing? | **No** — create instance with subset of keys instead |
 | Workflows? | **Markdown format**, client + backend execution |
-| Offline support? | **Yes** — offline-first with sync |
-| Self-hosting? | **Yes** — exportable and self-deployable |
+| Offline support? | **Phase 2** — client-side queue, sync when connected |
+| Self-hosting? | **Deprioritized** — focus on hosted service first |
+| Real-time layer? | **Durable Objects** — 1 DO = 1 MindCache Instance |
+| Global database? | **Cloudflare D1** — all Cloudflare, edge-deployed |
+| Authentication? | **Clerk** — handles OAuth, sessions, user management |
+| Package architecture? | **Core + Subpath exports** — `mindcache` + `mindcache/cloud` |
+
+---
+
+## Repository Architecture
+
+### Package Strategy: Core + Subpath Exports
+
+Single `mindcache` npm package with optional cloud adapter via subpath export.
+
+```typescript
+// 1.0 behavior (unchanged, small bundle)
+import { MindCache } from 'mindcache';
+const mc = new MindCache();
+mc.set_value('name', 'Alice');
+
+// 2.0 behavior (adds cloud sync)
+import { MindCache } from 'mindcache';
+import { connectCloud } from 'mindcache/cloud';
+
+const mc = new MindCache();
+connectCloud(mc, {
+  projectId: 'my-project',
+  instanceId: 'main',
+  apiKey: 'mc_live_xxxxx'
+});
+
+// OR: Factory function
+import { createCloudMindCache } from 'mindcache/cloud';
+const mc = createCloudMindCache({
+  projectId: 'my-project',
+  instanceId: 'main',
+  apiKey: 'mc_live_xxxxx'
+});
+
+// Same API for both!
+mc.set_value('name', 'Alice');
+const tools = mc.get_aisdk_tools();
+const prompt = mc.get_system_prompt();
+```
+
+**Benefits**:
+- ✅ Same package, optional cloud features
+- ✅ Tree-shakeable (small bundle if no cloud)
+- ✅ 1.0 users completely unaffected
+- ✅ Modern pattern (like `ai`, `@tanstack/query`)
+
+---
+
+### Monorepo Structure
+
+```
+mindcache/
+├── packages/
+│   │
+│   ├── mindcache/                    # npm package (client SDK)
+│   │   ├── src/
+│   │   │   ├── core/
+│   │   │   │   ├── MindCache.ts      # Core class (1.0 logic)
+│   │   │   │   ├── types.ts
+│   │   │   │   └── index.ts
+│   │   │   │
+│   │   │   ├── cloud/                # Cloud sync layer (2.0)
+│   │   │   │   ├── CloudAdapter.ts   # WebSocket + HTTP sync
+│   │   │   │   ├── auth.ts           # API key handling
+│   │   │   │   ├── connectCloud.ts   # Main export
+│   │   │   │   └── index.ts
+│   │   │   │
+│   │   │   └── index.ts              # Main export (core only)
+│   │   │
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   ├── server/                       # Cloudflare Workers + Durable Objects
+│   │   ├── src/
+│   │   │   ├── worker.ts             # Main Worker (auth, routing)
+│   │   │   ├── durable-objects/
+│   │   │   │   └── MindCacheInstance.ts  # One DO per instance
+│   │   │   └── d1/
+│   │   │       └── schema.sql        # Users, projects, shares
+│   │   │
+│   │   ├── wrangler.toml
+│   │   └── package.json
+│   │
+│   ├── web/                          # Web UI (dashboard, editor)
+│   │   ├── src/
+│   │   │   ├── app/                  # Next.js or Astro
+│   │   │   └── components/
+│   │   │
+│   │   ├── package.json
+│   │   └── next.config.js
+│   │
+│   └── shared/                       # Shared types & protocol
+│       ├── src/
+│       │   ├── types.ts              # KeyAttributes, etc.
+│       │   └── protocol.ts           # WebSocket message types
+│       └── package.json
+│
+├── examples/
+│   ├── local-only/                   # 1.0 style (no cloud)
+│   └── cloud-sync/                   # 2.0 with cloud
+│
+├── docs/
+├── turbo.json                        # Turborepo config
+├── pnpm-workspace.yaml
+└── package.json
+```
+
+---
+
+### Package.json Exports
+
+```json
+{
+  "name": "mindcache",
+  "version": "2.0.0",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./cloud": {
+      "import": "./dist/cloud/index.mjs",
+      "require": "./dist/cloud/index.cjs",
+      "types": "./dist/cloud/index.d.ts"
+    }
+  },
+  "peerDependencies": {
+    "ai": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": { "optional": true }
+  }
+}
+```
+
+---
+
+### Cloud Adapter Implementation
+
+```typescript
+// packages/mindcache/src/cloud/CloudAdapter.ts
+export class CloudAdapter {
+  private ws: WebSocket | null = null;
+  private queue: Operation[] = [];
+  private mindcache: MindCache;
+  
+  constructor(
+    private config: { projectId: string; instanceId: string; apiKey: string }
+  ) {}
+  
+  attach(mc: MindCache) {
+    this.mindcache = mc;
+    
+    // Subscribe to local changes → push to cloud
+    mc.subscribeToAll(() => {
+      // Debounce and push changes
+    });
+  }
+  
+  connect() {
+    const url = `wss://api.mindcache.io/sync/${this.config.instanceId}`;
+    this.ws = new WebSocket(url);
+    
+    this.ws.onopen = () => {
+      this.ws.send(JSON.stringify({ type: 'auth', apiKey: this.config.apiKey }));
+      this.flushQueue();
+    };
+    
+    this.ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'set') {
+        // Update local state without triggering sync loop
+        this.mindcache._setFromRemote(msg.key, msg.value, msg.attrs);
+      }
+    };
+  }
+  
+  push(op: Operation) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(op));
+    } else {
+      this.queue.push(op); // Queue for offline
+    }
+  }
+  
+  private flushQueue() {
+    while (this.queue.length > 0) {
+      const op = this.queue.shift()!;
+      this.ws?.send(JSON.stringify(op));
+    }
+  }
+}
+
+// packages/mindcache/src/cloud/index.ts
+export function connectCloud(
+  mc: MindCache,
+  config: { projectId: string; instanceId: string; apiKey: string }
+): CloudAdapter {
+  const adapter = new CloudAdapter(config);
+  adapter.attach(mc);
+  adapter.connect();
+  return adapter;
+}
+
+export function createCloudMindCache(
+  config: { projectId: string; instanceId: string; apiKey: string }
+): MindCache {
+  const mc = new MindCache();
+  connectCloud(mc, config);
+  return mc;
+}
+```
+
+---
+
+### Migration Path
+
+#### For 1.0 Users (no change)
+
+```typescript
+// Works exactly as before
+import { MindCache } from 'mindcache';
+const mc = new MindCache();
+mc.set_value('name', 'Alice');
+```
+
+#### Migrating to 2.0
+
+1. **Create project** at `mindcache.io`
+2. **Create instance**, get API key
+3. **Add cloud connection**:
+
+```typescript
+import { MindCache } from 'mindcache';
+import { connectCloud } from 'mindcache/cloud';
+
+const mc = new MindCache();
+connectCloud(mc, {
+  projectId: 'my-project',
+  instanceId: 'main',
+  apiKey: 'mc_live_xxxxx'
+});
+
+// Everything else unchanged!
+mc.set_value('name', 'Alice');
+const tools = mc.get_aisdk_tools();
+```
+
+4. **(Optional) Import existing data**:
+
+```typescript
+// Export from local
+const data = localMc.serialize();
+
+// Import to cloud instance
+cloudMc.deserialize(data);
+```
 
 ---
 
@@ -587,15 +749,23 @@ usage_logs (
 ## Next Steps
 
 1. ~~Align on open questions~~ ✅
-2. Define MVP scope (which features first?)
-3. Set up Supabase project
-4. Design API contracts (OpenAPI spec)
-5. Build incrementally:
-   - Phase 1: Auth + basic CRUD
-   - Phase 2: Sharing + Real-time
-   - Phase 3: Chat API + Tools
-   - Phase 4: Workflows + Webhooks
-   - Phase 5: Offline sync + Self-hosting
+2. ~~Choose tech stack~~ ✅ (Durable Objects + D1 + Clerk)
+3. ~~Define package architecture~~ ✅ (Core + Subpath exports)
+4. **Set up monorepo** (Turborepo + pnpm)
+5. **Refactor mindcache 1.0** → `packages/mindcache/src/core/`
+6. **Set up Clerk** → configure OAuth providers
+7. **Build Cloudflare infrastructure**:
+   - D1 schema (users, projects, shares, api_keys)
+   - Worker for auth (Clerk JWT + API key verification)
+   - Durable Object for MindCache Instance
+8. **Build cloud adapter** → `packages/mindcache/src/cloud/`
+9. **Build web UI** → `packages/web/` (Next.js + Clerk)
+10. **Phases**:
+    - Phase 1: Auth (Clerk) + basic CRUD + real-time sync
+    - Phase 2: Sharing + permissions
+    - Phase 3: Chat API + Tools
+    - Phase 4: Workflows + Webhooks
+    - Phase 5: Offline queue
 
 ---
 
@@ -603,5 +773,9 @@ usage_logs (
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-11-30 | 0.6 | Finalized: DO + D1 + Clerk. Removed comparison options. |
+| 2024-11-30 | 0.5 | Added Clerk for auth, simplified tech comparison |
+| 2024-11-30 | 0.4 | Added repository architecture (Core + Subpath exports pattern) |
+| 2024-11-30 | 0.3 | Tech stack decision: Durable Objects, deprioritized self-hosting |
 | 2024-11-29 | 0.2 | Incorporated answers, renamed Session→MindCache Instance, clarified sharing |
 | 2024-11-29 | 0.1 | Initial specification |
