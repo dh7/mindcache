@@ -1,6 +1,6 @@
 # MindCache 2.0 Specification
 
-**Version**: 0.8  
+**Version**: 0.9  
 **Last Updated**: 2024-11-30
 
 ## Overview
@@ -757,11 +757,15 @@ cloudMc.deserialize(data);
 7. ~~Create server scaffold~~ ✅ → `packages/server/` (Cloudflare Worker + DO)
 8. ~~Create web scaffold~~ ✅ → `packages/web/` (Next.js + Clerk)
 9. ~~Add Clerk auth to server~~ ✅ → JWT verification + webhook handlers
-10. **Deploy Cloudflare infrastructure**:
-    - Create D1 database and run migrations
-    - Deploy Worker + Durable Object
-11. **Phases**:
-    - Phase 1: Auth (Clerk) + basic CRUD + real-time sync
+10. ~~Phase 1 (partial)~~ ✅:
+    - ~~Project CRUD API~~ ✅
+    - ~~Instance CRUD API~~ ✅
+    - ~~WebSocket real-time sync (DO)~~ ✅ (with tests)
+    - ~~Instance editor UI~~ ✅ (add/edit/delete keys)
+11. **Next: Phase 1 completion**:
+    - Deploy to Cloudflare (D1 + Worker)
+    - Integrate CloudAdapter in web app for seamless sync
+12. **Future Phases**:
     - Phase 2: Sharing + permissions
     - Phase 3: Chat API + Tools
     - Phase 4: Workflows + Webhooks
@@ -773,6 +777,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-11-30 | 0.9 | Phase 1 partial: Instance editor UI with real-time WebSocket sync |
 | 2024-11-30 | 0.8 | Added Clerk JWT verification, API key auth, and webhook handlers to server |
 | 2024-11-30 | 0.7 | Implemented monorepo structure, refactored core, created cloud adapter, server (DO), and web scaffolds |
 | 2024-11-30 | 0.6 | Finalized: DO + D1 + Clerk. Removed comparison options. |

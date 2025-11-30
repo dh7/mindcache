@@ -45,7 +45,9 @@ async function fetchApi<T>(
 }
 
 export async function listProjects(token: string): Promise<Project[]> {
-  const data = await fetchApi<{ projects: Project[] }>('/api/projects', token);
+  // In dev mode without Clerk, use 'dev' token
+  const actualToken = token || 'dev';
+  const data = await fetchApi<{ projects: Project[] }>('/api/projects', actualToken);
   return data.projects;
 }
 
