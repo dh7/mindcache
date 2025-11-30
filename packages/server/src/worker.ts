@@ -91,53 +91,59 @@ export default {
 async function handleApiRequest(request: Request, env: Env, path: string): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json',
   };
 
-  // Authenticate request
-  const authData = extractAuth(request);
-  
-  let userId: string;
-  
-  // Dev mode bypass - allow unauthenticated access in development
-  if (env.ENVIRONMENT === 'development' && !authData) {
-    userId = 'dev-user';
-  } else if (!authData) {
-    return Response.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders });
-  } else {
-    let auth;
-    if (authData.type === 'jwt') {
-      if (!env.CLERK_SECRET_KEY) {
-        // In dev mode without Clerk, use dev user
-        if (env.ENVIRONMENT === 'development') {
-          userId = 'dev-user';
+  try {
+    // Authenticate request
+    const authData = extractAuth(request);
+    
+    let userId: string;
+    
+    // Dev mode bypass - allow unauthenticated access in development
+    if (env.ENVIRONMENT === 'development' && !authData) {
+      userId = 'dev-user';
+    } else if (!authData) {
+      return Response.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders });
+    } else {
+      let auth;
+      if (authData.type === 'jwt') {
+        if (!env.CLERK_SECRET_KEY) {
+          // In dev mode without Clerk, use dev user
+          if (env.ENVIRONMENT === 'development') {
+            userId = 'dev-user';
+          } else {
+            return Response.json({ error: 'Auth not configured' }, { status: 500, headers: corsHeaders });
+          }
         } else {
-          return Response.json({ error: 'Auth not configured' }, { status: 500, headers: corsHeaders });
+          try {
+            auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
+          } catch (e) {
+            console.error('JWT verification error:', e);
+            return Response.json({ error: 'JWT verification failed' }, { status: 401, headers: corsHeaders });
+          }
+          if (!auth.valid) {
+            return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+          }
+          userId = auth.userId!;
         }
       } else {
-        auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
+        auth = await verifyApiKey(authData.token, env.DB);
         if (!auth.valid) {
           return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
         }
         userId = auth.userId!;
       }
-    } else {
-      auth = await verifyApiKey(authData.token, env.DB);
-      if (!auth.valid) {
-        return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
-      }
-      userId = auth.userId!;
+      userId = userId || 'dev-user';
     }
-    userId = userId || 'dev-user';
-  }
 
-  // Ensure dev user exists in dev mode
-  if (env.ENVIRONMENT === 'development' && userId === 'dev-user') {
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO users (id, clerk_id, email, name)
-      VALUES ('dev-user', 'dev-user', 'dev@localhost', 'Dev User')
-    `).run();
-  }
+  // Ensure user exists in database (upsert on first login)
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO users (id, clerk_id, email, name)
+    VALUES (?, ?, ?, ?)
+  `).bind(userId, userId, null, null).run();
 
   // ============= PROJECTS =============
   
@@ -283,5 +289,12 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
   }
 
   return Response.json({ error: 'Not found' }, { status: 404, headers: corsHeaders });
+  } catch (error) {
+    console.error('API error:', error);
+    return Response.json(
+      { error: 'Internal server error', details: String(error) }, 
+      { status: 500, headers: corsHeaders }
+    );
+  }
 }
 
