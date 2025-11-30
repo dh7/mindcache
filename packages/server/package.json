@@ -16,11 +16,10 @@
     "@types/ws": "^8.5.0",
     "typescript": "^5.0.0",
     "vitest": "^2.0.0",
-    "wrangler": "^3.93.0",
+    "wrangler": "^4.51.0",
     "ws": "^8.18.0"
   },
   "dependencies": {
     "@mindcache/shared": "workspace:*"
   }
 }
-

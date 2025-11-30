@@ -1,7 +1,8 @@
 # MindCache 2.0 Specification
 
-**Version**: 0.9  
-**Last Updated**: 2024-11-30
+**Version**: 1.0-alpha  
+**Last Updated**: 2024-11-30  
+**Production URL**: https://mindcache-api.dh7777777.workers.dev
 
 ## Overview
 
@@ -777,6 +778,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-11-30 | 1.0-alpha | 🚀 **Deployed to production!** API live at workers.dev |
 | 2024-11-30 | 0.9 | Phase 1 partial: Instance editor UI with real-time WebSocket sync |
 | 2024-11-30 | 0.8 | Added Clerk JWT verification, API key auth, and webhook handlers to server |
 | 2024-11-30 | 0.7 | Implemented monorepo structure, refactored core, created cloud adapter, server (DO), and web scaffolds |
