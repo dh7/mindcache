@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "db:migrate": "wrangler d1 migrations apply mindcache-db",
