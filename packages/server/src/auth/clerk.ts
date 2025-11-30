@@ -1,5 +1,6 @@
 /**
  * Clerk JWT verification for Cloudflare Workers
+ * Uses manual JWT verification with Clerk's PEM public key
  */
 
 interface ClerkJWTPayload {
@@ -9,6 +10,7 @@ interface ClerkJWTPayload {
   iat: number;
   exp: number;
   iss: string;
+  azp?: string;     // Authorized party (your frontend URL)
 }
 
 interface AuthResult {
@@ -18,23 +20,90 @@ interface AuthResult {
   error?: string;
 }
 
+// Cache for JWKS
+let jwksCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null;
+const JWKS_CACHE_TTL = 3600000; // 1 hour
+
+/**
+ * Fetch JWKS from Clerk
+ */
+async function getClerkJWKS(clerkSecretKey: string): Promise<JsonWebKey[]> {
+  // Check cache
+  if (jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_CACHE_TTL) {
+    return jwksCache.keys;
+  }
+
+  // Extract instance ID from secret key to build JWKS URL
+  // Clerk JWKS URL format: https://<your-clerk-frontend-api>/.well-known/jwks.json
+  // Or use the API: https://api.clerk.com/v1/jwks
+  
+  const response = await fetch('https://api.clerk.com/v1/jwks', {
+    headers: {
+      'Authorization': `Bearer ${clerkSecretKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch JWKS: ${response.status}`);
+  }
+
+  const data = await response.json() as { keys: JsonWebKey[] };
+  jwksCache = { keys: data.keys, fetchedAt: Date.now() };
+  return data.keys;
+}
+
+/**
+ * Import a JWK for verification
+ */
+async function importKey(jwk: JsonWebKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'jwk',
+    jwk,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+}
+
+/**
+ * Base64URL decode
+ */
+function base64UrlDecode(str: string): Uint8Array {
+  // Add padding if needed
+  const pad = str.length % 4;
+  if (pad) {
+    str += '='.repeat(4 - pad);
+  }
+  // Replace URL-safe chars
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 /**
  * Verify a Clerk JWT token
- * Uses Clerk's JWKS endpoint to verify the signature
  */
 export async function verifyClerkJWT(
   token: string,
   clerkSecretKey: string
 ): Promise<AuthResult> {
   try {
-    // Decode the JWT without verification first to get the header
-    const [headerB64, payloadB64] = token.split('.');
-    if (!headerB64 || !payloadB64) {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
       return { valid: false, error: 'Invalid token format' };
     }
 
+    const [headerB64, payloadB64, signatureB64] = parts;
+
+    // Decode header to get key ID
+    const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(headerB64))) as { kid?: string; alg: string };
+    
     // Decode payload
-    const payload = JSON.parse(atob(payloadB64)) as ClerkJWTPayload;
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadB64))) as ClerkJWTPayload;
 
     // Check expiration
     const now = Math.floor(Date.now() / 1000);
@@ -42,22 +111,35 @@ export async function verifyClerkJWT(
       return { valid: false, error: 'Token expired' };
     }
 
-    // For development, we'll do a simple verification
-    // In production, you should verify against Clerk's JWKS
-    // https://clerk.com/docs/backend-requests/handling/manual-jwt-verification
-    
-    // Verify with Clerk's Backend API
-    const response = await fetch('https://api.clerk.com/v1/tokens/verify', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${clerkSecretKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ token }),
-    });
+    // Check not before
+    if (payload.iat && payload.iat > now + 60) { // 60 second clock skew allowance
+      return { valid: false, error: 'Token not yet valid' };
+    }
 
-    if (!response.ok) {
-      return { valid: false, error: 'Token verification failed' };
+    // Get JWKS and find matching key
+    const jwks = await getClerkJWKS(clerkSecretKey);
+    const jwk = header.kid 
+      ? jwks.find(k => k.kid === header.kid)
+      : jwks[0];
+
+    if (!jwk) {
+      return { valid: false, error: 'No matching key found' };
+    }
+
+    // Import key and verify signature
+    const key = await importKey(jwk);
+    const signatureData = base64UrlDecode(signatureB64);
+    const signedData = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+
+    const isValid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      signatureData,
+      signedData
+    );
+
+    if (!isValid) {
+      return { valid: false, error: 'Invalid signature' };
     }
 
     return {
