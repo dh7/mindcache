@@ -21,7 +21,9 @@ interface KeyEntry {
 
 type SyncData = Record<string, KeyEntry>;
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8787';
+// Use WSS for production, WS for localhost
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
+const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://');
 
 export default function InstanceEditorPage() {
   const params = useParams();
