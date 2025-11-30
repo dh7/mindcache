@@ -203,7 +203,8 @@ export class CloudAdapter {
       case 'sync':
         // Initial sync - load all data
         if (this.mindcache && msg.data) {
-          Object.entries(msg.data).forEach(([key, { value, attributes }]) => {
+          Object.entries(msg.data).forEach(([key, entry]) => {
+            const { value, attributes } = entry as { value: unknown; attributes: KeyAttributes };
             this.mindcache!._setFromRemote(key, value, attributes);
           });
           this.emit('synced');
@@ -211,23 +212,43 @@ export class CloudAdapter {
         break;
 
       case 'set':
-        // Remote update
+        // Remote update (legacy)
         if (this.mindcache) {
           this.mindcache._setFromRemote(msg.key, msg.value, msg.attributes as KeyAttributes);
         }
         break;
 
-      case 'delete':
-        // Remote delete - we need to handle this without triggering sync
+      case 'key_updated':
+        // Server broadcast of key update
         if (this.mindcache) {
-          // Use internal method or handle deletion
-          this.mindcache.delete(msg.key);
+          this.mindcache._setFromRemote(msg.key, msg.value, msg.attributes);
+        }
+        break;
+
+      case 'delete':
+        // Remote delete (legacy)
+        if (this.mindcache) {
+          this.mindcache._deleteFromRemote(msg.key);
+        }
+        break;
+
+      case 'key_deleted':
+        // Server broadcast of key deletion
+        if (this.mindcache) {
+          this.mindcache._deleteFromRemote(msg.key);
         }
         break;
 
       case 'clear':
         if (this.mindcache) {
-          this.mindcache.clear();
+          this.mindcache._clearFromRemote();
+        }
+        break;
+
+      case 'cleared':
+        // Server broadcast of clear
+        if (this.mindcache) {
+          this.mindcache._clearFromRemote();
         }
         break;
 

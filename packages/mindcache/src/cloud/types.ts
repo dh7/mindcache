@@ -84,6 +84,29 @@ export interface ErrorMessage {
   error: string;
 }
 
+// Server-specific message types
+export interface KeyUpdatedMessage {
+  type: 'key_updated';
+  key: string;
+  value: unknown;
+  attributes: KeyAttributes;
+  updatedBy: string;
+  timestamp: number;
+}
+
+export interface KeyDeletedMessage {
+  type: 'key_deleted';
+  key: string;
+  deletedBy: string;
+  timestamp: number;
+}
+
+export interface ClearedByMessage {
+  type: 'cleared';
+  clearedBy: string;
+  timestamp: number;
+}
+
 export type IncomingMessage = 
   | AuthSuccessMessage 
   | AuthErrorMessage 
@@ -91,7 +114,10 @@ export type IncomingMessage =
   | SetMessage 
   | DeleteMessage 
   | ClearMessage 
-  | ErrorMessage;
+  | ErrorMessage
+  | KeyUpdatedMessage
+  | KeyDeletedMessage
+  | ClearedByMessage;
 
 export type OutgoingMessage = 
   | AuthMessage 

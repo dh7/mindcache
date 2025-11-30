@@ -1,4 +1,5 @@
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
+import { ProjectList } from '@/components/ProjectList';
 
 export default function Home() {
   return (
@@ -37,13 +38,7 @@ export default function Home() {
 
       <SignedIn>
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-semibold mb-4">Your Projects</h2>
-          <div className="border border-gray-800 rounded-lg p-8 text-center text-gray-500">
-            <p>No projects yet. Create your first project to get started.</p>
-            <button className="mt-4 px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition">
-              Create Project
-            </button>
-          </div>
+          <ProjectList />
         </div>
       </SignedIn>
     </main>

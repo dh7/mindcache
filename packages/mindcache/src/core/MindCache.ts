@@ -172,6 +172,33 @@ export class MindCache {
     return this._isRemoteUpdate;
   }
 
+  // Internal method for deleting from remote (cloud sync)
+  _deleteFromRemote(key: string): void {
+    if (key === '$date' || key === '$time') {
+      return;
+    }
+
+    this._isRemoteUpdate = true;
+    
+    if (key in this.stm) {
+      delete this.stm[key];
+      if (this.listeners[key]) {
+        this.listeners[key].forEach(listener => listener());
+      }
+      this.notifyGlobalListeners();
+    }
+    
+    this._isRemoteUpdate = false;
+  }
+
+  // Internal method for clearing from remote (cloud sync)
+  _clearFromRemote(): void {
+    this._isRemoteUpdate = true;
+    this.stm = {};
+    this.notifyGlobalListeners();
+    this._isRemoteUpdate = false;
+  }
+
   // Set attributes for an existing key
   set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
     if (key === '$date' || key === '$time') {
