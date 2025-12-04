@@ -10,6 +10,12 @@
 import { MindCacheInstanceDO } from './durable-objects/MindCacheInstance';
 import { extractAuth, verifyClerkJWT, verifyApiKey } from './auth/clerk';
 import { handleClerkWebhook } from './webhooks/clerk';
+import { 
+  handleChatRequest, 
+  handleTransformRequest, 
+  handleGenerateImageRequest, 
+  handleAnalyzeImageRequest 
+} from './ai';
 
 export { MindCacheInstanceDO };
 
@@ -27,6 +33,12 @@ export interface Env {
   CLERK_SECRET_KEY?: string;
   CLERK_PUBLISHABLE_KEY?: string;
   CLERK_WEBHOOK_SECRET?: string;
+  
+  // OpenAI (set via wrangler secret)
+  OPENAI_API_KEY?: string;
+  
+  // Fireworks (set via wrangler secret) - for image generation
+  FIREWORKS_API_KEY?: string;
 }
 
 export default {
@@ -144,6 +156,28 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     INSERT OR IGNORE INTO users (id, clerk_id, email, name)
     VALUES (?, ?, ?, ?)
   `).bind(userId, userId, null, null).run();
+
+  // ============= AI APIs =============
+  
+  // Chat API - AI chat with MindCache tools
+  if (path === '/api/chat' && request.method === 'POST') {
+    return handleChatRequest(request, env);
+  }
+
+  // Transform API - LLM text transformation
+  if (path === '/api/transform' && request.method === 'POST') {
+    return handleTransformRequest(request, env);
+  }
+
+  // Generate Image API - DALL-E image generation
+  if (path === '/api/generate-image' && request.method === 'POST') {
+    return handleGenerateImageRequest(request, env);
+  }
+
+  // Analyze Image API - GPT-4 Vision
+  if (path === '/api/analyze-image' && request.method === 'POST') {
+    return handleAnalyzeImageRequest(request, env);
+  }
 
   // ============= PROJECTS =============
   

@@ -1,7 +1,7 @@
 # MindCache 2.0 Specification
 
-**Version**: 1.0-alpha  
-**Last Updated**: 2024-11-30  
+**Version**: 1.1-alpha  
+**Last Updated**: 2024-12-04  
 **Production URL**: https://mindcache-api.dh7777777.workers.dev
 
 ## Overview
@@ -763,14 +763,22 @@ cloudMc.deserialize(data);
     - ~~Instance CRUD API~~ ✅
     - ~~WebSocket real-time sync (DO)~~ ✅ (with tests)
     - ~~Instance editor UI~~ ✅ (add/edit/delete keys)
-11. **Next: Phase 1 completion**:
-    - Deploy to Cloudflare (D1 + Worker)
-    - Integrate CloudAdapter in web app for seamless sync
-12. **Future Phases**:
-    - Phase 2: Sharing + permissions
-    - Phase 3: Chat API + Tools
+11. ~~Phase 2~~ ✅:
+    - ~~Share API endpoints~~ ✅
+    - ~~API Key management~~ ✅
+    - ~~Share modal UI~~ ✅
+    - ~~API Keys page~~ ✅
+    - ~~Share permission checking~~ ✅
+    - ~~Project/Instance selector~~ ✅
+12. ~~Phase 3~~ ✅:
+    - ~~Chat API with MindCache tools~~ ✅ (`/api/chat`)
+    - ~~Transform API~~ ✅ (`/api/transform`)
+    - ~~Generate Image API~~ ✅ (`/api/generate-image`)
+    - ~~Analyze Image API~~ ✅ (`/api/analyze-image`)
+13. **Future Phases**:
     - Phase 4: Workflows + Webhooks
     - Phase 5: Offline queue
+    - Deploy to production
 
 ---
 
@@ -778,6 +786,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-04 | 1.1-alpha | ✅ **Phase 3 Complete!** Chat API + LLM Tools (transform, generate-image, analyze-image) |
 | 2024-11-30 | 1.0-alpha | 🚀 **Deployed to production!** API live at workers.dev |
 | 2024-11-30 | 0.9 | Phase 1 partial: Instance editor UI with real-time WebSocket sync |
 | 2024-11-30 | 0.8 | Added Clerk JWT verification, API key auth, and webhook handlers to server |

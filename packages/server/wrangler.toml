@@ -27,6 +27,8 @@ new_sqlite_classes = ["MindCacheInstanceDO"]
 # Environment variables (set via wrangler secret)
 # CLERK_SECRET_KEY - for JWT verification
 # CLERK_WEBHOOK_SECRET - for webhook signature verification
+# OPENAI_API_KEY - for Chat API, transform, and image analysis
+# FIREWORKS_API_KEY - for image generation (flux-kontext-pro)
 
 [vars]
 ENVIRONMENT = "development"

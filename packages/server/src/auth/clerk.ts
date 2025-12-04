@@ -3,6 +3,11 @@
  * Uses manual JWT verification with Clerk's PEM public key
  */
 
+// Extended JsonWebKey with kid (key ID) property
+interface JWKWithKid extends JsonWebKey {
+  kid?: string;
+}
+
 interface ClerkJWTPayload {
   sub: string;      // User ID
   email?: string;
@@ -21,13 +26,13 @@ interface AuthResult {
 }
 
 // Cache for JWKS
-let jwksCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null;
+let jwksCache: { keys: JWKWithKid[]; fetchedAt: number } | null = null;
 const JWKS_CACHE_TTL = 3600000; // 1 hour
 
 /**
  * Fetch JWKS from Clerk
  */
-async function getClerkJWKS(clerkSecretKey: string): Promise<JsonWebKey[]> {
+async function getClerkJWKS(clerkSecretKey: string): Promise<JWKWithKid[]> {
   // Check cache
   if (jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_CACHE_TTL) {
     return jwksCache.keys;
@@ -47,7 +52,7 @@ async function getClerkJWKS(clerkSecretKey: string): Promise<JsonWebKey[]> {
     throw new Error(`Failed to fetch JWKS: ${response.status}`);
   }
 
-  const data = await response.json() as { keys: JsonWebKey[] };
+  const data = await response.json() as { keys: JWKWithKid[] };
   jwksCache = { keys: data.keys, fetchedAt: Date.now() };
   return data.keys;
 }
@@ -55,7 +60,7 @@ async function getClerkJWKS(clerkSecretKey: string): Promise<JsonWebKey[]> {
 /**
  * Import a JWK for verification
  */
-async function importKey(jwk: JsonWebKey): Promise<CryptoKey> {
+async function importKey(jwk: JWKWithKid): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'jwk',
     jwk,

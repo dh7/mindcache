@@ -59,14 +59,79 @@ export class MindCacheInstanceDO implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    
     // Handle WebSocket upgrade
     const upgradeHeader = request.headers.get('Upgrade');
     if (upgradeHeader?.toLowerCase() === 'websocket') {
       return this.handleWebSocket(request);
     }
 
-    // Handle HTTP requests (for REST API fallback)
-    return Response.json({ error: 'WebSocket required' }, { status: 400 });
+    // Handle internal HTTP requests (from AI module)
+    // GET /keys - Get all keys
+    if (url.pathname === '/keys' && request.method === 'GET') {
+      const keys = this.getAllKeys();
+      return Response.json(keys);
+    }
+
+    // POST /keys - Set a key
+    if (url.pathname === '/keys' && request.method === 'POST') {
+      const body = await request.json() as { 
+        key: string; 
+        value: unknown; 
+        attributes: KeyAttributes;
+        userId?: string;
+      };
+      
+      const now = Date.now();
+      this.sql.exec(`
+        INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        body.key,
+        JSON.stringify(body.value),
+        body.attributes.type,
+        body.attributes.contentType || null,
+        body.attributes.readonly ? 1 : 0,
+        body.attributes.visible ? 1 : 0,
+        body.attributes.hardcoded ? 1 : 0,
+        body.attributes.template ? 1 : 0,
+        body.attributes.tags ? JSON.stringify(body.attributes.tags) : null,
+        now
+      );
+
+      // Broadcast to connected WebSocket clients
+      this.broadcast({
+        type: 'key_updated',
+        key: body.key,
+        value: body.value,
+        attributes: body.attributes,
+        updatedBy: body.userId || 'system',
+        timestamp: now,
+      });
+
+      return Response.json({ success: true });
+    }
+
+    // DELETE /keys/:key - Delete a key
+    if (url.pathname.startsWith('/keys/') && request.method === 'DELETE') {
+      const key = decodeURIComponent(url.pathname.slice(6));
+      const now = Date.now();
+      
+      this.sql.exec('DELETE FROM keys WHERE name = ?', key);
+
+      // Broadcast to connected WebSocket clients
+      this.broadcast({
+        type: 'key_deleted',
+        key,
+        deletedBy: 'system',
+        timestamp: now,
+      });
+
+      return Response.json({ success: true });
+    }
+
+    return Response.json({ error: 'WebSocket required or invalid endpoint' }, { status: 400 });
   }
 
   private handleWebSocket(request: Request): Response {
