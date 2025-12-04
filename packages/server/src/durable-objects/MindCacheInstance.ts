@@ -179,6 +179,7 @@ export class MindCacheInstanceDO implements DurableObject {
     );
 
     // Broadcast to all connected clients
+    // Broadcast to ALL clients including sender for real-time sync
     this.broadcast({
       type: 'key_updated',
       key,
@@ -186,7 +187,7 @@ export class MindCacheInstanceDO implements DurableObject {
       attributes,
       updatedBy: session.userId,
       timestamp: now,
-    }, ws);
+    });
   }
 
   private async handleDelete(ws: WebSocket, key: string): Promise<void> {
@@ -201,12 +202,13 @@ export class MindCacheInstanceDO implements DurableObject {
     this.sql.exec('DELETE FROM keys WHERE name = ?', key);
 
     // Broadcast to all connected clients
+    // Broadcast to ALL clients including sender
     this.broadcast({
       type: 'key_deleted',
       key,
       deletedBy: session.userId,
       timestamp: now,
-    }, ws);
+    });
   }
 
   private async handleClear(ws: WebSocket): Promise<void> {
@@ -221,11 +223,12 @@ export class MindCacheInstanceDO implements DurableObject {
     this.sql.exec('DELETE FROM keys');
 
     // Broadcast to all connected clients
+    // Broadcast to ALL clients including sender
     this.broadcast({
       type: 'cleared',
       clearedBy: session.userId,
       timestamp: now,
-    }, ws);
+    });
   }
 
   private getAllKeys(): Record<string, KeyEntry> {
