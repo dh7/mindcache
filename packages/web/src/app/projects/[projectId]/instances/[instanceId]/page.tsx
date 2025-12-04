@@ -59,6 +59,7 @@ export default function InstanceEditorPage() {
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
+      console.log('Received message:', msg);
       
       switch (msg.type) {
         case 'auth_success':
@@ -116,8 +117,12 @@ export default function InstanceEditorPage() {
   }, [connect]);
 
   const sendMessage = (msg: object) => {
+    console.log('Sending message:', msg, 'WebSocket state:', wsRef.current?.readyState);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
+      console.log('Message sent successfully');
+    } else {
+      console.error('WebSocket not open, cannot send');
     }
   };
 

@@ -15,14 +15,12 @@ import type {
   KeyEntry 
 } from '@mindcache/shared';
 
-interface Session {
-  webSocket: WebSocket;
+interface SessionData {
   userId: string;
   permission: 'read' | 'write' | 'admin';
 }
 
 export class MindCacheInstanceDO implements DurableObject {
-  private sessions: Map<WebSocket, Session> = new Map();
   private sql: SqlStorage;
 
   constructor(
@@ -31,6 +29,15 @@ export class MindCacheInstanceDO implements DurableObject {
   ) {
     this.sql = state.storage.sql;
     this.initializeDatabase();
+  }
+
+  // Use WebSocket attachment for hibernation-safe session storage
+  private getSession(ws: WebSocket): SessionData | null {
+    return (ws as unknown as { deserializeAttachment(): SessionData | null }).deserializeAttachment();
+  }
+
+  private setSession(ws: WebSocket, session: SessionData): void {
+    (ws as unknown as { serializeAttachment(data: SessionData): void }).serializeAttachment(session);
   }
 
   private initializeDatabase(): void {
@@ -85,13 +92,13 @@ export class MindCacheInstanceDO implements DurableObject {
     }
   }
 
-  async webSocketClose(ws: WebSocket): Promise<void> {
-    this.sessions.delete(ws);
+  async webSocketClose(_ws: WebSocket): Promise<void> {
+    // Session is attached to ws, cleaned up automatically
   }
 
-  async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+  async webSocketError(_ws: WebSocket, error: unknown): Promise<void> {
     console.error('WebSocket error:', error);
-    this.sessions.delete(ws);
+    // Session is attached to ws, cleaned up automatically
   }
 
   private async handleMessage(ws: WebSocket, message: ClientMessage): Promise<void> {
@@ -122,13 +129,13 @@ export class MindCacheInstanceDO implements DurableObject {
     // TODO: Verify API key against D1 database
     // For now, accept all connections in development
     
-    const session: Session = {
-      webSocket: ws,
+    const session: SessionData = {
       userId: 'dev-user',
       permission: 'write',
     };
     
-    this.sessions.set(ws, session);
+    // Attach session to WebSocket (survives hibernation)
+    this.setSession(ws, session);
 
     // Send auth success
     this.send(ws, {
@@ -153,7 +160,7 @@ export class MindCacheInstanceDO implements DurableObject {
     value: unknown, 
     attributes: KeyAttributes
   ): Promise<void> {
-    const session = this.sessions.get(ws);
+    const session = this.getSession(ws);
     if (!session || session.permission === 'read') {
       this.sendError(ws, 'Write permission required', 'NO_PERMISSION');
       return;
@@ -191,7 +198,7 @@ export class MindCacheInstanceDO implements DurableObject {
   }
 
   private async handleDelete(ws: WebSocket, key: string): Promise<void> {
-    const session = this.sessions.get(ws);
+    const session = this.getSession(ws);
     if (!session || session.permission === 'read') {
       this.sendError(ws, 'Write permission required', 'NO_PERMISSION');
       return;
@@ -212,7 +219,7 @@ export class MindCacheInstanceDO implements DurableObject {
   }
 
   private async handleClear(ws: WebSocket): Promise<void> {
-    const session = this.sessions.get(ws);
+    const session = this.getSession(ws);
     if (!session || session.permission !== 'admin') {
       this.sendError(ws, 'Admin permission required', 'NO_PERMISSION');
       return;
@@ -268,11 +275,11 @@ export class MindCacheInstanceDO implements DurableObject {
     this.send(ws, { type: 'error', error, code });
   }
 
-  private broadcast(message: ServerMessage, excludeWs?: WebSocket): void {
-    for (const [ws] of this.sessions) {
-      if (ws !== excludeWs) {
-        this.send(ws, message);
-      }
+  private broadcast(message: ServerMessage): void {
+    // Use state.getWebSockets() which survives hibernation
+    const webSockets = this.state.getWebSockets();
+    for (const ws of webSockets) {
+      this.send(ws, message);
     }
   }
 }
