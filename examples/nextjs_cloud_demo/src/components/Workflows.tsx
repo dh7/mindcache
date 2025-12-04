@@ -1,0 +1,192 @@
+'use client';
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { MindCache } from 'mindcache';
+
+interface WorkflowsProps {
+  onSendPrompt: (prompt: string) => void;
+  isExecuting: boolean;
+  onExecutionComplete: () => void;
+  stmLoaded?: boolean;
+  stmVersion?: number;
+  workflow?: string;
+  mindcacheInstance?: MindCache;
+}
+
+export default function Workflows({ onSendPrompt, isExecuting, onExecutionComplete, stmLoaded, stmVersion, workflow, mindcacheInstance }: WorkflowsProps) {
+  const defaultInstance = useRef(new MindCache());
+  const mindcacheRef = mindcacheInstance || defaultInstance.current;
+
+  const getWorkflowText = useCallback(() => {
+    if (workflow) {
+      return workflow;
+    }
+    
+    if (!stmLoaded) {
+      return '1. Say hello to the user';
+    }
+
+    const workflowTagged = mindcacheRef.getTagged("Workflow");
+    const workflowText = workflowTagged 
+      ? workflowTagged.split(': ').slice(1).join(': ')
+      : '1. Say hello to the user';
+    
+    return workflowText;
+  }, [stmLoaded, workflow, mindcacheRef]);
+
+  const [workflowText, setWorkflowText] = useState('1. Say hello to the user');
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const executionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (stmLoaded) {
+      const newWorkflowText = getWorkflowText();
+      setWorkflowText(newWorkflowText);
+    }
+  }, [stmLoaded, stmVersion, getWorkflowText]);
+
+  const parseWorkflowSteps = (text: string): string[] => {
+    const lines = text.split('\n').filter(line => line.trim());
+    const steps: string[] = [];
+    
+    for (const line of lines) {
+      const match = line.match(/^\s*(?:\d+[.)]\s*|[-*]\s*)(.*)/);
+      if (match && match[1].trim()) {
+        steps.push(match[1].trim());
+      }
+    }
+    
+    return steps;
+  };
+
+  const steps = parseWorkflowSteps(workflowText);
+
+  const startWorkflow = () => {
+    if (steps.length === 0) {
+      return;
+    }
+    
+    setIsRunning(true);
+    setCurrentStep(0);
+    executeStep(0);
+  };
+
+  const executeStep = useCallback((stepIndex: number) => {
+    if (stepIndex >= steps.length) {
+      setIsRunning(false);
+      setCurrentStep(0);
+      onExecutionComplete();
+      return;
+    }
+
+    const rawPrompt = steps[stepIndex];
+    setCurrentStep(stepIndex);
+    onSendPrompt(rawPrompt);
+  }, [steps, onExecutionComplete, onSendPrompt]);
+
+  const executeNextStep = useCallback(() => {
+    if (executionTimeoutRef.current) {
+      clearTimeout(executionTimeoutRef.current);
+      executionTimeoutRef.current = null;
+    }
+
+    const nextStep = currentStep + 1;
+    if (nextStep < steps.length) {
+      setTimeout(() => executeStep(nextStep), 500);
+    } else {
+      setIsRunning(false);
+      setCurrentStep(0);
+      onExecutionComplete();
+    }
+  }, [currentStep, steps.length, onExecutionComplete, executeStep]);
+
+  const stopWorkflow = () => {
+    if (executionTimeoutRef.current) {
+      clearTimeout(executionTimeoutRef.current);
+      executionTimeoutRef.current = null;
+    }
+    setIsRunning(false);
+    setCurrentStep(0);
+  };
+
+  useEffect(() => {
+    if (isRunning && !isExecuting) {
+      const timeoutId = setTimeout(() => {
+        executeNextStep();
+      }, 2000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isExecuting, isRunning, executeNextStep]);
+
+  return (
+    <div className="border border-gray-600 rounded flex-shrink-0">
+      <div className="flex items-center justify-between p-2 bg-black">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="text-cyan-400 hover:text-cyan-300 transition-colors font-mono text-sm"
+            title={isExpanded ? "Collapse" : "Expand"}
+          >
+            {isExpanded ? '▼ ' : '▶ '}          
+            <span className="text-cyan-400 font-mono text-sm">Workflow</span>
+            {isRunning && (
+              <span className="text-yellow-400 text-sm font-mono">
+                [{currentStep + 1}/{steps.length}]
+              </span>
+            )}
+          </button>
+        </div>
+        
+        <div className="flex gap-2">
+          {!isRunning ? (
+            <button
+              onClick={startWorkflow}
+              disabled={steps.length === 0 || isExecuting}
+              className="bg-cyan-400 text-black font-mono px-2 py-1 text-sm rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Run ({steps.length})
+            </button>
+          ) : (
+            <button
+              onClick={stopWorkflow}
+              className="bg-red-400 text-black font-mono px-2 py-1 text-sm rounded hover:bg-red-300 transition-colors"
+            >
+              Stop
+            </button>
+          )}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="p-2 border-t border-gray-600">
+          {steps.length > 0 ? (
+            <div className="space-y-1">
+              {steps.map((step, index) => (
+                <div
+                  key={index}
+                  className={`text-xs font-mono ${
+                    isRunning && index === currentStep
+                      ? 'text-yellow-400'
+                      : isRunning && index < currentStep
+                      ? 'text-gray-500 opacity-60'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {isRunning && index < currentStep && '✓ '}
+                  {isRunning && index === currentStep && '⏳ '}
+                  {index + 1}. {step}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-gray-500 text-xs font-mono">No workflow steps defined</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
