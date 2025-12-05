@@ -37,3 +37,24 @@ ENVIRONMENT = "development"
 # wrangler secret put CLERK_SECRET_KEY
 # wrangler secret put CLERK_WEBHOOK_SECRET
 
+# ===================
+# Production Environment
+# ===================
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.production.durable_objects]
+bindings = [
+  { name = "MINDCACHE_INSTANCE", class_name = "MindCacheInstanceDO" }
+]
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "mindcache-db"
+database_id = "29e53281-6ad2-4c90-b7de-27d55fcad594"
+
+# To set production secrets:
+# wrangler secret put CLERK_SECRET_KEY --env production
+# wrangler secret put CLERK_WEBHOOK_SECRET --env production
+# wrangler secret put OPENAI_API_KEY --env production
+
