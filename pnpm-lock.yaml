@@ -12,7 +12,7 @@ importers:
         specifier: ^2.3.0
         version: 2.6.1
 
-  examples/nextjs_demo:
+  examples/nextjs_client_demo:
     dependencies:
       '@ai-sdk/openai':
         specifier: ^2.0.30
@@ -47,6 +47,88 @@ importers:
       mindcache:
         specifier: ^1.0.0
         version: 1.0.1(ai@5.0.104(zod@4.1.13))
+      next:
+        specifier: ^14.2.32
+        version: 14.2.33(@opentelemetry/api@1.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react:
+        specifier: ^18
+        version: 18.3.1
+      react-dom:
+        specifier: ^18
+        version: 18.3.1(react@18.3.1)
+      tailwind-merge:
+        specifier: ^2.0.0
+        version: 2.6.0
+      tailwindcss-animate:
+        specifier: ^1.0.7
+        version: 1.0.7(tailwindcss@3.4.18)
+      zod:
+        specifier: ^4.1.9
+        version: 4.1.13
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.25
+      '@types/react':
+        specifier: ^18
+        version: 18.3.27
+      '@types/react-dom':
+        specifier: ^18
+        version: 18.3.7(@types/react@18.3.27)
+      autoprefixer:
+        specifier: ^10.0.1
+        version: 10.4.22(postcss@8.5.6)
+      eslint:
+        specifier: ^8
+        version: 8.57.1
+      eslint-config-next:
+        specifier: 14.0.4
+        version: 14.0.4(eslint@8.57.1)(typescript@5.9.3)
+      postcss:
+        specifier: ^8
+        version: 8.5.6
+      tailwindcss:
+        specifier: ^3.3.0
+        version: 3.4.18
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+
+  examples/nextjs_cloud_demo:
+    dependencies:
+      '@ai-sdk/openai':
+        specifier: ^2.0.30
+        version: 2.0.75(zod@4.1.13)
+      '@ai-sdk/react':
+        specifier: ^2.0.45
+        version: 2.0.104(react@18.3.1)(zod@4.1.13)
+      '@mermaid-js/mermaid-cli':
+        specifier: ^11.4.1
+        version: 11.12.0(@types/react@18.3.27)(puppeteer@23.11.1(typescript@5.9.3))
+      '@radix-ui/react-label':
+        specifier: ^2.0.2
+        version: 2.1.8(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-select':
+        specifier: ^2.0.0
+        version: 2.2.6(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@radix-ui/react-slot':
+        specifier: ^1.0.2
+        version: 1.2.4(@types/react@18.3.27)(react@18.3.1)
+      ai:
+        specifier: ^5.0.45
+        version: 5.0.104(zod@4.1.13)
+      class-variance-authority:
+        specifier: ^0.7.0
+        version: 0.7.1
+      clsx:
+        specifier: ^2.0.0
+        version: 2.1.1
+      lucide-react:
+        specifier: ^0.294.0
+        version: 0.294.0(react@18.3.1)
+      mindcache:
+        specifier: workspace:*
+        version: link:../../packages/mindcache
       next:
         specifier: ^14.2.32
         version: 14.2.33(@opentelemetry/api@1.9.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -7291,7 +7373,7 @@ snapshots:
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.1)
       eslint-plugin-react: 7.37.5(eslint@8.57.1)
       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.57.1)
@@ -7321,7 +7403,7 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -7336,7 +7418,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9

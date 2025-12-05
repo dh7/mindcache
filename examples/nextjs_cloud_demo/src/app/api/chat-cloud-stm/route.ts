@@ -1,187 +1,68 @@
 import { NextRequest } from 'next/server';
-import { streamText, tool, convertToModelMessages, stepCountIs, UIMessage } from 'ai';
-import { openai } from '@ai-sdk/openai';
-import { z } from 'zod';
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
+/**
+ * Proxy chat requests to MindCache Cloud API
+ */
 export const POST = async (req: NextRequest) => {
-  console.log('🤖 Cloud Chat API called');
-  const { messages, toolSchemas, systemPrompt }: {
-    messages: UIMessage[];
-    toolSchemas?: Record<string, { description: string }>;
-    systemPrompt?: string;
-  } = await req.json();
-  
-  console.log('📨 Request details:', {
-    messageCount: messages.length,
-    toolSchemaCount: Object.keys(toolSchemas || {}).length,
-    toolNames: Object.keys(toolSchemas || {}),
-    hasSystemPrompt: !!systemPrompt,
-    lastMessageRole: messages[messages.length - 1]?.role,
-    lastMessagePreview: (messages[messages.length - 1]?.parts?.[0] as any)?.text?.substring(0, 100) + '...'
-  });
+  try {
+    const apiKey = process.env.MINDCACHE_API_KEY;
+    const apiUrl = process.env.MINDCACHE_API_URL || 'https://mindcache-api.dh7777777.workers.dev';
 
-  // Process messages: use metadata.processedText for LLM if available
-  const processedMessages = messages.map(msg => {
-    if (msg.metadata && (msg.metadata as any).processedText) {
-      return {
-        ...msg,
-        parts: msg.parts?.map(part => {
-          if (part.type === 'text') {
-            return { ...part, text: (msg.metadata as any).processedText };
-          }
-          return part;
-        })
-      };
+    if (!apiKey) {
+      return Response.json({ error: 'MINDCACHE_API_KEY not configured' }, { status: 500 });
     }
-    return msg;
-  });
 
-  // Convert client tool schemas to server tool definitions
-  const serverTools: Record<string, unknown> = {};
-  
-  // Add generate_image tool
-  serverTools['generate_image'] = tool({
-    description: 'REQUIRED for ALL image tasks: Generate new images or edit existing images using AI. Only includes existing images when explicitly referenced with {{image_name}} syntax. Without explicit references, generates completely new images. Use the optional imageName parameter to specify a custom name for storing the image in the STM (Short Term Memory).',
-    inputSchema: z.object({
-      prompt: z.string().describe('The prompt for image generation or editing. Use {{image_name}} to reference specific images for editing (e.g., "Edit {{my_image}} to be brighter"). Without explicit references, generates new images.'),
-      imageName: z.string().optional().describe('Optional name for the generated/edited image to store in the STM (Short Term Memory)')
-    }),
-  });
+    const body = await req.json();
+    const { messages, mode = 'use', instanceId } = body;
 
-  // Add analyze_image tool
-  serverTools['analyze_image'] = tool({
-    description: 'Analyze specific images stored in STM (Short Term Memory) using AI vision. REQUIRES explicit {{image_name}} references in the prompt - will not analyze visible images automatically. The analysis result will be stored back in STM for future reference.',
-    inputSchema: z.object({
-      prompt: z.string().describe('The analysis prompt. MUST include {{image_name}} to reference specific images from STM (e.g., "Analyze {{generated_image_1}} and describe the colors"). Will fail if no explicit image references are provided.'),
-      analysisName: z.string().optional().describe('Optional name for storing the analysis result in STM (defaults to analysis_timestamp)')
-    }),
-  });
+    if (!instanceId) {
+      return Response.json({ error: 'instanceId required' }, { status: 400 });
+    }
 
-  // Add generate_mermaid_diagram tool
-  serverTools['generate_mermaid_diagram'] = tool({
-    description: 'Generate a professional diagram image from Mermaid diagram code. Creates clean, high-quality diagrams with proper text rendering. The generated image will be stored in STM.',
-    inputSchema: z.object({
-      mermaidCode: z.string().describe('The Mermaid diagram code (e.g., "graph TD\\n  A[Start] --> B[End]")'),
-      imageName: z.string().optional().describe('Optional name for storing the generated diagram image in STM (defaults to diagram_timestamp)')
-    }),
-  });
-  
-  if (toolSchemas && typeof toolSchemas === 'object') {
-    console.log('🔧 Processing tool schemas:', Object.keys(toolSchemas));
-    Object.entries(toolSchemas).forEach(([toolName, schema]: [string, { description: string }]) => {
-      if (toolName === 'generate_image') {
-        console.log('🖼️ Skipping generate_image - defined directly on server');
-        return;
-      }
-      
-      console.log(`📝 Setting up write tool: ${toolName}`);
-      serverTools[toolName] = tool({
-        description: schema.description,
-        inputSchema: z.object({
-          value: z.string().describe(`The value to write to ${toolName.replace('write_', '')}`)
-        }),
-      });
+    console.log('☁️ Proxying chat to MindCache Cloud:', {
+      instanceId,
+      messageCount: messages?.length,
+      mode
     });
-  }
 
-  // Build the final system prompt
-  const baseInstructions = `Here are some facts and instructions for you to follow.
+    // Forward to MindCache Cloud Chat API
+    const response = await fetch(`${apiUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        messages,
+        instanceId,
+        mode,
+      }),
+    });
 
-IMPORTANT IMAGE HANDLING RULES:
-- When users ask to edit, modify, change, or update images, use the generate_image tool with explicit @image_name references (e.g., "Edit @my_image")
-- When users ask to create new images, use the generate_image tool without any @image_name references
-- When users ask to analyze, describe, or examine images, use the analyze_image tool with explicit @image_name references
-- BOTH tools only include images when explicitly referenced with @image_name - they never auto-include visible images
-- The analyze_image tool REQUIRES explicit @image_name references and will fail without them
-- NEVER say you cannot edit or analyze images - you have both generate_image and analyze_image tools available
-- Always use explicit @image_name references when working with specific images from STM
-
-DIAGRAM GENERATION:
-- When users ask to create diagrams, flowcharts, or visualizations, use the generate_mermaid_diagram tool
-- This tool creates clean, professional diagrams with proper text rendering using Mermaid syntax
-- DO NOT include %%{init:...}%% or --- config frontmatter - it's automatically applied with handDrawn styling
-- For better layouts, prefer simple linear flows (graph TD) instead of complex subgraphs when possible
-- If using subgraphs, connect them with arrows to force vertical stacking (subgraph1 --> subgraph2)
-- The generated diagram will be stored as an image in STM for future reference
-- Examples: flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, gantt charts, etc.
-
-CLOUD SYNC:
-- All data is automatically synced to the cloud in real-time
-- Changes made here will be reflected across all connected clients`;
-
-  const finalSystem = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0
-    ? `${baseInstructions}\n\n${systemPrompt}`
-    : baseInstructions;
-
-  // Add OpenAI's built-in web search tool
-  const webSearchTool = {
-    web_search: openai.tools.webSearch({
-      searchContextSize: 'high',
-    }),
-  };
-
-  // Combine client tools with web search
-  const allTools = { ...serverTools, ...webSearchTool } as any;
-  
-  console.log('🎯 Final tool setup:', {
-    serverToolCount: Object.keys(serverTools).length,
-    serverToolNames: Object.keys(serverTools),
-    totalToolCount: Object.keys(allTools).length,
-    hasWebSearch: 'web_search' in allTools
-  });
-
-  console.log('🔍 SERVER: Final system prompt preview:', finalSystem.substring(0, 200) + '...');
-  
-  const result = await streamText({
-    model: openai('gpt-4o'),
-    messages: convertToModelMessages(processedMessages),
-    system: finalSystem,
-    tools: allTools,
-    stopWhen: [stepCountIs(5)],
-    onFinish: (result) => {
-      console.log('🏁 Stream finished:', {
-        finishReason: result.finishReason,
-        usage: result.usage,
-        toolCalls: result.toolCalls?.length || 0,
-        toolCallNames: result.toolCalls?.map(tc => tc.toolName) || [],
-        responsePreview: result.text?.substring(0, 100) + '...'
-      });
-      
-      result.toolCalls?.forEach((toolCall, index) => {
-        console.log(`🔧 Tool call ${index + 1}:`, {
-          toolName: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
-          input: (toolCall as any).input || (toolCall as any).args
-        });
-      });
-    },
-    onStepFinish: (step) => {
-      console.log('👣 Step finished:', {
-        text: step.text?.substring(0, 100) + '...',
-        toolCalls: step.toolCalls?.length || 0,
-        toolResults: step.toolResults?.length || 0,
-        usage: step.usage,
-        finishReason: step.finishReason
-      });
-      
-      step.toolCalls?.forEach((toolCall, index) => {
-        console.log(`  🔧 Step tool call ${index + 1}:`, {
-          toolName: toolCall.toolName,
-          input: (toolCall as any).input || (toolCall as any).args
-        });
-      });
-      
-      step.toolResults?.forEach((result, index) => {
-        console.log(`  ✅ Step tool result ${index + 1}:`, {
-          toolCallId: result.toolCallId,
-          output: (result as any).output || (result as any).result
-        });
-      });
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('☁️ MindCache Cloud error:', error);
+      return Response.json(
+        { error: `MindCache Cloud error: ${error}` },
+        { status: response.status }
+      );
     }
-  });
 
-  return result.toUIMessageStreamResponse();
+    // Stream the response back
+    return new Response(response.body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+  } catch (error) {
+    console.error('☁️ Chat proxy error:', error);
+    return Response.json(
+      { error: 'Failed to connect to MindCache Cloud' },
+      { status: 500 }
+    );
+  }
 };
-
