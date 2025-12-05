@@ -92,6 +92,9 @@ export function ProjectList() {
                     <p className="text-gray-400 text-sm mt-1">{project.description}</p>
                   )}
                   <p className="text-gray-500 text-xs mt-2">
+                    Project ID: <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded select-all">{project.id}</span>
+                  </p>
+                  <p className="text-gray-500 text-xs mt-1">
                     Created {new Date(project.created_at * 1000).toLocaleDateString()}
                   </p>
                 </div>
