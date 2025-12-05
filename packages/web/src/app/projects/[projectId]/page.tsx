@@ -119,6 +119,9 @@ export default function ProjectPage() {
             ← Back to Projects
           </Link>
           <h1 className="text-3xl font-bold mt-2">{project.name}</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            <span className="font-mono bg-gray-800 px-2 py-1 rounded select-all">{project.id}</span>
+          </p>
           {project.description && (
             <p className="text-gray-400 mt-2">{project.description}</p>
           )}

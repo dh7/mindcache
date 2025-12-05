@@ -4,6 +4,21 @@ This monorepo contains the MindCache 2.0 cloud infrastructure.
 
 ## Quick Start (Local Development)
 
+### One Command Start
+
+```bash
+cd packages
+./dev.sh
+```
+
+This script:
+- ✓ Validates all environment variables
+- ✓ Starts server on http://localhost:8787
+- ✓ Starts frontend on http://localhost:3000
+- ✓ Press `Ctrl+C` to stop both cleanly
+
+---
+
 ### Prerequisites
 
 - Node.js >= 18
