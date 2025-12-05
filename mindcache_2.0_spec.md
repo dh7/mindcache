@@ -1,7 +1,7 @@
 # MindCache 2.0 Specification
 
-**Version**: 1.1-alpha  
-**Last Updated**: 2024-12-04  
+**Version**: 1.2-alpha  
+**Last Updated**: 2024-12-05  
 **Production URL**: https://mindcache-api.dh7777777.workers.dev
 
 ## Overview
@@ -200,6 +200,55 @@ Web UI for:
 - ✅ Native WebSocket (best real-time)
 - ✅ Strong consistency (single-threaded, no conflicts)
 - ✅ Edge-deployed (low latency globally)
+
+---
+
+### Hybrid Architecture: DO + External Chat
+
+**Design Decision**: Keep Durable Objects lightweight (state only), delegate AI processing to external services.
+
+```
+┌─────────────┐     WebSocket      ┌─────────────────┐
+│  Frontend   │◄──────────────────►│ Durable Object  │
+│             │   (STM sync only)  │ (State manager) │
+└──────┬──────┘                    └────────▲────────┘
+       │                                    │
+       │ POST /api/chat                     │ HTTP: GET/PUT /stm
+       ▼                                    │
+┌─────────────┐                             │
+│  Next.js    │─────────────────────────────┘
+│  API Route  │──────► OpenAI
+└─────────────┘
+```
+
+**Why Hybrid?**
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| All-in-DO | Single connection, atomic STM ops | DO blocks on AI calls, higher billing |
+| Hybrid | DO stays responsive, scales independently | Extra hop for STM, two connection types |
+
+**Hybrid wins** because:
+1. DO is single-threaded — long AI calls would block all other operations
+2. DO bills per duration — AI latency increases costs
+3. Separation of concerns — state vs compute
+4. Frontend can use Vercel AI SDK features
+
+**DO Responsibilities:**
+- WebSocket for real-time STM sync to frontend
+- HTTP endpoints: `GET /stm`, `PUT /stm` for chat route
+- State management only (no AI processing)
+
+**Chat Route Responsibilities:**
+1. Fetch STM from DO via HTTP
+2. Build context from STM keys
+3. Call OpenAI with tools
+4. Write updated STM back to DO
+5. Stream response to frontend
+
+**Next.js API Routes (minimal):**
+- `/api/instances` — Bootstrap: list/create demo instances (keeps API key server-side)
+- `/api/chat` — Chat proxy: fetches STM → calls AI → writes STM back
 
 ---
 
@@ -786,6 +835,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-05 | 1.2-alpha | Added Hybrid Architecture (DO for state, external chat). Simplified Next.js routes to `/api/instances` + `/api/chat` only |
 | 2024-12-04 | 1.1-alpha | ✅ **Phase 3 Complete!** Chat API + LLM Tools (transform, generate-image, analyze-image) |
 | 2024-11-30 | 1.0-alpha | 🚀 **Deployed to production!** API live at workers.dev |
 | 2024-11-30 | 0.9 | Phase 1 partial: Instance editor UI with real-time WebSocket sync |
