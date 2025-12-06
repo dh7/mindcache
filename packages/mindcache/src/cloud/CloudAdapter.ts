@@ -15,6 +15,10 @@ const MAX_RECONNECT_DELAY = 30000;
 /**
  * CloudAdapter connects a MindCache instance to the cloud service
  * for real-time sync and persistence.
+ * 
+ * Auth modes:
+ * 1. Token (recommended): Pass a short-lived token from /api/ws-token
+ * 2. API Key (server-to-server): Pass apiKey for direct connections
  */
 export class CloudAdapter {
   private ws: WebSocket | null = null;
@@ -25,9 +29,26 @@ export class CloudAdapter {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private _state: ConnectionState = 'disconnected';
   private listeners: Partial<{ [K in keyof CloudAdapterEvents]: CloudAdapterEvents[K][] }> = {};
+  private token: string | null = null;
 
   constructor(private config: CloudConfig) {
     this.config.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
+  }
+
+  /**
+   * Set auth token (short-lived, from /api/ws-token)
+   * Call this before connect() or use setTokenProvider for auto-refresh
+   */
+  setToken(token: string): void {
+    this.token = token;
+  }
+
+  /**
+   * Set a function that returns a fresh token
+   * Used for automatic token refresh on reconnect
+   */
+  setTokenProvider(provider: () => Promise<string>): void {
+    this.config.tokenProvider = provider;
   }
 
   /**
@@ -51,9 +72,11 @@ export class CloudAdapter {
     const listener = () => {
       // Skip if this change came from remote
       if (mc.isRemoteUpdate()) {
+        console.log('☁️ CloudAdapter: Skipping remote update');
         return;
       }
 
+      console.log('☁️ CloudAdapter: Local change detected, syncing...');
       // Get the current state and queue changes
       // In a real implementation, we'd track individual changes
       // For now, we'll sync the entire state on change
@@ -62,6 +85,7 @@ export class CloudAdapter {
 
     mc.subscribeToAll(listener);
     this.unsubscribe = () => mc.unsubscribeFromAll(listener);
+    console.log('☁️ CloudAdapter: Attached to MindCache instance');
   }
 
   /**
@@ -78,16 +102,27 @@ export class CloudAdapter {
   /**
    * Connect to the cloud service
    */
-  connect(): void {
+  async connect(): Promise<void> {
     if (this._state === 'connecting' || this._state === 'connected') {
       return;
     }
 
     this._state = 'connecting';
     
-    const url = `${this.config.baseUrl}/sync/${this.config.instanceId}`;
-    
     try {
+      // Get token if we have a provider and no current token
+      if (this.config.tokenProvider && !this.token) {
+        this.token = await this.config.tokenProvider();
+      }
+      
+      // Build URL with token if available
+      let url = `${this.config.baseUrl}/sync/${this.config.instanceId}`;
+      if (this.token) {
+        url += `?token=${encodeURIComponent(this.token)}`;
+        // Token is single-use, clear it after connecting
+        this.token = null;
+      }
+      
       this.ws = new WebSocket(url);
       this.setupWebSocket();
     } catch (error) {
@@ -156,11 +191,16 @@ export class CloudAdapter {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      // Authenticate
-      this.ws!.send(JSON.stringify({ 
-        type: 'auth', 
-        apiKey: this.config.apiKey 
-      }));
+      // If using API key (server-to-server), send auth message
+      // If using token, auth was already verified by Worker
+      if (this.config.apiKey) {
+        this.ws!.send(JSON.stringify({ 
+          type: 'auth', 
+          apiKey: this.config.apiKey 
+        }));
+      }
+      // If using token auth, Worker already authenticated us
+      // and will send sync message directly
     };
 
     this.ws.onmessage = (event) => {
@@ -275,9 +315,21 @@ export class CloudAdapter {
       MAX_RECONNECT_DELAY
     );
 
-    this.reconnectTimeout = setTimeout(() => {
+    this.reconnectTimeout = setTimeout(async () => {
       this.reconnectTimeout = null;
       this.reconnectAttempts++;
+      
+      // Get fresh token before reconnecting (if using token auth)
+      if (this.config.tokenProvider) {
+        try {
+          this.token = await this.config.tokenProvider();
+        } catch (error) {
+          console.error('MindCache Cloud: Failed to get token for reconnect:', error);
+          this.emit('error', error as Error);
+          return;
+        }
+      }
+      
       this.connect();
     }, delay);
   }
@@ -288,7 +340,10 @@ export class CloudAdapter {
     // Get all current entries and sync them
     const entries = this.mindcache.serialize();
     
+    console.log('☁️ CloudAdapter: Syncing local changes:', Object.keys(entries));
+    
     Object.entries(entries).forEach(([key, entry]) => {
+      console.log('☁️ CloudAdapter: Pushing key:', key, '=', entry.value);
       this.push({
         type: 'set',
         key,

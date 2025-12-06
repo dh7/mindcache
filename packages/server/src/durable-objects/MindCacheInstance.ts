@@ -138,8 +138,35 @@ export class MindCacheInstanceDO implements DurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
+    // Check if pre-authenticated by Worker (token auth)
+    const preAuth = request.headers.get('X-MindCache-PreAuth') === 'true';
+    const userId = request.headers.get('X-MindCache-UserId') || 'unknown';
+    const permission = (request.headers.get('X-MindCache-Permission') || 'read') as 'read' | 'write' | 'admin';
+
     // Accept the WebSocket
     this.state.acceptWebSocket(server);
+
+    // If pre-authenticated, set session and send sync immediately
+    if (preAuth) {
+      const session: SessionData = { userId, permission };
+      this.setSession(server, session);
+      
+      // Send auth success
+      this.send(server, {
+        type: 'auth_success',
+        instanceId: this.state.id.toString(),
+        userId: session.userId,
+        permission: session.permission,
+      });
+
+      // Send current state
+      const data = this.getAllKeys();
+      this.send(server, {
+        type: 'sync',
+        data,
+        instanceId: this.state.id.toString(),
+      });
+    }
 
     return new Response(null, {
       status: 101,

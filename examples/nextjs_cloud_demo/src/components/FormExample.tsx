@@ -1,9 +1,14 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { MindCache, CloudAdapter, ConnectionState } from 'mindcache';
 import { useInstances } from './InstanceProvider';
 import ChatInterface from './ChatInterface';
+
+// Get WebSocket URL from env (URL is not secret, only the API key is)
+const WS_BASE_URL = (process.env.NEXT_PUBLIC_MINDCACHE_API_URL || 'http://localhost:8787')
+  .replace('https://', 'wss://')
+  .replace('http://', 'ws://');
 
 export default function FormExample() {
   const { getInstanceId } = useInstances();
@@ -21,43 +26,75 @@ export default function FormExample() {
   const [stmVersion, setStmVersion] = useState(0);
   const [stmLoaded, setStmLoaded] = useState(false);
 
+  // Token provider - fetches short-lived token from our API route
+  // API key stays server-side, never exposed to browser
+  const getToken = useCallback(async (): Promise<string> => {
+    if (!instanceId) throw new Error('No instanceId');
+    
+    console.log('☁️ Fetching WS token for instance:', instanceId);
+    const response = await fetch(`/api/ws-token?instanceId=${instanceId}`);
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to get token');
+    }
+    
+    const data = await response.json();
+    console.log('☁️ Got WS token');
+    return data.token;
+  }, [instanceId]);
+
   useEffect(() => {
     if (!instanceId) return;
 
-    const apiKey = process.env.NEXT_PUBLIC_MINDCACHE_API_KEY;
-    const baseUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL?.replace('https://', 'wss://');
+    console.log('☁️ FormExample init:', { instanceId, wsUrl: WS_BASE_URL });
 
-    // Create STM keys
-    ['name', 'role', 'age', 'company'].forEach(key => {
-      if (!mindcacheRef.current.has(key)) {
-        mindcacheRef.current.set_value(key, '', { visible: true, readonly: false });
-      }
+    const adapter = new CloudAdapter({
+      instanceId,
+      projectId: 'cloud-demo',
+      baseUrl: WS_BASE_URL,
+      // No apiKey here - using tokenProvider instead (secure!)
     });
 
-    if (apiKey) {
-      const adapter = new CloudAdapter({
-        apiKey,
-        instanceId,
-        projectId: 'cloud-demo',
-        baseUrl,
-      });
+    // Set token provider for automatic token fetch
+    adapter.setTokenProvider(getToken);
 
-      adapter.on('connected', () => setConnectionState('connected'));
-      adapter.on('disconnected', () => setConnectionState('disconnected'));
-      adapter.on('error', () => setConnectionState('error'));
-      adapter.on('synced', () => {
-        setStmLoaded(true);
-        loadFormData();
-        setStmVersion(v => v + 1);
+    adapter.on('connected', () => {
+      console.log('☁️ WebSocket connected');
+      setConnectionState('connected');
+    });
+    adapter.on('disconnected', () => {
+      console.log('☁️ WebSocket disconnected');
+      setConnectionState('disconnected');
+    });
+    adapter.on('error', (err) => {
+      console.error('☁️ WebSocket error:', err);
+      setConnectionState('error');
+    });
+    adapter.on('synced', () => {
+      console.log('☁️ Data synced from cloud:', mindcacheRef.current.serialize());
+      
+      // Create default keys ONLY AFTER sync, and only if they don't exist in cloud
+      ['name', 'role', 'age', 'company'].forEach(key => {
+        if (!mindcacheRef.current.has(key)) {
+          console.log('☁️ Creating default key:', key);
+          mindcacheRef.current.set_value(key, '', { visible: true, readonly: false });
+        }
       });
-
-      adapter.attach(mindcacheRef.current);
-      cloudAdapterRef.current = adapter;
-      adapter.connect();
-      setConnectionState('connecting');
-    } else {
+      
       setStmLoaded(true);
-    }
+      loadFormData();
+      setStmVersion(v => v + 1);
+    });
+
+    // Attach FIRST so local changes get queued
+    adapter.attach(mindcacheRef.current);
+    cloudAdapterRef.current = adapter;
+    
+    // DON'T create keys here - wait for sync first!
+    
+    adapter.connect();
+    setConnectionState('connecting');
 
     loadFormData();
     mindcacheRef.current.subscribeToAll(loadFormData);
@@ -67,7 +104,7 @@ export default function FormExample() {
       cloudAdapterRef.current?.disconnect();
       cloudAdapterRef.current?.detach();
     };
-  }, [instanceId]);
+  }, [instanceId, getToken]);
 
   const loadFormData = () => {
     setFormData({
@@ -135,18 +172,24 @@ export default function FormExample() {
         </div>
 
         <div className="flex-1 border border-gray-600 rounded p-6 space-y-4">
-          {['name', 'role', 'age', 'company'].map(field => (
-            <div key={field}>
-              <label className="block text-gray-400 font-mono text-sm mb-2 capitalize">{field}</label>
-              <input
-                type="text"
-                value={formData[field as keyof typeof formData]}
-                onChange={(e) => handleChange(field, e.target.value)}
-                className="w-full bg-black border border-gray-600 rounded text-cyan-400 font-mono text-sm px-3 py-2 focus:outline-none focus:border-gray-400"
-                placeholder={`Enter your ${field}`}
-              />
+          {!stmLoaded ? (
+            <div className="flex items-center justify-center h-full text-gray-500">
+              Loading...
             </div>
-          ))}
+          ) : (
+            ['name', 'role', 'age', 'company'].map(field => (
+              <div key={field}>
+                <label className="block text-gray-400 font-mono text-sm mb-2 capitalize">{field}</label>
+                <input
+                  type="text"
+                  value={formData[field as keyof typeof formData]}
+                  onChange={(e) => handleChange(field, e.target.value)}
+                  className="w-full bg-black border border-gray-600 rounded text-cyan-400 font-mono text-sm px-3 py-2 focus:outline-none focus:border-gray-400"
+                  placeholder={`Enter your ${field}`}
+                />
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

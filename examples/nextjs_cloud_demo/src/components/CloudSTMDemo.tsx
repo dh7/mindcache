@@ -38,7 +38,8 @@ export default function CloudSTMDemo() {
     if (!instanceId) return;
 
     const apiKey = process.env.NEXT_PUBLIC_MINDCACHE_API_KEY;
-    const baseUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL?.replace('https://', 'wss://');
+    const rawUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL || '';
+    const baseUrl = rawUrl.replace('https://', 'wss://').replace('http://', 'ws://');
 
     // Initialize with default keys
     const currentKeys = Object.keys(mindcacheRef.current.getAll());

@@ -8,10 +8,12 @@ export interface CloudConfig {
   projectId: string;
   /** The instance ID to connect to */
   instanceId: string;
-  /** API key for authentication */
-  apiKey: string;
+  /** API key for authentication (server-to-server only) */
+  apiKey?: string;
   /** Base URL for the API (optional, defaults to production) */
   baseUrl?: string;
+  /** Token provider function for automatic token refresh */
+  tokenProvider?: () => Promise<string>;
 }
 
 /**

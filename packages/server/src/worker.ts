@@ -19,6 +19,14 @@ import {
 
 export { MindCacheInstanceDO };
 
+// Hash a token for storage/lookup
+async function hashToken(token: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(token));
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export interface Env {
   // Durable Objects
   MINDCACHE_INSTANCE: DurableObjectNamespace;
@@ -76,12 +84,68 @@ export default {
           return Response.json({ error: 'Instance ID required' }, { status: 400 });
         }
 
-        // Get or create the Durable Object for this instance
+        // Verify auth BEFORE upgrading WebSocket
+        // Check for token in query string (from token exchange)
+        const token = url.searchParams.get('token');
+        
+        if (token) {
+          // Verify short-lived token
+          const tokenData = await env.DB.prepare(`
+            SELECT user_id, instance_id, permission, expires_at 
+            FROM ws_tokens 
+            WHERE token_hash = ?
+          `).bind(await hashToken(token)).first<{ 
+            user_id: string; 
+            instance_id: string; 
+            permission: string;
+            expires_at: number;
+          }>();
+          
+          if (!tokenData) {
+            return Response.json({ error: 'Invalid token' }, { status: 401, headers: corsHeaders });
+          }
+          
+          if (tokenData.expires_at < Math.floor(Date.now() / 1000)) {
+            return Response.json({ error: 'Token expired' }, { status: 401, headers: corsHeaders });
+          }
+          
+          if (tokenData.instance_id !== instanceId) {
+            return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
+          }
+          
+          // Delete used token (one-time use)
+          await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
+            .bind(await hashToken(token)).run();
+        } else {
+          // Fallback: Check API key in Authorization header (for server-to-server)
+          const authData = extractAuth(request);
+          if (!authData) {
+            return Response.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders });
+          }
+          
+          const auth = await verifyApiKey(authData.token, env.DB);
+          if (!auth.valid) {
+            return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+          }
+        }
+
+        // Auth verified - forward to Durable Object with auth info
         const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
         const stub = env.MINDCACHE_INSTANCE.get(id);
         
-        // Forward the request to the Durable Object
-        return stub.fetch(request);
+        // Add header to indicate pre-auth (token auth was verified by Worker)
+        const headers = new Headers(request.headers);
+        headers.set('X-MindCache-PreAuth', 'true');
+        headers.set('X-MindCache-UserId', token ? 'token-user' : 'api-key-user');
+        headers.set('X-MindCache-Permission', 'write');
+        
+        const modifiedRequest = new Request(request.url, {
+          method: request.method,
+          headers,
+          body: request.body,
+        });
+        
+        return stub.fetch(modifiedRequest);
       }
 
       // REST API routes
@@ -156,6 +220,56 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     INSERT OR IGNORE INTO users (id, clerk_id, email, name)
     VALUES (?, ?, ?, ?)
   `).bind(userId, userId, null, null).run();
+
+  // ============= WS TOKEN =============
+  
+  // Generate short-lived token for WebSocket connection
+  if (path === '/api/ws-token' && request.method === 'POST') {
+    const body = await request.json() as { instanceId: string; permission?: 'read' | 'write' };
+    
+    if (!body.instanceId) {
+      return Response.json({ error: 'instanceId required' }, { status: 400, headers: corsHeaders });
+    }
+    
+    // Verify user has access to this instance
+    const instance = await env.DB.prepare(`
+      SELECT i.id, i.project_id,
+             CASE 
+               WHEN p.owner_id = ? THEN 'admin'
+               WHEN si.permission IS NOT NULL THEN si.permission
+               ELSE sp.permission 
+             END as permission
+      FROM instances i
+      JOIN projects p ON p.id = i.project_id
+      LEFT JOIN shares sp ON sp.resource_type = 'project' AND sp.resource_id = p.id 
+                         AND (sp.target_type = 'user' AND sp.target_id = ? OR sp.target_type = 'public')
+      LEFT JOIN shares si ON si.resource_type = 'instance' AND si.resource_id = i.id 
+                         AND (si.target_type = 'user' AND si.target_id = ? OR si.target_type = 'public')
+      WHERE i.id = ? AND (p.owner_id = ? OR sp.id IS NOT NULL OR si.id IS NOT NULL)
+    `).bind(userId, userId, userId, body.instanceId, userId).first<{ id: string; permission: string }>();
+    
+    if (!instance) {
+      return Response.json({ error: 'Instance not found or access denied' }, { status: 404, headers: corsHeaders });
+    }
+    
+    // Generate token
+    const token = crypto.randomUUID() + crypto.randomUUID();
+    const tokenHash = await hashToken(token);
+    const expiresAt = Math.floor(Date.now() / 1000) + 60; // 60 seconds
+    const permission = body.permission || (instance.permission === 'read' ? 'read' : 'write');
+    
+    await env.DB.prepare(`
+      INSERT INTO ws_tokens (token_hash, user_id, instance_id, permission, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(tokenHash, userId, body.instanceId, permission, expiresAt).run();
+    
+    return Response.json({ 
+      token,
+      expiresAt,
+      instanceId: body.instanceId,
+      permission
+    }, { headers: corsHeaders });
+  }
 
   // ============= AI APIs =============
   
