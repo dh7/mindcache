@@ -13,4 +13,3 @@ export default defineConfig({
   treeshake: true,
   external: ['ai', 'zod'],
 });
-

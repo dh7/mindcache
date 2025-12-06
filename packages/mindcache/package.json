@@ -7,14 +7,14 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./cloud": {
+      "types": "./dist/cloud/index.d.ts",
       "import": "./dist/cloud/index.mjs",
-      "require": "./dist/cloud/index.js",
-      "types": "./dist/cloud/index.d.ts"
+      "require": "./dist/cloud/index.js"
     }
   },
   "files": [

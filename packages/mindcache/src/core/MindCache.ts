@@ -16,6 +16,44 @@ declare const FileReader: {
   new(): FileReaderType;
 } | undefined;
 
+/**
+ * Cloud configuration options for MindCache constructor
+ */
+export interface MindCacheCloudOptions {
+  /** Instance ID to connect to */
+  instanceId: string;
+  /** Project ID (optional, defaults to 'default') */
+  projectId?: string;
+  /** API endpoint to fetch WS token (recommended for browser) */
+  tokenEndpoint?: string;
+  /** Direct API key (server-side only, never expose in browser!) */
+  apiKey?: string;
+  /** WebSocket base URL (defaults to production) */
+  baseUrl?: string;
+}
+
+/**
+ * Constructor options for MindCache
+ */
+export interface MindCacheOptions {
+  /** Cloud sync configuration. If omitted, runs in local-only mode. */
+  cloud?: MindCacheCloudOptions;
+}
+
+// Connection state type
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+// CloudAdapter interface to avoid circular imports
+interface ICloudAdapter {
+  attach(mc: MindCache): void;
+  detach(): void;
+  connect(): Promise<void>;
+  disconnect(): void;
+  setTokenProvider(provider: () => Promise<string>): void;
+  on(event: string, listener: (...args: any[]) => void): void;
+  state: ConnectionState;
+}
+
 export class MindCache {
   private stm: STM = {};
   private listeners: { [key: string]: Listener[] } = {};
@@ -23,6 +61,129 @@ export class MindCache {
 
   // Internal flag to prevent sync loops when receiving remote updates
   private _isRemoteUpdate = false;
+
+  // Cloud sync state
+  private _cloudAdapter: ICloudAdapter | null = null;
+  private _connectionState: ConnectionState = 'disconnected';
+  private _isLoaded = true; // Default true for local mode
+  private _cloudConfig: MindCacheCloudOptions | null = null;
+
+  constructor(options?: MindCacheOptions) {
+    if (options?.cloud) {
+      this._cloudConfig = options.cloud;
+      this._isLoaded = false; // Wait for sync
+      this._connectionState = 'disconnected';
+      // Initialize cloud connection asynchronously
+      this._initCloud();
+    }
+  }
+
+  private async _initCloud(): Promise<void> {
+    if (!this._cloudConfig) return;
+
+    try {
+      // Dynamic import to avoid circular dependency
+      const { CloudAdapter } = await import('../cloud/CloudAdapter');
+      
+      const baseUrl = this._cloudConfig.baseUrl || 
+        (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_MINDCACHE_API_URL || 'https://api.mindcache.io')
+          .replace('https://', 'wss://')
+          .replace('http://', 'ws://');
+
+      const adapter = new CloudAdapter({
+        instanceId: this._cloudConfig.instanceId,
+        projectId: this._cloudConfig.projectId || 'default',
+        baseUrl,
+        apiKey: this._cloudConfig.apiKey,
+      });
+
+      // Set up token provider if tokenEndpoint is provided
+      if (this._cloudConfig.tokenEndpoint) {
+        const tokenEndpoint = this._cloudConfig.tokenEndpoint;
+        const instanceId = this._cloudConfig.instanceId;
+        
+        adapter.setTokenProvider(async () => {
+          const url = tokenEndpoint.includes('?')
+            ? `${tokenEndpoint}&instanceId=${instanceId}`
+            : `${tokenEndpoint}?instanceId=${instanceId}`;
+          
+          const response = await fetch(url);
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Failed to get token' }));
+            throw new Error(error.error || 'Failed to get token');
+          }
+          
+          const data = await response.json();
+          return data.token;
+        });
+      }
+
+      // Set up event handlers
+      adapter.on('connected', () => {
+        this._connectionState = 'connected';
+        this.notifyGlobalListeners();
+      });
+      
+      adapter.on('disconnected', () => {
+        this._connectionState = 'disconnected';
+        this.notifyGlobalListeners();
+      });
+      
+      adapter.on('error', () => {
+        this._connectionState = 'error';
+        this.notifyGlobalListeners();
+      });
+      
+      adapter.on('synced', () => {
+        this._isLoaded = true;
+        this.notifyGlobalListeners();
+      });
+
+      // Attach and connect
+      adapter.attach(this);
+      this._cloudAdapter = adapter;
+      this._connectionState = 'connecting';
+      
+      adapter.connect();
+    } catch (error) {
+      console.error('MindCache: Failed to initialize cloud connection:', error);
+      this._connectionState = 'error';
+      this._isLoaded = true; // Allow usage even if cloud fails
+    }
+  }
+
+  /**
+   * Get the current cloud connection state
+   */
+  get connectionState(): ConnectionState {
+    return this._connectionState;
+  }
+
+  /**
+   * Check if data is loaded (true for local, true after sync for cloud)
+   */
+  get isLoaded(): boolean {
+    return this._isLoaded;
+  }
+
+  /**
+   * Check if this instance is connected to cloud
+   */
+  get isCloud(): boolean {
+    return this._cloudConfig !== null;
+  }
+
+  /**
+   * Disconnect from cloud (if connected)
+   */
+  disconnect(): void {
+    if (this._cloudAdapter) {
+      this._cloudAdapter.disconnect();
+      this._cloudAdapter.detach();
+      this._cloudAdapter = null;
+      this._connectionState = 'disconnected';
+    }
+  }
 
   // Helper method to encode file to base64
   private encodeFileToBase64(file: File): Promise<string> {

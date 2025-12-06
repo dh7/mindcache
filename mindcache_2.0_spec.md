@@ -10,7 +10,7 @@ MindCache 2.0 is a **hosted, collaborative key-value store** optimized for AI ag
 
 **Key Difference from 1.0**: While MindCache 1.0 was a client-side library where developers chose client vs server implementation, MindCache 2.0 is a managed service with cloud persistence, collaboration, and API access.
 
----
+The Goal of Mindcache 2.0 is to provide a simple, easy to use, and powerful key-value store for AI agents and LLM-powered applications. It should be a drop-in replacement for Mindcache 1.0, but with the added features of cloud persistence, authentication, real-time sync, and granular sharing.
 
 ## Core Concepts
 
@@ -589,8 +589,7 @@ mindcache/
 │   │   │   │
 │   │   │   ├── cloud/                # Cloud sync layer (2.0)
 │   │   │   │   ├── CloudAdapter.ts   # WebSocket + HTTP sync
-│   │   │   │   ├── auth.ts           # API key handling
-│   │   │   │   ├── connectCloud.ts   # Main export
+│   │   │   │   ├── types.ts          # Cloud types
 │   │   │   │   └── index.ts
 │   │   │   │
 │   │   │   └── index.ts              # Main export (core only)
@@ -742,6 +741,60 @@ export function createCloudMindCache(
 
 ---
 
+### Built-in Cloud Sync
+
+Cloud sync is built directly into the `MindCache` constructor - no hooks or adapters needed:
+
+```typescript
+interface MindCacheCloudOptions {
+  instanceId: string;        // Instance to connect to
+  projectId?: string;        // Project ID (defaults to 'default')
+  tokenEndpoint?: string;    // API endpoint to fetch WS token (recommended for browser)
+  apiKey?: string;           // Direct API key (server-only, never expose in browser!)
+  baseUrl?: string;          // WebSocket URL (defaults to production)
+}
+
+interface MindCacheOptions {
+  cloud?: MindCacheCloudOptions;
+}
+```
+
+#### Local Mode (unchanged from 1.0)
+
+```typescript
+const mc = new MindCache();
+mc.set_value('name', 'Alice');
+mc.subscribeToAll(() => console.log('changed!'));
+```
+
+#### Cloud Mode (same API!)
+
+```typescript
+const mc = new MindCache({
+  cloud: {
+    instanceId: 'my-instance-id',
+    tokenEndpoint: '/api/ws-token',
+  }
+});
+
+// Same API as local!
+mc.subscribeToAll(() => console.log('synced!'));
+
+// Additional properties for cloud
+console.log(mc.connectionState); // 'disconnected' | 'connecting' | 'connected' | 'error'
+console.log(mc.isLoaded);        // true when initial sync complete
+console.log(mc.isCloud);         // true
+```
+
+The MindCache instance handles:
+- CloudAdapter lifecycle automatically
+- Token fetching via endpoint
+- Connection state management
+- Reconnection with exponential backoff
+- Cleanup via `mc.disconnect()`
+
+---
+
 ### Migration Path
 
 #### For 1.0 Users (no change)
@@ -835,6 +888,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-06 | 1.3-alpha | Built-in cloud sync via `MindCache({ cloud: {...} })` constructor - same DX as local |
 | 2024-12-05 | 1.2-alpha | Added Hybrid Architecture (DO for state, external chat). Simplified Next.js routes to `/api/instances` + `/api/chat` only |
 | 2024-12-04 | 1.1-alpha | ✅ **Phase 3 Complete!** Chat API + LLM Tools (transform, generate-image, analyze-image) |
 | 2024-11-30 | 1.0-alpha | 🚀 **Deployed to production!** API live at workers.dev |
