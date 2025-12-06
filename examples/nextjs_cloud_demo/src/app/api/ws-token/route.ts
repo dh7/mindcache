@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     const apiKey = process.env.MINDCACHE_API_KEY;
-    const apiUrl = process.env.MINDCACHE_API_URL || 'https://mindcache-api.dh7777777.workers.dev';
+    const apiUrl = process.env.MINDCACHE_API_URL || process.env.NEXT_PUBLIC_MINDCACHE_API_URL || 'https://mindcache-api.dh7777777.workers.dev';
 
     if (!apiKey) {
       return NextResponse.json(

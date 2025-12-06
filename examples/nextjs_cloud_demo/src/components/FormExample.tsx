@@ -6,7 +6,7 @@ import { useInstances } from './InstanceProvider';
 import ChatInterface from './ChatInterface';
 
 export default function FormExample() {
-  const { getInstanceId } = useInstances();
+  const { getInstanceId, error: instanceError } = useInstances();
   const instanceId = getInstanceId('form');
 
   // Create MindCache with cloud config - same simplicity as local!
@@ -15,8 +15,8 @@ export default function FormExample() {
     mindcacheRef.current = new MindCache({
       cloud: {
         instanceId,
-        projectId: 'cloud-demo',
         tokenEndpoint: '/api/ws-token',
+        baseUrl: process.env.NEXT_PUBLIC_MINDCACHE_API_URL,
       }
     });
   }
@@ -28,41 +28,53 @@ export default function FormExample() {
     company: ''
   });
   const [stmVersion, setStmVersion] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [connectionState, setConnectionState] = useState<string>('disconnected');
 
-  // Subscribe to STM changes - same pattern as local!
+  // Subscribe to STM changes - triggers re-render when isLoaded changes
   useEffect(() => {
     const mc = mindcacheRef.current;
-    if (!mc || !mc.isLoaded) return;
+    if (!mc) return;
 
-    // Initialize keys if they don't exist
-    ['name', 'role', 'age', 'company'].forEach(key => {
-      if (!mc.has(key)) {
-        mc.set_value(key, '', { visible: true, readonly: false });
+    const handleChange = () => {
+      // Update state from MindCache
+      setIsLoaded(mc.isLoaded);
+      setConnectionState(mc.connectionState);
+      
+      if (mc.isLoaded) {
+        // Initialize keys if they don't exist
+        ['name', 'role', 'age', 'company'].forEach(key => {
+          if (!mc.has(key)) {
+            mc.set_value(key, '', { visible: true, readonly: false });
+          }
+        });
+
+        setFormData({
+          name: mc.get_value('name') || '',
+          role: mc.get_value('role') || '',
+          age: mc.get_value('age') || '',
+          company: mc.get_value('company') || ''
+        });
       }
-    });
-
-    const loadFormData = () => {
-      setFormData({
-        name: mc.get_value('name') || '',
-        role: mc.get_value('role') || '',
-        age: mc.get_value('age') || '',
-        company: mc.get_value('company') || ''
-      });
+      
       setStmVersion(v => v + 1);
     };
 
-    loadFormData();
-    mc.subscribeToAll(loadFormData);
-    return () => mc.unsubscribeFromAll(loadFormData);
-  }, [mindcacheRef.current?.isLoaded]);
+    // Initial check
+    handleChange();
+    
+    // Subscribe to all changes (including sync events)
+    mc.subscribeToAll(handleChange);
+    return () => mc.unsubscribeFromAll(handleChange);
+  }, [instanceId]);
 
-  const handleChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     mindcacheRef.current?.set_value(field, value);
   };
 
   const getStatusIcon = () => {
-    switch (mindcacheRef.current?.connectionState) {
+    switch (connectionState) {
       case 'connected': return '●';
       case 'connecting': return '◐';
       case 'error': return '✕';
@@ -71,7 +83,7 @@ export default function FormExample() {
   };
 
   const getStatusColor = () => {
-    switch (mindcacheRef.current?.connectionState) {
+    switch (connectionState) {
       case 'connected': return 'text-green-400';
       case 'connecting': return 'text-yellow-400';
       case 'error': return 'text-red-400';
@@ -79,10 +91,25 @@ export default function FormExample() {
     }
   };
 
-  if (!instanceId || !mindcacheRef.current) {
+  // Show setup instructions if instance not configured
+  if (!instanceId) {
     return (
       <div className="h-screen bg-black text-cyan-400 font-mono p-6 flex items-center justify-center">
-        <div className="text-yellow-400">Waiting for instance...</div>
+        <div className="max-w-lg text-center space-y-4">
+          <div className="text-yellow-400 text-lg">⚠️ Instance Not Configured</div>
+          <p className="text-gray-400 text-sm">
+            {instanceError || 'Form instance ID not set.'}
+          </p>
+          <div className="text-left bg-gray-900 p-4 rounded-lg border border-gray-700">
+            <p className="text-gray-500 text-xs mb-2">Add to .env.local:</p>
+            <code className="text-green-400 text-sm">
+              NEXT_PUBLIC_INSTANCE_FORM=your-instance-id
+            </code>
+          </div>
+          <p className="text-gray-500 text-xs">
+            Get instance IDs from the MindCache web UI (localhost:3003)
+          </p>
+        </div>
       </div>
     );
   }
@@ -96,9 +123,9 @@ export default function FormExample() {
         </div>
         <ChatInterface
           instanceId={instanceId}
-          stmLoaded={mindcacheRef.current.isLoaded}
+          stmLoaded={isLoaded}
           stmVersion={stmVersion}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcacheRef.current!}
         />
       </div>
 
@@ -106,15 +133,15 @@ export default function FormExample() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <div className="text-cyan-400 mb-2">Form Example</div>
-            <div className="text-gray-400 text-sm">Instance: {instanceId.slice(0, 8)}...</div>
+            <div className="text-gray-400 text-sm font-mono">{instanceId.slice(0, 8)}...</div>
           </div>
-          <span className={`${getStatusColor()} text-lg`}>{getStatusIcon()}</span>
+          <span className={`${getStatusColor()} text-lg`} title={connectionState}>{getStatusIcon()}</span>
         </div>
 
         <div className="flex-1 border border-gray-600 rounded p-6 space-y-4">
-          {!mindcacheRef.current.isLoaded ? (
+          {!isLoaded ? (
             <div className="flex items-center justify-center h-full text-gray-500">
-              Loading...
+              Loading... ({connectionState})
             </div>
           ) : (
             ['name', 'role', 'age', 'company'].map(field => (
@@ -123,7 +150,7 @@ export default function FormExample() {
                 <input
                   type="text"
                   value={formData[field as keyof typeof formData]}
-                  onChange={(e) => handleChange(field, e.target.value)}
+                  onChange={(e) => handleInputChange(field, e.target.value)}
                   className="w-full bg-black border border-gray-600 rounded text-cyan-400 font-mono text-sm px-3 py-2 focus:outline-none focus:border-gray-400"
                   placeholder={`Enter your ${field}`}
                 />

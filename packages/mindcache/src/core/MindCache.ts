@@ -85,10 +85,11 @@ export class MindCache {
       // Dynamic import to avoid circular dependency
       const { CloudAdapter } = await import('../cloud/CloudAdapter');
       
-      const baseUrl = this._cloudConfig.baseUrl || 
-        (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_MINDCACHE_API_URL || 'https://api.mindcache.io')
-          .replace('https://', 'wss://')
-          .replace('http://', 'ws://');
+      // Convert HTTP URL to WebSocket URL, default to production
+      const configUrl = this._cloudConfig.baseUrl || 'https://api.mindcache.io';
+      const baseUrl = configUrl
+        .replace('https://', 'wss://')
+        .replace('http://', 'ws://');
 
       const adapter = new CloudAdapter({
         instanceId: this._cloudConfig.instanceId,
