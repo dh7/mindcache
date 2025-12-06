@@ -47,6 +47,9 @@ export interface Env {
   
   // Fireworks (set via wrangler secret) - for image generation
   FIREWORKS_API_KEY?: string;
+  
+  // Admin token for DO introspection
+  ADMIN_TOKEN?: string;
 }
 
 export default {
@@ -146,6 +149,30 @@ export default {
         });
         
         return stub.fetch(modifiedRequest);
+      }
+
+      // Admin: Get DO contents by hex ID (for introspection)
+      if (path.startsWith('/admin/do/') && request.method === 'GET') {
+        const objectId = path.split('/')[3];
+        if (!objectId) {
+          return Response.json({ error: 'Object ID required' }, { status: 400, headers: corsHeaders });
+        }
+        
+        // Require admin API token
+        const adminToken = request.headers.get('X-Admin-Token');
+        if (adminToken !== env.ADMIN_TOKEN) {
+          return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+        }
+        
+        try {
+          const id = env.MINDCACHE_INSTANCE.idFromString(objectId);
+          const stub = env.MINDCACHE_INSTANCE.get(id);
+          const res = await stub.fetch(new Request('http://do/keys'));
+          const keys = await res.json();
+          return Response.json({ keys }, { headers: corsHeaders });
+        } catch (e) {
+          return Response.json({ error: 'Failed to fetch DO', details: String(e) }, { status: 500, headers: corsHeaders });
+        }
       }
 
       // REST API routes

@@ -32,6 +32,7 @@ new_sqlite_classes = ["MindCacheInstanceDO"]
 
 [vars]
 ENVIRONMENT = "development"
+ADMIN_TOKEN = "dev-admin-secret"
 
 # To set secrets, run:
 # wrangler secret put CLERK_SECRET_KEY
@@ -41,7 +42,7 @@ ENVIRONMENT = "development"
 # Production Environment
 # ===================
 [env.production]
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", ADMIN_TOKEN = "dev-admin-secret" }
 
 [env.production.durable_objects]
 bindings = [
@@ -52,6 +53,8 @@ bindings = [
 binding = "DB"
 database_name = "mindcache-db"
 database_id = "29e53281-6ad2-4c90-b7de-27d55fcad594"
+
+
 
 # To set production secrets:
 # wrangler secret put CLERK_SECRET_KEY --env production
