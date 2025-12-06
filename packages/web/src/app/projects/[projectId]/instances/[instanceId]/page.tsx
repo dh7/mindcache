@@ -49,28 +49,42 @@ export default function InstanceEditorPage() {
   const wsRef = useRef<WebSocket | null>(null);
 
   const connect = useCallback(async () => {
-    const token = await getToken() || 'test'; // 'test' for dev mode
-    const ws = new WebSocket(`${WS_URL}/sync/${instanceId}`);
-    wsRef.current = ws;
+    try {
+      // Get short-lived WS token from API
+      const jwtToken = await getToken();
+      const res = await fetch(`${API_URL}/api/ws-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {}),
+        },
+        body: JSON.stringify({ instanceId }),
+      });
+      
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to get token' }));
+        setError(err.error || 'Failed to authenticate');
+        return;
+      }
+      
+      const { token: wsToken, permission: perm } = await res.json();
+      
+      // Connect with token in URL (server validates before upgrade)
+      const ws = new WebSocket(`${WS_URL}/sync/${instanceId}?token=${wsToken}`);
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'auth', apiKey: token }));
-    };
+      ws.onopen = () => {
+        // Auth already verified by server, wait for sync message
+        setConnected(true);
+        setPermission(perm);
+        setError(null);
+      };
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       console.log('Received message:', msg);
       
       switch (msg.type) {
-        case 'auth_success':
-          setConnected(true);
-          setPermission(msg.permission);
-          setError(null);
-          break;
-        case 'auth_error':
-          setError(msg.error);
-          setConnected(false);
-          break;
         case 'sync':
           setKeys(msg.data || {});
           break;
@@ -107,6 +121,10 @@ export default function InstanceEditorPage() {
     ws.onerror = () => {
       setError('Connection error');
     };
+    } catch (err) {
+      console.error('Failed to connect:', err);
+      setError(err instanceof Error ? err.message : 'Failed to connect');
+    }
   }, [instanceId, getToken]);
 
   useEffect(() => {
