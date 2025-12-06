@@ -5,21 +5,61 @@ import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 import { listApiKeys, createApiKey, deleteApiKey, listProjects, listInstances, type ApiKey } from '@/lib/api';
 
+interface Project {
+  id: string;
+  name: string;
+}
+
+interface Instance {
+  id: string;
+  name: string;
+}
+
 export default function ApiKeysPage() {
   const { getToken } = useAuth();
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [projects, setProjects] = useState<Record<string, Project>>({});
+  const [instances, setInstances] = useState<Record<string, Instance>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
-  const fetchKeys = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
       const token = await getToken();
       if (!token) return;
-      const data = await listApiKeys(token);
-      setKeys(data);
+      
+      // Fetch keys and projects in parallel
+      const [keysData, projectsData] = await Promise.all([
+        listApiKeys(token),
+        listProjects(token),
+      ]);
+      
+      setKeys(keysData);
+      
+      // Build project lookup
+      const projectMap: Record<string, Project> = {};
+      for (const p of projectsData) {
+        projectMap[p.id] = p;
+      }
+      setProjects(projectMap);
+
+      // Fetch instances for all projects to get instance names
+      const instanceMap: Record<string, Instance> = {};
+      for (const p of projectsData) {
+        try {
+          const instancesData = await listInstances(token, p.id);
+          for (const i of instancesData) {
+            instanceMap[i.id] = { id: i.id, name: i.name };
+          }
+        } catch {
+          // Ignore errors for individual projects
+        }
+      }
+      setInstances(instanceMap);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load keys');
     } finally {
@@ -28,7 +68,7 @@ export default function ApiKeysPage() {
   };
 
   useEffect(() => {
-    fetchKeys();
+    fetchData();
   }, []);
 
   const handleDelete = async (keyId: string) => {
@@ -43,44 +83,75 @@ export default function ApiKeysPage() {
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2000);
+  };
+
+  const getScopeName = (key: ApiKey) => {
+    if (key.scope_type === 'account') {
+      return 'Full Account';
+    }
+    if (key.scope_type === 'project' && key.scope_id) {
+      return projects[key.scope_id]?.name || key.scope_id.slice(0, 8) + '...';
+    }
+    if (key.scope_type === 'instance' && key.scope_id) {
+      return instances[key.scope_id]?.name || key.scope_id.slice(0, 8) + '...';
+    }
+    return key.scope_type;
+  };
+
+  const getScopeBadgeColor = (scopeType: string) => {
+    switch (scopeType) {
+      case 'account': return 'bg-purple-900/30 text-purple-400';
+      case 'project': return 'bg-blue-900/30 text-blue-400';
+      case 'instance': return 'bg-green-900/30 text-green-400';
+      default: return 'bg-gray-800 text-gray-400';
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
-      <Link href="/" className="text-gray-400 hover:text-white text-sm mb-4 block">
+      <Link href="/" className="text-gray-400 hover:text-white text-sm mb-6 inline-block">
         ← Back to Projects
       </Link>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">API Keys</h1>
+        <h1 className="text-2xl font-bold">API Keys</h1>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200"
+          className="px-3 py-1.5 bg-white text-black text-sm rounded hover:bg-gray-200"
         >
-          Create API Key
+          + New Key
         </button>
       </div>
 
-      {error && <p className="text-red-400 mb-4">{error}</p>}
+      {error && (
+        <div className="mb-4 p-3 bg-red-900/20 border border-red-800 rounded-lg text-red-400 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Show newly created key */}
       {newlyCreatedKey && (
-        <div className="mb-6 p-4 bg-green-900/30 border border-green-700 rounded-lg">
-          <p className="text-green-400 font-semibold mb-2">🔑 New API Key Created!</p>
-          <p className="text-sm text-gray-300 mb-2">Copy this key now. You won't be able to see it again.</p>
-          <code className="block p-3 bg-black rounded text-green-400 font-mono text-sm break-all">
-            {newlyCreatedKey}
-          </code>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(newlyCreatedKey);
-              alert('Copied!');
-            }}
-            className="mt-2 px-3 py-1 bg-green-700 rounded text-sm hover:bg-green-600"
-          >
-            Copy to Clipboard
-          </button>
+        <div className="mb-6 p-4 bg-green-900/20 border border-green-800 rounded-lg">
+          <p className="text-green-400 font-medium mb-2">🔑 API Key Created</p>
+          <p className="text-sm text-gray-400 mb-3">Copy this key now — you won't see it again.</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 p-3 bg-black rounded text-green-400 font-mono text-sm break-all">
+              {newlyCreatedKey}
+            </code>
+            <button
+              onClick={() => copyToClipboard(newlyCreatedKey)}
+              className="px-3 py-2 bg-green-800 rounded text-sm hover:bg-green-700 whitespace-nowrap"
+            >
+              {copiedKey ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
           <button
             onClick={() => setNewlyCreatedKey(null)}
-            className="mt-2 ml-2 px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600"
+            className="mt-3 text-gray-500 hover:text-gray-300 text-sm"
           >
             Dismiss
           </button>
@@ -88,41 +159,66 @@ export default function ApiKeysPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading...</p>
+        <div className="text-gray-400 text-center py-8">Loading...</div>
       ) : keys.length === 0 ? (
         <div className="border border-gray-800 rounded-lg p-8 text-center text-gray-500">
-          <p>No API keys yet. Create one to use MindCache from your apps.</p>
+          No API keys yet. Create one to use MindCache from your apps.
         </div>
       ) : (
-        <div className="space-y-3">
-          {keys.map(key => (
-            <div key={key.id} className="border border-gray-800 rounded-lg p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-semibold">{key.name}</h3>
-                  <p className="text-gray-500 text-sm font-mono">{key.key_prefix}••••••••</p>
-                  <p className="text-gray-500 text-xs mt-1">
-                    Scope: {key.scope_type} 
-                    {key.scope_id && ` (${key.scope_id.slice(0, 8)}...)`}
-                  </p>
-                  <p className="text-gray-500 text-xs">
-                    Permissions: {Array.isArray(key.permissions) ? key.permissions.join(', ') : key.permissions}
-                  </p>
-                  {key.last_used_at && (
-                    <p className="text-gray-500 text-xs">
-                      Last used: {new Date(key.last_used_at * 1000).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleDelete(key.id)}
-                  className="px-3 py-1 bg-red-900/50 rounded hover:bg-red-900 text-sm"
-                >
-                  Revoke
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="border border-gray-800 rounded-lg overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-800 text-left text-sm text-gray-500">
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Key</th>
+                <th className="px-4 py-3 font-medium">Scope</th>
+                <th className="px-4 py-3 font-medium">Permissions</th>
+                <th className="px-4 py-3 font-medium w-20"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {keys.map(key => (
+                <tr key={key.id} className="border-b border-gray-800 last:border-b-0 hover:bg-gray-900/50">
+                  <td className="px-4 py-3">
+                    <span className="font-medium">{key.name}</span>
+                    {key.last_used_at && (
+                      <p className="text-gray-600 text-xs mt-0.5">
+                        Used {new Date(key.last_used_at * 1000).toLocaleDateString()}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="font-mono text-sm text-gray-500">
+                      {key.key_prefix}••••••••
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-1 rounded ${getScopeBadgeColor(key.scope_type)}`}>
+                      {key.scope_type}
+                    </span>
+                    {key.scope_id && (
+                      <span className="ml-2 text-gray-400 text-sm">
+                        {getScopeName(key)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-gray-400 text-sm">
+                      {Array.isArray(key.permissions) ? key.permissions.join(', ') : key.permissions}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleDelete(key.id)}
+                      className="text-gray-600 hover:text-red-400 transition text-sm"
+                    >
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -156,20 +252,17 @@ function CreateKeyModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // For project/instance selection
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [instances, setInstances] = useState<{ id: string; name: string }[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingInstances, setLoadingInstances] = useState(false);
 
-  // Fetch projects when scope type changes to project or instance
   useEffect(() => {
     if (scopeType === 'project' || scopeType === 'instance') {
       fetchProjects();
     }
   }, [scopeType]);
 
-  // Fetch instances when project is selected (for instance scope)
   useEffect(() => {
     if (scopeType === 'instance' && selectedProjectId) {
       fetchInstances(selectedProjectId);
@@ -245,9 +338,9 @@ function CreateKeyModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-md">
-        <h3 className="text-xl font-semibold mb-4">Create API Key</h3>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-full max-w-md">
+        <h3 className="text-lg font-bold mb-4">Create API Key</h3>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="block text-sm text-gray-400 mb-1">Name</label>
@@ -274,14 +367,11 @@ function CreateKeyModal({
             </select>
           </div>
 
-          {/* Project selector (for project or instance scope) */}
           {(scopeType === 'project' || scopeType === 'instance') && (
             <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-1">
-                {scopeType === 'project' ? 'Select Project' : 'Select Project (then Instance)'}
-              </label>
+              <label className="block text-sm text-gray-400 mb-1">Project</label>
               {loadingProjects ? (
-                <p className="text-gray-500 text-sm">Loading projects...</p>
+                <p className="text-gray-500 text-sm">Loading...</p>
               ) : (
                 <select
                   value={scopeType === 'project' ? scopeId : selectedProjectId}
@@ -290,12 +380,12 @@ function CreateKeyModal({
                       setScopeId(e.target.value);
                     } else {
                       setSelectedProjectId(e.target.value);
-                      setScopeId(''); // Reset instance selection
+                      setScopeId('');
                     }
                   }}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none"
                 >
-                  <option value="">-- Select a project --</option>
+                  <option value="">Select project...</option>
                   {projects.map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -304,19 +394,18 @@ function CreateKeyModal({
             </div>
           )}
 
-          {/* Instance selector (only for instance scope) */}
           {scopeType === 'instance' && selectedProjectId && (
             <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-1">Select Instance</label>
+              <label className="block text-sm text-gray-400 mb-1">Instance</label>
               {loadingInstances ? (
-                <p className="text-gray-500 text-sm">Loading instances...</p>
+                <p className="text-gray-500 text-sm">Loading...</p>
               ) : (
                 <select
                   value={scopeId}
                   onChange={(e) => setScopeId(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none"
                 >
-                  <option value="">-- Select an instance --</option>
+                  <option value="">Select instance...</option>
                   {instances.map(i => (
                     <option key={i.id} value={i.id}>{i.name}</option>
                   ))}
@@ -329,12 +418,12 @@ function CreateKeyModal({
             <label className="block text-sm text-gray-400 mb-2">Permissions</label>
             <div className="flex gap-4">
               {['read', 'write', 'admin'].map(perm => (
-                <label key={perm} className="flex items-center gap-2">
+                <label key={perm} className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={permissions.includes(perm)}
                     onChange={() => togglePermission(perm)}
-                    className="rounded"
+                    className="rounded bg-gray-800 border-gray-600"
                   />
                   <span className="text-sm capitalize">{perm}</span>
                 </label>
@@ -362,7 +451,7 @@ function CreateKeyModal({
               }
               className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 disabled:opacity-50"
             >
-              {submitting ? 'Creating...' : 'Create Key'}
+              {submitting ? 'Creating...' : 'Create'}
             </button>
           </div>
         </form>
@@ -370,4 +459,3 @@ function CreateKeyModal({
     </div>
   );
 }
-

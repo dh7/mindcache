@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 
@@ -22,7 +22,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
 
 export default function ProjectPage() {
   const params = useParams();
-  const router = useRouter();
   const { getToken } = useAuth();
   const projectId = params.projectId as string;
 
@@ -33,12 +32,14 @@ export default function ProjectPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deleteInstance, setDeleteInstance] = useState<Instance | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = async () => {
     try {
       const token = await getToken() || 'dev';
       
-      // Fetch project
       const projectRes = await fetch(`${API_URL}/api/projects/${projectId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -46,7 +47,6 @@ export default function ProjectPage() {
       const projectData = await projectRes.json();
       setProject(projectData);
 
-      // Fetch instances
       const instancesRes = await fetch(`${API_URL}/api/projects/${projectId}/instances`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -89,110 +89,305 @@ export default function ProjectPage() {
     }
   };
 
+  const copyToClipboard = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleDeleteInstance = async () => {
+    if (!deleteInstance) return;
+    setDeleting(true);
+    try {
+      const token = await getToken() || 'dev';
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/instances/${deleteInstance.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to delete instance');
+      setDeleteInstance(null);
+      fetchData();
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen p-8 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
+      <div style={{ minHeight: '100vh', padding: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#9ca3af' }}>Loading...</div>
       </div>
     );
   }
 
   if (error || !project) {
     return (
-      <div className="min-h-screen p-8">
-        <div className="max-w-4xl mx-auto">
-          <Link href="/" className="text-blue-400 hover:underline mb-4 inline-block">
+      <div style={{ minHeight: '100vh', padding: 32 }}>
+        <div style={{ maxWidth: 1024, margin: '0 auto' }}>
+          <Link href="/" style={{ color: '#9ca3af', fontSize: 14 }}>
             ← Back to Projects
           </Link>
-          <div className="text-red-500 mt-4">{error || 'Project not found'}</div>
+          <div style={{ color: '#f87171', marginTop: 16, padding: 16, borderRadius: 8, border: '1px solid #7f1d1d' }}>
+            {error || 'Project not found'}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-8">
-      <div className="max-w-4xl mx-auto">
+    <div style={{ minHeight: '100vh', padding: 32, background: '#0a0a0a', color: '#fff' }}>
+      <div style={{ maxWidth: 1024, margin: '0 auto' }}>
         {/* Header */}
-        <div className="mb-8">
-          <Link href="/" className="text-blue-400 hover:underline mb-4 inline-block">
-            ← Back to Projects
-          </Link>
-          <h1 className="text-3xl font-bold mt-2">{project.name}</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            <span className="font-mono bg-gray-800 px-2 py-1 rounded select-all">{project.id}</span>
-          </p>
-          {project.description && (
-            <p className="text-gray-400 mt-2">{project.description}</p>
-          )}
-        </div>
-
-        {/* Instances Section */}
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Instances</h2>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              New Instance
-            </button>
+        <Link href="/" style={{ color: '#9ca3af', fontSize: 14, display: 'inline-block', marginBottom: 24 }}>
+          ← Back to Projects
+        </Link>
+        
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 600 }}>{project.name}</h1>
+            {project.description && (
+              <p style={{ color: '#6b7280', marginTop: 4 }}>{project.description}</p>
+            )}
           </div>
-
-          {instances.length === 0 ? (
-            <div className="border border-gray-700 rounded-lg p-8 text-center text-gray-500">
-              No instances yet. Create one to get started.
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {instances.map((instance) => (
-                <Link
-                  key={instance.id}
-                  href={`/projects/${projectId}/instances/${instance.id}`}
-                  className="block bg-gray-900 p-4 rounded-lg hover:bg-gray-800 transition border border-gray-700"
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="font-semibold text-lg">{instance.name}</h3>
-                      <p className="text-gray-500 text-sm">
-                        {instance.is_readonly ? '🔒 Read-only' : '✏️ Editable'}
-                      </p>
-                    </div>
-                    <div className="text-gray-400">→</div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
+          <button
+            onClick={() => setShowCreateModal(true)}
+            style={{ 
+              padding: '8px 16px', 
+              background: '#fff', 
+              color: '#000', 
+              fontSize: 14, 
+              fontWeight: 500, 
+              borderRadius: 8,
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            + New Instance
+          </button>
         </div>
+
+        {/* Instances Table */}
+        {instances.length === 0 ? (
+          <div style={{ borderRadius: 12, padding: 48, textAlign: 'center', color: '#6b7280', border: '1px solid #374151' }}>
+            No instances yet. Create one to get started.
+          </div>
+        ) : (
+          <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #374151' }}>
+            {/* Table Header */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              padding: '12px 24px', 
+              borderBottom: '1px solid #374151',
+              background: '#111'
+            }}>
+              <div style={{ width: 180, fontSize: 12, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Name</div>
+              <div style={{ flex: 1, fontSize: 12, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Instance ID</div>
+              <div style={{ width: 100, fontSize: 12, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Mode</div>
+              <div style={{ width: 80 }}></div>
+            </div>
+
+            {/* Table Body */}
+            {instances.map((instance, index) => (
+              <div 
+                key={instance.id}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  padding: '12px 24px',
+                  borderBottom: index !== instances.length - 1 ? '1px solid #1f2937' : 'none',
+                  transition: 'background 0.15s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#111'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                {/* Name */}
+                <div style={{ width: 180, fontWeight: 500 }}>{instance.name}</div>
+
+                {/* Instance ID */}
+                <div style={{ flex: 1 }}>
+                  <button
+                    onClick={() => copyToClipboard(instance.id)}
+                    style={{ 
+                      fontFamily: 'monospace', 
+                      fontSize: 13, 
+                      color: copiedId === instance.id ? '#4ade80' : '#9ca3af',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                    title="Click to copy"
+                  >
+                    {copiedId === instance.id ? '✓ Copied!' : `${instance.id.slice(0, 8)}...${instance.id.slice(-4)}`}
+                  </button>
+                </div>
+
+                {/* Mode */}
+                <div style={{ width: 100, color: '#9ca3af', fontSize: 14 }}>
+                  {instance.is_readonly ? 'Read-only' : 'Editable'}
+                </div>
+
+                {/* Actions */}
+                <div style={{ width: 80, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
+                  <Link
+                    href={`/projects/${projectId}/instances/${instance.id}`}
+                    style={{ color: '#6b7280', fontSize: 16, textDecoration: 'none' }}
+                    title="Open"
+                  >
+                    ↗
+                  </Link>
+                  <button
+                    onClick={() => setDeleteInstance(instance)}
+                    style={{ 
+                      color: '#6b7280', 
+                      fontSize: 16, 
+                      background: 'none', 
+                      border: 'none', 
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                    title="Delete"
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
+                  >
+                    🗑
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Create Instance Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
-              <h3 className="text-xl font-bold mb-4">Create New Instance</h3>
+          <div style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            background: 'rgba(0,0,0,0.8)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            zIndex: 50 
+          }}>
+            <div style={{ 
+              background: '#1f2937', 
+              padding: 24, 
+              borderRadius: 12, 
+              border: '1px solid #374151', 
+              width: '100%', 
+              maxWidth: 400 
+            }}>
+              <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>New Instance</h3>
               <input
                 type="text"
                 placeholder="Instance name"
-                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg mb-4"
+                style={{ 
+                  width: '100%', 
+                  padding: 12, 
+                  background: '#111', 
+                  border: '1px solid #374151', 
+                  borderRadius: 8, 
+                  marginBottom: 16,
+                  color: '#fff',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
                 value={newInstanceName}
                 onChange={(e) => setNewInstanceName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateInstance()}
                 autoFocus
               />
-              <div className="flex justify-end gap-3">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500"
+                  style={{ 
+                    padding: '8px 16px', 
+                    color: '#9ca3af', 
+                    background: 'none', 
+                    border: 'none', 
+                    cursor: 'pointer' 
+                  }}
                   disabled={creating}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateInstance}
-                  className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700"
+                  style={{ 
+                    padding: '8px 16px', 
+                    background: '#fff', 
+                    color: '#000', 
+                    borderRadius: 8, 
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    opacity: creating || !newInstanceName.trim() ? 0.5 : 1
+                  }}
                   disabled={creating || !newInstanceName.trim()}
                 >
                   {creating ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteInstance && (
+          <div style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            background: 'rgba(0,0,0,0.8)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            zIndex: 50 
+          }}>
+            <div style={{ 
+              background: '#1f2937', 
+              padding: 24, 
+              borderRadius: 12, 
+              border: '1px solid #374151', 
+              width: '100%', 
+              maxWidth: 400 
+            }}>
+              <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Delete Instance</h3>
+              <p style={{ color: '#9ca3af', marginBottom: 24 }}>
+                Are you sure you want to delete <span style={{ color: '#fff', fontWeight: 500 }}>{deleteInstance.name}</span>? This cannot be undone.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button
+                  onClick={() => setDeleteInstance(null)}
+                  style={{ 
+                    padding: '8px 16px', 
+                    color: '#9ca3af', 
+                    background: 'none', 
+                    border: 'none', 
+                    cursor: 'pointer' 
+                  }}
+                  disabled={deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteInstance}
+                  style={{ 
+                    padding: '8px 16px', 
+                    background: '#dc2626', 
+                    color: '#fff', 
+                    borderRadius: 8, 
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    opacity: deleting ? 0.5 : 1
+                  }}
+                  disabled={deleting}
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
             </div>
@@ -202,4 +397,3 @@ export default function ProjectPage() {
     </div>
   );
 }
-
