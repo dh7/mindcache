@@ -20,7 +20,7 @@
     "clsx": "^2.0.0",
     "lucide-react": "^0.511.0",
     "mindcache": "workspace:*",
-    "next": "^15.3.3",
+    "next": "^15.5.7",
     "react": "^19",
     "react-dom": "^19",
     "tailwind-merge": "^2.0.0",
