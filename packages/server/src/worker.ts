@@ -91,6 +91,22 @@ export default {
         // Check for token in query string (from token exchange)
         const token = url.searchParams.get('token');
         
+        // Dev mode bypass for WebSocket
+        if (env.ENVIRONMENT === 'development' && !token && !extractAuth(request)) {
+          const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
+          const stub = env.MINDCACHE_INSTANCE.get(id);
+          const headers = new Headers(request.headers);
+          headers.set('X-MindCache-PreAuth', 'true');
+          headers.set('X-MindCache-UserId', 'dev-user');
+          headers.set('X-MindCache-Permission', 'write');
+          const modifiedRequest = new Request(request.url, {
+            method: request.method,
+            headers,
+            body: request.body,
+          });
+          return stub.fetch(modifiedRequest);
+        }
+        
         if (token) {
           // Verify short-lived token
           const tokenData = await env.DB.prepare(`

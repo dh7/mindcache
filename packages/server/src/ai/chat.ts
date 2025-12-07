@@ -101,6 +101,11 @@ function buildSystemPrompt(data: InstanceData): string {
   const systemPromptParts: string[] = [
     'You are an AI assistant with access to a MindCache instance. You can read, write, and delete keys.',
     '',
+    'IMPORTANT RULES:',
+    '1. When the user provides information, use write_key to save it to the EXISTING key that matches. For example: "my name is Alice" → write_key(key="name", value="Alice")',
+    '2. Use the EXACT key names listed below. Do NOT create new keys like "user_name" when "name" already exists.',
+    '3. Always update keys proactively when the user shares relevant information.',
+    '',
     '## Current Context',
     ''
   ];

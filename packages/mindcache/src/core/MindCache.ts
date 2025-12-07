@@ -103,10 +103,24 @@ export class MindCache {
         const tokenEndpoint = this._cloudConfig.tokenEndpoint;
         const instanceId = this._cloudConfig.instanceId;
         
+        // Resolve relative URL to absolute (needed for reconnect in some contexts)
+        const resolveUrl = (endpoint: string): string => {
+          if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+            return endpoint;
+          }
+          // In browser, use window.location.origin
+          if (typeof window !== 'undefined' && window.location?.origin) {
+            return `${window.location.origin}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+          }
+          // Fallback: return as-is and hope fetch handles it
+          return endpoint;
+        };
+        
         adapter.setTokenProvider(async () => {
-          const url = tokenEndpoint.includes('?')
-            ? `${tokenEndpoint}&instanceId=${instanceId}`
-            : `${tokenEndpoint}?instanceId=${instanceId}`;
+          const baseUrl = resolveUrl(tokenEndpoint);
+          const url = baseUrl.includes('?')
+            ? `${baseUrl}&instanceId=${instanceId}`
+            : `${baseUrl}?instanceId=${instanceId}`;
           
           const response = await fetch(url);
           if (!response.ok) {
