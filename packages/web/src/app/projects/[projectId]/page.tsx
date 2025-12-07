@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import Link from 'next/link';
 
 interface Project {
   id: string;
@@ -22,6 +21,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
 
 export default function ProjectPage() {
   const params = useParams();
+  const router = useRouter();
   const { getToken } = useAuth();
   const projectId = params.projectId as string;
 
@@ -116,17 +116,17 @@ export default function ProjectPage() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', padding: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: '#9ca3af' }}>Loading...</div>
+      <div className="min-h-screen p-8 flex items-center justify-center">
+        <div className="text-zinc-400">Loading...</div>
       </div>
     );
   }
 
   if (error || !project) {
     return (
-      <div style={{ minHeight: '100vh', padding: 32 }}>
-        <div style={{ maxWidth: 1024, margin: '0 auto' }}>
-          <div style={{ color: '#f87171', marginTop: 16, padding: 16, borderRadius: 8, border: '1px solid #7f1d1d' }}>
+      <div className="min-h-screen p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-red-400 mt-4 p-4 rounded-lg border border-red-900">
             {error || 'Project not found'}
           </div>
         </div>
@@ -135,27 +135,18 @@ export default function ProjectPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', padding: 32, background: '#0a0a0a', color: '#fff' }}>
-      <div style={{ maxWidth: 1024, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, marginTop: 8 }}>
+    <div className="min-h-screen p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-8 mt-2">
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 600 }}>{project.name}</h1>
+            <h1 className="text-2xl font-semibold">{project.name}</h1>
             {project.description && (
-              <p style={{ color: '#6b7280', marginTop: 4 }}>{project.description}</p>
+              <p className="text-zinc-500 mt-1">{project.description}</p>
             )}
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            style={{ 
-              padding: '8px 16px', 
-              background: '#fff', 
-              color: '#000', 
-              fontSize: 14, 
-              fontWeight: 500, 
-              borderRadius: 8,
-              border: 'none',
-              cursor: 'pointer'
-            }}
+            className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition"
           >
             + New Instance
           </button>
@@ -163,55 +154,41 @@ export default function ProjectPage() {
 
         {/* Instances Table */}
         {instances.length === 0 ? (
-          <div style={{ borderRadius: 12, padding: 48, textAlign: 'center', color: '#6b7280', border: '1px solid #374151' }}>
+          <div className="rounded-xl p-12 text-center text-zinc-500 border border-zinc-800">
             No instances yet. Create one to get started.
           </div>
         ) : (
-          <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #374151' }}>
+          <div className="rounded-xl overflow-hidden border border-zinc-800">
             {/* Table Header */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              padding: '12px 24px', 
-              borderBottom: '1px solid #374151',
-              background: '#111'
-            }}>
-              <div style={{ width: 180, fontSize: 12, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Name</div>
-              <div style={{ flex: 1, fontSize: 12, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Instance ID</div>
-              <div style={{ width: 100, fontSize: 12, fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1 }}>Mode</div>
-              <div style={{ width: 80 }}></div>
+            <div className="flex items-center px-6 py-3 border-b border-zinc-800 bg-zinc-900/50">
+              <div className="w-44 text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</div>
+              <div className="flex-1 text-xs font-medium text-zinc-500 uppercase tracking-wider">Instance ID</div>
+              <div className="w-24 text-xs font-medium text-zinc-500 uppercase tracking-wider">Mode</div>
+              <div className="w-12"></div>
             </div>
 
             {/* Table Body */}
             {instances.map((instance, index) => (
               <div 
                 key={instance.id}
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  padding: '12px 24px',
-                  borderBottom: index !== instances.length - 1 ? '1px solid #1f2937' : 'none',
-                  transition: 'background 0.15s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#111'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onClick={() => router.push(`/projects/${projectId}/instances/${instance.id}`)}
+                className={`flex items-center px-6 py-3 hover:bg-zinc-900/50 transition cursor-pointer group ${
+                  index !== instances.length - 1 ? 'border-b border-zinc-800/50' : ''
+                }`}
               >
                 {/* Name */}
-                <div style={{ width: 180, fontWeight: 500 }}>{instance.name}</div>
+                <div className="w-44 font-medium group-hover:text-white transition">{instance.name}</div>
 
                 {/* Instance ID */}
-                <div style={{ flex: 1 }}>
+                <div className="flex-1">
                   <button
-                    onClick={() => copyToClipboard(instance.id)}
-                    style={{ 
-                      fontFamily: 'monospace', 
-                      fontSize: 13, 
-                      color: copiedId === instance.id ? '#4ade80' : '#9ca3af',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: 0
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyToClipboard(instance.id);
                     }}
+                    className={`font-mono text-sm transition ${
+                      copiedId === instance.id ? 'text-green-400' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
                     title="Click to copy"
                   >
                     {copiedId === instance.id ? '✓ Copied!' : `${instance.id.slice(0, 8)}...${instance.id.slice(-4)}`}
@@ -219,34 +196,23 @@ export default function ProjectPage() {
                 </div>
 
                 {/* Mode */}
-                <div style={{ width: 100, color: '#9ca3af', fontSize: 14 }}>
+                <div className="w-24 text-zinc-500 text-sm">
                   {instance.is_readonly ? 'Read-only' : 'Editable'}
                 </div>
 
                 {/* Actions */}
-                <div style={{ width: 80, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
-                  <Link
-                    href={`/projects/${projectId}/instances/${instance.id}`}
-                    style={{ color: '#6b7280', fontSize: 16, textDecoration: 'none' }}
-                    title="Open"
-                  >
-                    ↗
-                  </Link>
+                <div className="w-12 flex items-center justify-end">
                   <button
-                    onClick={() => setDeleteInstance(instance)}
-                    style={{ 
-                      color: '#6b7280', 
-                      fontSize: 16, 
-                      background: 'none', 
-                      border: 'none', 
-                      cursor: 'pointer',
-                      padding: 0
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteInstance(instance);
                     }}
+                    className="p-2 text-zinc-600 hover:text-red-400 hover:bg-zinc-800 rounded-md transition"
                     title="Delete"
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
                   >
-                    🗑
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -256,69 +222,29 @@ export default function ProjectPage() {
 
         {/* Create Instance Modal */}
         {showCreateModal && (
-          <div style={{ 
-            position: 'fixed', 
-            inset: 0, 
-            background: 'rgba(0,0,0,0.8)', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            zIndex: 50 
-          }}>
-            <div style={{ 
-              background: '#1f2937', 
-              padding: 24, 
-              borderRadius: 12, 
-              border: '1px solid #374151', 
-              width: '100%', 
-              maxWidth: 400 
-            }}>
-              <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>New Instance</h3>
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-zinc-900 p-6 rounded-xl border border-zinc-700 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4">New Instance</h3>
               <input
                 type="text"
                 placeholder="Instance name"
-                style={{ 
-                  width: '100%', 
-                  padding: 12, 
-                  background: '#111', 
-                  border: '1px solid #374151', 
-                  borderRadius: 8, 
-                  marginBottom: 16,
-                  color: '#fff',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }}
+                className="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg mb-4 text-white outline-none focus:border-zinc-500 transition"
                 value={newInstanceName}
                 onChange={(e) => setNewInstanceName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateInstance()}
                 autoFocus
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  style={{ 
-                    padding: '8px 16px', 
-                    color: '#9ca3af', 
-                    background: 'none', 
-                    border: 'none', 
-                    cursor: 'pointer' 
-                  }}
+                  className="px-4 py-2 text-zinc-400 hover:text-white transition"
                   disabled={creating}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateInstance}
-                  style={{ 
-                    padding: '8px 16px', 
-                    background: '#fff', 
-                    color: '#000', 
-                    borderRadius: 8, 
-                    fontWeight: 500,
-                    border: 'none',
-                    cursor: 'pointer',
-                    opacity: creating || !newInstanceName.trim() ? 0.5 : 1
-                  }}
+                  className="px-4 py-2 bg-white text-black rounded-lg font-medium hover:bg-zinc-200 transition disabled:opacity-50"
                   disabled={creating || !newInstanceName.trim()}
                 >
                   {creating ? 'Creating...' : 'Create'}
@@ -330,53 +256,23 @@ export default function ProjectPage() {
 
         {/* Delete Confirmation Modal */}
         {deleteInstance && (
-          <div style={{ 
-            position: 'fixed', 
-            inset: 0, 
-            background: 'rgba(0,0,0,0.8)', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            zIndex: 50 
-          }}>
-            <div style={{ 
-              background: '#1f2937', 
-              padding: 24, 
-              borderRadius: 12, 
-              border: '1px solid #374151', 
-              width: '100%', 
-              maxWidth: 400 
-            }}>
-              <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Delete Instance</h3>
-              <p style={{ color: '#9ca3af', marginBottom: 24 }}>
-                Are you sure you want to delete <span style={{ color: '#fff', fontWeight: 500 }}>{deleteInstance.name}</span>? This cannot be undone.
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-zinc-900 p-6 rounded-xl border border-zinc-700 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-2">Delete Instance</h3>
+              <p className="text-zinc-400 mb-6">
+                Are you sure you want to delete <span className="text-white font-medium">{deleteInstance.name}</span>? This cannot be undone.
               </p>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setDeleteInstance(null)}
-                  style={{ 
-                    padding: '8px 16px', 
-                    color: '#9ca3af', 
-                    background: 'none', 
-                    border: 'none', 
-                    cursor: 'pointer' 
-                  }}
+                  className="px-4 py-2 text-zinc-400 hover:text-white transition"
                   disabled={deleting}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDeleteInstance}
-                  style={{ 
-                    padding: '8px 16px', 
-                    background: '#dc2626', 
-                    color: '#fff', 
-                    borderRadius: 8, 
-                    fontWeight: 500,
-                    border: 'none',
-                    cursor: 'pointer',
-                    opacity: deleting ? 0.5 : 1
-                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition disabled:opacity-50"
                   disabled={deleting}
                 >
                   {deleting ? 'Deleting...' : 'Delete'}

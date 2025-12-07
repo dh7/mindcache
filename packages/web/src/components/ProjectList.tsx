@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { listProjects, createProject, deleteProject, type Project } from '@/lib/api';
 import { ShareModal } from './ShareModal';
 
 export function ProjectList() {
+  const router = useRouter();
   const { getToken } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +47,7 @@ export function ProjectList() {
   };
 
   if (loading) {
-    return <div className="text-gray-400 p-8 text-center">Loading...</div>;
+    return <div className="text-zinc-400 p-8 text-center">Loading...</div>;
   }
 
   if (error) {
@@ -54,7 +56,7 @@ export function ProjectList() {
         <p className="text-red-400 mb-4">{error}</p>
         <button 
           onClick={fetchProjects}
-          className="px-4 py-2 bg-gray-800 rounded hover:bg-gray-700"
+          className="px-4 py-2 bg-zinc-800 rounded hover:bg-zinc-700"
         >
           Retry
         </button>
@@ -75,7 +77,7 @@ export function ProjectList() {
       </div>
 
       {projects.length === 0 ? (
-        <div className="border border-gray-800 rounded-lg p-8 text-center text-gray-500">
+        <div className="border border-zinc-800 rounded-lg p-8 text-center text-zinc-500">
           <p>No projects yet. Create your first project to get started.</p>
         </div>
       ) : (
@@ -83,39 +85,46 @@ export function ProjectList() {
           {projects.map(project => (
             <div
               key={project.id}
-              className="border border-gray-800 rounded-lg p-4 hover:border-gray-600 transition"
+              onClick={() => router.push(`/projects/${project.id}`)}
+              className="border border-zinc-800 rounded-lg p-4 hover:border-zinc-600 hover:bg-zinc-900/50 transition cursor-pointer group"
             >
               <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-semibold text-lg">{project.name}</h3>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-semibold text-lg group-hover:text-white transition">{project.name}</h3>
                   {project.description && (
-                    <p className="text-gray-400 text-sm mt-1">{project.description}</p>
+                    <p className="text-zinc-400 text-sm mt-1">{project.description}</p>
                   )}
-                  <p className="text-gray-500 text-xs mt-2">
-                    Project ID: <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded select-all">{project.id}</span>
+                  <p className="text-zinc-500 text-xs mt-2">
+                    Project ID: <span className="font-mono bg-zinc-800 px-1.5 py-0.5 rounded select-all">{project.id}</span>
                   </p>
-                  <p className="text-gray-500 text-xs mt-1">
+                  <p className="text-zinc-500 text-xs mt-1">
                     Created {new Date(project.created_at * 1000).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <a
-                    href={`/projects/${project.id}`}
-                    className="px-3 py-1 bg-gray-800 rounded hover:bg-gray-700 text-sm"
-                  >
-                    Open
-                  </a>
+                <div className="flex items-center gap-1 ml-4">
                   <button
-                    onClick={() => setSharingProject(project)}
-                    className="px-3 py-1 bg-blue-900/50 rounded hover:bg-blue-900 text-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSharingProject(project);
+                    }}
+                    className="p-2 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-md transition"
+                    title="Share"
                   >
-                    Share
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+                    </svg>
                   </button>
                   <button
-                    onClick={() => handleDelete(project.id)}
-                    className="px-3 py-1 bg-red-900/50 rounded hover:bg-red-900 text-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(project.id);
+                    }}
+                    className="p-2 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded-md transition"
+                    title="Delete"
                   >
-                    Delete
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -178,27 +187,27 @@ function CreateProjectModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-md">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-full max-w-md">
         <h3 className="text-xl font-semibold mb-4">Create Project</h3>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-1">Name</label>
+            <label className="block text-sm text-zinc-400 mb-1">Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded focus:border-zinc-500 outline-none"
               placeholder="My Project"
               autoFocus
             />
           </div>
           <div className="mb-4">
-            <label className="block text-sm text-gray-400 mb-1">Description (optional)</label>
+            <label className="block text-sm text-zinc-400 mb-1">Description (optional)</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-gray-500 outline-none resize-none"
+              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded focus:border-zinc-500 outline-none resize-none"
               rows={3}
               placeholder="What's this project for?"
             />
@@ -208,14 +217,14 @@ function CreateProjectModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-400 hover:text-white"
+              className="px-4 py-2 text-zinc-400 hover:text-white"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || submitting}
-              className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200 disabled:opacity-50"
+              className="px-4 py-2 bg-white text-black rounded hover:bg-zinc-200 disabled:opacity-50"
             >
               {submitting ? 'Creating...' : 'Create'}
             </button>
