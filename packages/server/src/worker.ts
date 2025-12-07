@@ -60,7 +60,7 @@ export default {
     // CORS headers
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
 
@@ -72,7 +72,7 @@ export default {
     try {
       // Health check
       if (path === '/health') {
-        return Response.json({ status: 'ok', environment: env.ENVIRONMENT });
+        return Response.json({ status: 'ok', environment: env.ENVIRONMENT }, { headers: corsHeaders });
       }
 
       // Clerk webhook endpoint
@@ -84,7 +84,7 @@ export default {
       if (path.startsWith('/sync/')) {
         const instanceId = path.split('/')[2];
         if (!instanceId) {
-          return Response.json({ error: 'Instance ID required' }, { status: 400 });
+          return Response.json({ error: 'Instance ID required' }, { status: 400, headers: corsHeaders });
         }
 
         // Verify auth BEFORE upgrading WebSocket
@@ -194,7 +194,7 @@ export default {
 async function handleApiRequest(request: Request, env: Env, path: string): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json',
   };
@@ -508,6 +508,23 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       DELETE FROM instances WHERE id = ? AND owner_id = ?
     `).bind(instanceId, userId).run();
     return Response.json({ success: true }, { headers: corsHeaders });
+  }
+
+  // Update instance (rename)
+  if (instanceMatch && request.method === 'PATCH') {
+    const instanceId = instanceMatch[1];
+    const body = await request.json() as { name?: string };
+    if (!body.name?.trim()) {
+      return Response.json({ error: 'Name is required' }, { status: 400, headers: corsHeaders });
+    }
+    await env.DB.prepare(`
+      UPDATE instances SET name = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND owner_id = ?
+    `).bind(body.name.trim(), instanceId, userId).run();
+    const updated = await env.DB.prepare(`
+      SELECT id, name, is_readonly, created_at, updated_at FROM instances WHERE id = ?
+    `).bind(instanceId).first();
+    return Response.json(updated, { headers: corsHeaders });
   }
 
   // ============= SHARES =============

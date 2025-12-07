@@ -4,6 +4,12 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 
+interface Instance {
+  id: string;
+  name: string;
+  is_readonly: number;
+}
+
 interface KeyEntry {
   value: unknown;
   attributes: {
@@ -30,6 +36,9 @@ export default function InstanceEditorPage() {
   const projectId = params.projectId as string;
   const instanceId = params.instanceId as string;
 
+  const [instance, setInstance] = useState<Instance | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [instanceName, setInstanceName] = useState('');
   const [keys, setKeys] = useState<SyncData>({});
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,11 +50,60 @@ export default function InstanceEditorPage() {
   const [newKeyValue, setNewKeyValue] = useState('');
   const [newKeyType, setNewKeyType] = useState<'text' | 'json'>('text');
 
-  // Edit key
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
+  // Track which keys have unsaved changes
+  const [keyValues, setKeyValues] = useState<Record<string, string>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
+  const saveTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
+
+  // Fetch instance metadata from list endpoint
+  useEffect(() => {
+    const fetchInstance = async () => {
+      try {
+        const token = await getToken() || 'dev';
+        const res = await fetch(`${API_URL}/api/projects/${projectId}/instances`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const found = data.instances?.find((i: Instance) => i.id === instanceId);
+          if (found) {
+            setInstance(found);
+            setInstanceName(found.name);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch instance:', err);
+      }
+    };
+    fetchInstance();
+  }, [projectId, instanceId, getToken]);
+
+  const handleUpdateInstanceName = async () => {
+    if (!instanceName.trim() || instanceName === instance?.name) {
+      setEditingName(false);
+      return;
+    }
+    try {
+      const token = await getToken() || 'dev';
+      const res = await fetch(`${API_URL}/api/instances/${instanceId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: instanceName }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setInstance(prev => prev ? { ...prev, name: updated.name } : null);
+        setInstanceName(updated.name);
+      }
+    } catch (err) {
+      console.error('Failed to update instance name:', err);
+    }
+    setEditingName(false);
+  };
 
   const connect = useCallback(async () => {
     try {
@@ -176,16 +234,45 @@ export default function InstanceEditorPage() {
     setShowAddKey(false);
   };
 
-  const handleSaveEdit = (key: string) => {
+  // Initialize keyValues when keys change from server
+  useEffect(() => {
+    const newKeyValues: Record<string, string> = {};
+    for (const [key, entry] of Object.entries(keys)) {
+      if (!(key in keyValues)) {
+        newKeyValues[key] = entry.attributes.type === 'json'
+          ? JSON.stringify(entry.value, null, 2)
+          : String(entry.value ?? '');
+      }
+    }
+    if (Object.keys(newKeyValues).length > 0) {
+      setKeyValues(prev => ({ ...prev, ...newKeyValues }));
+    }
+  }, [keys]);
+
+  const handleKeyValueChange = (key: string, newValue: string) => {
+    setKeyValues(prev => ({ ...prev, [key]: newValue }));
+    
+    // Clear existing timeout for this key
+    if (saveTimeoutRef.current[key]) {
+      clearTimeout(saveTimeoutRef.current[key]);
+    }
+    
+    // Debounce save - auto-save after 500ms of no typing
+    saveTimeoutRef.current[key] = setTimeout(() => {
+      saveKeyValue(key, newValue);
+    }, 500);
+  };
+
+  const saveKeyValue = (key: string, valueStr: string) => {
     const entry = keys[key];
     if (!entry) return;
 
-    let value: unknown = editValue;
+    let value: unknown = valueStr;
     if (entry.attributes.type === 'json') {
       try {
-        value = JSON.parse(editValue);
+        value = JSON.parse(valueStr);
       } catch {
-        alert('Invalid JSON');
+        // Invalid JSON - don't save
         return;
       }
     }
@@ -197,8 +284,6 @@ export default function InstanceEditorPage() {
       attributes: entry.attributes,
       timestamp: Date.now(),
     });
-
-    setEditingKey(null);
   };
 
   const handleDeleteKey = (key: string) => {
@@ -208,17 +293,12 @@ export default function InstanceEditorPage() {
       key,
       timestamp: Date.now(),
     });
-  };
-
-  const startEditing = (key: string) => {
-    const entry = keys[key];
-    if (!entry) return;
-    setEditingKey(key);
-    setEditValue(
-      entry.attributes.type === 'json'
-        ? JSON.stringify(entry.value, null, 2)
-        : String(entry.value ?? '')
-    );
+    // Clean up local state
+    setKeyValues(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   const canEdit = permission === 'write' || permission === 'admin';
@@ -226,21 +306,57 @@ export default function InstanceEditorPage() {
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Status bar */}
-        <div className="mb-6 flex items-center gap-3">
-          <span
-            className={`px-2 py-1 text-xs rounded ${
-              connected ? 'bg-green-600' : 'bg-red-600'
-            }`}
-          >
-            {connected ? '● Connected' : '○ Disconnected'}
-          </span>
-          {connected && (
-            <span className="px-2 py-1 text-xs bg-gray-700 rounded">
-              {permission}
+        {/* Instance Header with Editable Name */}
+        <div className="mb-6 mt-2">
+          <div className="flex items-center gap-3 mb-2">
+            {editingName ? (
+              <input
+                type="text"
+                value={instanceName}
+                onChange={(e) => setInstanceName(e.target.value)}
+                onBlur={handleUpdateInstanceName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleUpdateInstanceName();
+                  if (e.key === 'Escape') {
+                    setInstanceName(instance?.name || '');
+                    setEditingName(false);
+                  }
+                }}
+                className="text-2xl font-semibold bg-transparent border-b-2 border-zinc-500 outline-none px-1"
+                autoFocus
+              />
+            ) : (
+              <h1
+                className="text-2xl font-semibold cursor-pointer hover:text-zinc-300 transition group flex items-center gap-2"
+                onClick={() => canEdit && setEditingName(true)}
+                title={canEdit ? 'Click to edit name' : undefined}
+              >
+                {instance?.name || 'Loading...'}
+                {canEdit && (
+                  <svg className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                )}
+              </h1>
+            )}
+          </div>
+          
+          {/* Status bar */}
+          <div className="flex items-center gap-3">
+            <span
+              className={`px-2 py-1 text-xs rounded ${
+                connected ? 'bg-green-600' : 'bg-red-600'
+              }`}
+            >
+              {connected ? '● Connected' : '○ Disconnected'}
             </span>
-          )}
-          {error && <span className="text-red-500 text-sm ml-2">{error}</span>}
+            {connected && (
+              <span className="px-2 py-1 text-xs bg-gray-700 rounded">
+                {permission}
+              </span>
+            )}
+            {error && <span className="text-red-500 text-sm ml-2">{error}</span>}
+          </div>
         </div>
 
         {/* Add Key Button */}
@@ -248,7 +364,7 @@ export default function InstanceEditorPage() {
           <div className="mb-4">
             <button
               onClick={() => setShowAddKey(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition"
             >
               + Add Key
             </button>
@@ -258,19 +374,19 @@ export default function InstanceEditorPage() {
         {/* Keys List */}
         <div className="space-y-3">
           {Object.keys(keys).length === 0 ? (
-            <div className="text-gray-500 text-center py-8 border border-gray-700 rounded-lg">
+            <div className="text-zinc-500 text-center py-8 border border-zinc-800 rounded-lg">
               No keys yet. {canEdit ? 'Add one to get started.' : ''}
             </div>
           ) : (
             Object.entries(keys).map(([key, entry]) => (
               <div
                 key={key}
-                className="bg-gray-900 border border-gray-700 rounded-lg p-4"
+                className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4"
               >
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <span className="font-mono font-bold text-blue-400">{key}</span>
-                    <span className="ml-2 text-xs text-gray-500">
+                    <span className="ml-2 text-xs text-zinc-500">
                       {entry.attributes.type}
                       {entry.attributes.readonly && ' • readonly'}
                     </span>
@@ -279,7 +395,7 @@ export default function InstanceEditorPage() {
                         {entry.attributes.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="px-1 py-0.5 text-xs bg-gray-700 rounded mr-1"
+                            className="px-1 py-0.5 text-xs bg-zinc-700 rounded mr-1"
                           >
                             {tag}
                           </span>
@@ -288,48 +404,28 @@ export default function InstanceEditorPage() {
                     )}
                   </div>
                   {canEdit && !entry.attributes.readonly && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => startEditing(key)}
-                        className="text-xs px-2 py-1 bg-blue-600 rounded hover:bg-blue-700"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteKey(key)}
-                        className="text-xs px-2 py-1 bg-red-600 rounded hover:bg-red-700"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleDeleteKey(key)}
+                      className="p-2 text-zinc-600 hover:text-red-400 hover:bg-zinc-800 rounded-md transition"
+                      title="Delete"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                      </svg>
+                    </button>
                   )}
                 </div>
 
-                {editingKey === key ? (
-                  <div>
-                    <textarea
-                      className="w-full p-2 bg-gray-800 border border-gray-600 rounded font-mono text-sm"
-                      rows={entry.attributes.type === 'json' ? 6 : 2}
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                    />
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        onClick={() => handleSaveEdit(key)}
-                        className="px-3 py-1 bg-green-600 rounded text-sm hover:bg-green-700"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingKey(null)}
-                        className="px-3 py-1 bg-gray-600 rounded text-sm hover:bg-gray-500"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+                {canEdit && !entry.attributes.readonly ? (
+                  <textarea
+                    className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded font-mono text-sm text-zinc-300 focus:border-zinc-500 outline-none resize-y"
+                    rows={entry.attributes.type === 'json' ? 6 : 2}
+                    value={keyValues[key] ?? ''}
+                    onChange={(e) => handleKeyValueChange(key, e.target.value)}
+                    placeholder="Enter value..."
+                  />
                 ) : (
-                  <pre className="text-sm text-gray-300 bg-gray-800 p-2 rounded overflow-x-auto">
+                  <pre className="text-sm text-zinc-300 bg-zinc-800 p-2 rounded overflow-x-auto">
                     {entry.attributes.type === 'json'
                       ? JSON.stringify(entry.value, null, 2)
                       : String(entry.value ?? '')}

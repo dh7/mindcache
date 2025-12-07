@@ -143,6 +143,26 @@ export default function ProjectPage() {
             {project.description && (
               <p className="text-zinc-500 mt-1">{project.description}</p>
             )}
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-zinc-500 text-sm font-mono">{project.id}</span>
+              <button
+                onClick={() => copyToClipboard(project.id)}
+                className={`p-1 rounded transition ${
+                  copiedId === project.id ? 'text-green-400' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+                title="Copy project ID"
+              >
+                {copiedId === project.id ? (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
@@ -180,18 +200,29 @@ export default function ProjectPage() {
                 <div className="w-44 font-medium group-hover:text-white transition">{instance.name}</div>
 
                 {/* Instance ID */}
-                <div className="flex-1">
+                <div className="flex-1 flex items-center gap-2">
+                  <span className="font-mono text-sm text-zinc-500">
+                    {instance.id.slice(0, 8)}...{instance.id.slice(-4)}
+                  </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       copyToClipboard(instance.id);
                     }}
-                    className={`font-mono text-sm transition ${
-                      copiedId === instance.id ? 'text-green-400' : 'text-zinc-500 hover:text-zinc-300'
+                    className={`p-1 rounded transition ${
+                      copiedId === instance.id ? 'text-green-400' : 'text-zinc-600 hover:text-zinc-300'
                     }`}
-                    title="Click to copy"
+                    title="Copy instance ID"
                   >
-                    {copiedId === instance.id ? '✓ Copied!' : `${instance.id.slice(0, 8)}...${instance.id.slice(-4)}`}
+                    {copiedId === instance.id ? (
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
                   </button>
                 </div>
 
