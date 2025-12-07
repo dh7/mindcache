@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev --local",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "wrangler d1 migrations apply mindcache-db",
+    "db:migrate": "wrangler d1 migrations apply mindcache-db --env production --remote",
     "db:migrate:local": "wrangler d1 migrations apply mindcache-db --local"
   },
   "devDependencies": {

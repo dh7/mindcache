@@ -62,7 +62,7 @@ export default function InstanceEditorPage() {
       
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to get token' }));
-        setError(err.error || 'Failed to authenticate');
+        setError(err.details || err.error || 'Failed to authenticate');
         return;
       }
       

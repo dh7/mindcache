@@ -638,8 +638,9 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
   return Response.json({ error: 'Not found' }, { status: 404, headers: corsHeaders });
   } catch (error) {
     console.error('API error:', error);
+    const details = error instanceof Error ? error.message : String(error);
     return Response.json(
-      { error: 'Internal server error', details: String(error) }, 
+      { error: 'Internal server error', details, stack: error instanceof Error ? error.stack : undefined }, 
       { status: 500, headers: corsHeaders }
     );
   }
