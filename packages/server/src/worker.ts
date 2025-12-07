@@ -243,6 +243,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     }
 
   // Ensure user exists in database (upsert on first login)
+  // INSERT OR IGNORE handles conflicts on any unique constraint (id or clerk_id)
   await env.DB.prepare(`
     INSERT OR IGNORE INTO users (id, clerk_id, email, name)
     VALUES (?, ?, ?, ?)
@@ -252,31 +253,46 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
   
   // Generate short-lived token for WebSocket connection
   if (path === '/api/ws-token' && request.method === 'POST') {
-    const body = await request.json() as { instanceId: string; permission?: 'read' | 'write' };
+    let body: { instanceId: string; permission?: 'read' | 'write' };
+    try {
+      body = await request.json() as { instanceId: string; permission?: 'read' | 'write' };
+    } catch (e) {
+      return Response.json({ error: 'Invalid JSON body', details: String(e) }, { status: 400, headers: corsHeaders });
+    }
     
     if (!body.instanceId) {
       return Response.json({ error: 'instanceId required' }, { status: 400, headers: corsHeaders });
     }
     
     // Verify user has access to this instance
+    // Check both clerk_id (userId from JWT) and internal user id for owner matching
+    // This handles cases where owner_id was stored as either value
     const instance = await env.DB.prepare(`
       SELECT i.id, i.project_id,
              CASE 
-               WHEN p.owner_id = ? THEN 'admin'
+               WHEN p.owner_id = ? OR p.owner_id = (SELECT id FROM users WHERE clerk_id = ?) THEN 'admin'
                WHEN si.permission IS NOT NULL THEN si.permission
                ELSE sp.permission 
              END as permission
       FROM instances i
       JOIN projects p ON p.id = i.project_id
       LEFT JOIN shares sp ON sp.resource_type = 'project' AND sp.resource_id = p.id 
-                         AND (sp.target_type = 'user' AND sp.target_id = ? OR sp.target_type = 'public')
+                         AND (sp.target_type = 'user' AND sp.target_id IN (?, (SELECT id FROM users WHERE clerk_id = ?)) OR sp.target_type = 'public')
       LEFT JOIN shares si ON si.resource_type = 'instance' AND si.resource_id = i.id 
-                         AND (si.target_type = 'user' AND si.target_id = ? OR si.target_type = 'public')
-      WHERE i.id = ? AND (p.owner_id = ? OR sp.id IS NOT NULL OR si.id IS NOT NULL)
-    `).bind(userId, userId, userId, body.instanceId, userId).first<{ id: string; permission: string }>();
+                         AND (si.target_type = 'user' AND si.target_id IN (?, (SELECT id FROM users WHERE clerk_id = ?)) OR si.target_type = 'public')
+      WHERE i.id = ? AND (
+        p.owner_id = ? 
+        OR p.owner_id = (SELECT id FROM users WHERE clerk_id = ?)
+        OR sp.id IS NOT NULL 
+        OR si.id IS NOT NULL
+      )
+    `).bind(userId, userId, userId, userId, userId, userId, body.instanceId, userId, userId).first<{ id: string; permission: string }>();
     
     if (!instance) {
-      return Response.json({ error: 'Instance not found or access denied' }, { status: 404, headers: corsHeaders });
+      return Response.json({ 
+        error: 'Instance not found or access denied',
+        debug: { clerkUserId: userId, instanceId: body.instanceId }
+      }, { status: 404, headers: corsHeaders });
     }
     
     // Generate token

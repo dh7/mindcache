@@ -1,9 +1,6 @@
 name = "mindcache-api"
 main = "src/worker.ts"
 compatibility_date = "2024-11-01"
-
-# Use local mode by default for development
-# Remove this line for production deployment
 compatibility_flags = ["nodejs_compat"]
 
 # Durable Objects
@@ -24,40 +21,13 @@ migrations_dir = "migrations"
 tag = "v1"
 new_sqlite_classes = ["MindCacheInstanceDO"]
 
-# Environment variables (set via wrangler secret)
-# CLERK_SECRET_KEY - for JWT verification
-# CLERK_WEBHOOK_SECRET - for webhook signature verification
-# OPENAI_API_KEY - for Chat API, transform, and image analysis
-# FIREWORKS_API_KEY - for image generation (flux-kontext-pro)
-
+# Environment variables
 [vars]
-ENVIRONMENT = "development"
-ADMIN_TOKEN = "dev-admin-secret"
+ENVIRONMENT = "production"
 
-# To set secrets, run:
-# wrangler secret put CLERK_SECRET_KEY
-# wrangler secret put CLERK_WEBHOOK_SECRET
-
-# ===================
-# Production Environment
-# ===================
-[env.production]
-vars = { ENVIRONMENT = "production", ADMIN_TOKEN = "dev-admin-secret" }
-
-[env.production.durable_objects]
-bindings = [
-  { name = "MINDCACHE_INSTANCE", class_name = "MindCacheInstanceDO" }
-]
-
-[[env.production.d1_databases]]
-binding = "DB"
-database_name = "mindcache-db"
-database_id = "29e53281-6ad2-4c90-b7de-27d55fcad594"
-
-
-
-# To set production secrets:
-# wrangler secret put CLERK_SECRET_KEY --env production
-# wrangler secret put CLERK_WEBHOOK_SECRET --env production
-# wrangler secret put OPENAI_API_KEY --env production
-
+# Secrets (set via wrangler secret put):
+# - CLERK_SECRET_KEY
+# - CLERK_WEBHOOK_SECRET
+# - OPENAI_API_KEY
+# - FIREWORKS_API_KEY
+# - ADMIN_TOKEN
