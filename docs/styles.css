@@ -138,6 +138,23 @@ body {
     transform: translateY(-1px);
 }
 
+.cloud-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-md);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    color: white !important;
+    border-radius: var(--radius-md);
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.cloud-link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
 /* Hero Section */
 .hero {
     padding: 8rem 0 4rem;
@@ -366,6 +383,99 @@ section {
     color: var(--text-secondary);
 }
 
+/* Cloud Section */
+.cloud-section {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+    padding: var(--space-3xl) 0;
+}
+
+.cloud-section .section-header h2 {
+    color: white;
+}
+
+.cloud-section .section-header p {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.cloud-features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--space-xl);
+    margin-bottom: var(--space-3xl);
+}
+
+.cloud-feature {
+    padding: var(--space-xl);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-xl);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
+}
+
+.cloud-feature:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-4px);
+}
+
+.cloud-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-md);
+}
+
+.cloud-feature h3 {
+    color: white;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: var(--space-sm);
+}
+
+.cloud-feature p {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.95rem;
+}
+
+.cloud-cta {
+    text-align: center;
+}
+
+.btn-cloud {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    text-decoration: none;
+}
+
+.btn-cloud:hover {
+    background: linear-gradient(135deg, var(--primary-dark) 0%, #059669 100%);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+}
+
+.btn-cloud-large {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-lg) var(--space-2xl);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    color: white;
+    border: none;
+    border-radius: var(--radius-lg);
+    font-size: 1.125rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.btn-cloud-large:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+}
+
+.cloud-note {
+    margin-top: var(--space-md);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.875rem;
+}
+
 /* Features Section */
 .features {
     background: var(--surface);
@@ -571,6 +681,15 @@ section {
 
 .doc-card p {
     color: var(--text-secondary);
+}
+
+.doc-card-cloud {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%);
+    border-color: var(--primary);
+}
+
+.doc-card-cloud:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%);
 }
 
 /* Footer */
