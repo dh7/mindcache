@@ -122,10 +122,19 @@ export async function verifyClerkJWT(
     }
 
     // Get JWKS and find matching key
-    const jwks = await getClerkJWKS(clerkSecretKey);
-    const jwk = header.kid 
+    let jwks = await getClerkJWKS(clerkSecretKey);
+    let jwk = header.kid 
       ? jwks.find(k => k.kid === header.kid)
       : jwks[0];
+
+    // If no matching key found and we used cache, invalidate and retry
+    if (!jwk && jwksCache) {
+      jwksCache = null;
+      jwks = await getClerkJWKS(clerkSecretKey);
+      jwk = header.kid 
+        ? jwks.find(k => k.kid === header.kid)
+        : jwks[0];
+    }
 
     if (!jwk) {
       return { valid: false, error: 'No matching key found' };
