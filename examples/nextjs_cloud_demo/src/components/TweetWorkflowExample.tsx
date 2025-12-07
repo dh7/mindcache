@@ -48,7 +48,7 @@ export default function TweetWorkflowExample() {
     fields.forEach(({ key, value, type }) => {
       if (!mindcacheRef.current.has(key)) {
         mindcacheRef.current.set_value(key, value, { 
-          visible: true, readonly: false, type: type as any 
+          visible: true, readonly: false, type: type as 'text' | 'image' 
         });
       }
     });

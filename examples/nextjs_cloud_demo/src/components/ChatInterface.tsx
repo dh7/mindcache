@@ -1,6 +1,6 @@
 'use client';
 
-import { useChat } from '@ai-sdk/react';
+import { useChat, UIMessage } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { useEffect, useRef, useState } from 'react';
 import { MindCache } from 'mindcache';
@@ -8,7 +8,7 @@ import ChatConversation from './ChatConversation';
 
 interface ChatInterfaceProps {
   instanceId: string;
-  initialMessages?: any[];
+  initialMessages?: UIMessage[];
   workflowPrompt?: string;
   onWorkflowPromptSent?: () => void;
   onStatusChange?: (status: string) => void;
