@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@clerk/nextjs';
-import Link from 'next/link';
 import { listApiKeys, createApiKey, deleteApiKey, listProjects, listInstances, type ApiKey } from '@/lib/api';
 
 interface Project {
@@ -113,11 +112,7 @@ export default function ApiKeysPage() {
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
-      <Link href="/" className="text-gray-400 hover:text-white text-sm mb-6 inline-block">
-        ← Back to Projects
-      </Link>
-
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 mt-2">
         <h1 className="text-2xl font-bold">API Keys</h1>
         <button
           onClick={() => setShowCreateModal(true)}

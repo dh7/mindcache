@@ -126,9 +126,6 @@ export default function ProjectPage() {
     return (
       <div style={{ minHeight: '100vh', padding: 32 }}>
         <div style={{ maxWidth: 1024, margin: '0 auto' }}>
-          <Link href="/" style={{ color: '#9ca3af', fontSize: 14 }}>
-            ← Back to Projects
-          </Link>
           <div style={{ color: '#f87171', marginTop: 16, padding: 16, borderRadius: 8, border: '1px solid #7f1d1d' }}>
             {error || 'Project not found'}
           </div>
@@ -140,12 +137,7 @@ export default function ProjectPage() {
   return (
     <div style={{ minHeight: '100vh', padding: 32, background: '#0a0a0a', color: '#fff' }}>
       <div style={{ maxWidth: 1024, margin: '0 auto' }}>
-        {/* Header */}
-        <Link href="/" style={{ color: '#9ca3af', fontSize: 14, display: 'inline-block', marginBottom: 24 }}>
-          ← Back to Projects
-        </Link>
-        
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, marginTop: 8 }}>
           <div>
             <h1 style={{ fontSize: 24, fontWeight: 600 }}>{project.name}</h1>
             {project.description && (

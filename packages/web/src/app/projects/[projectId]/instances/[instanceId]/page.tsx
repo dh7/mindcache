@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import Link from 'next/link';
 
 interface KeyEntry {
   value: unknown;
@@ -227,30 +226,21 @@ export default function InstanceEditorPage() {
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <Link
-            href={`/projects/${projectId}`}
-            className="text-blue-400 hover:underline mb-2 inline-block"
+        {/* Status bar */}
+        <div className="mb-6 flex items-center gap-3">
+          <span
+            className={`px-2 py-1 text-xs rounded ${
+              connected ? 'bg-green-600' : 'bg-red-600'
+            }`}
           >
-            ← Back to Project
-          </Link>
-          <div className="flex items-center gap-3 mt-2">
-            <h1 className="text-2xl font-bold">Instance Editor</h1>
-            <span
-              className={`px-2 py-1 text-xs rounded ${
-                connected ? 'bg-green-600' : 'bg-red-600'
-              }`}
-            >
-              {connected ? '● Connected' : '○ Disconnected'}
+            {connected ? '● Connected' : '○ Disconnected'}
+          </span>
+          {connected && (
+            <span className="px-2 py-1 text-xs bg-gray-700 rounded">
+              {permission}
             </span>
-            {connected && (
-              <span className="px-2 py-1 text-xs bg-gray-700 rounded">
-                {permission}
-              </span>
-            )}
-          </div>
-          {error && <p className="text-red-500 mt-2">{error}</p>}
+          )}
+          {error && <span className="text-red-500 text-sm ml-2">{error}</span>}
         </div>
 
         {/* Add Key Button */}
