@@ -60,7 +60,7 @@ export default {
     // CORS headers
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
 
@@ -72,7 +72,7 @@ export default {
     try {
       // Health check
       if (path === '/health') {
-        return Response.json({ status: 'ok', environment: env.ENVIRONMENT }, { headers: corsHeaders });
+        return Response.json({ status: 'ok', environment: env.ENVIRONMENT });
       }
 
       // Clerk webhook endpoint
@@ -84,7 +84,7 @@ export default {
       if (path.startsWith('/sync/')) {
         const instanceId = path.split('/')[2];
         if (!instanceId) {
-          return Response.json({ error: 'Instance ID required' }, { status: 400, headers: corsHeaders });
+          return Response.json({ error: 'Instance ID required' }, { status: 400 });
         }
 
         // Verify auth BEFORE upgrading WebSocket
@@ -194,7 +194,7 @@ export default {
 async function handleApiRequest(request: Request, env: Env, path: string): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json',
   };
