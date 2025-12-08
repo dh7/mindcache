@@ -23,7 +23,7 @@
     "zod": "^3.23.0"
   },
   "lint-staged": {
-    "*.{ts,tsx}": "eslint --fix"
+    "packages/**/*.{ts,tsx}": "eslint --fix"
   },
   "pnpm": {
     "overrides": {
