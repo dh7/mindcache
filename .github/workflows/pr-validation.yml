@@ -90,13 +90,14 @@ jobs:
     - name: Build and check bundle size
       run: |
         pnpm run build
-        echo "📦 Checking bundle size..."
-        du -sh lib/
+        echo "📦 Checking bundle sizes..."
+        du -sh packages/mindcache/dist/
+        du -sh packages/shared/dist/
       env:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
         CLERK_SECRET_KEY: sk_test_dummy-key-for-ci-build
         
     - name: Package size check
       run: |
-        pnpm pack --dry-run
+        cd packages/mindcache && pnpm pack --dry-run
         echo "✅ Package size check complete!"

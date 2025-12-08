@@ -142,8 +142,8 @@ jobs:
             echo "Testing example: $example_dir"
             cd "$example_dir"
             
-            # Install dependencies
-            npm ci
+            # Install dependencies (skip postinstall scripts that may fail in CI)
+            npm ci --ignore-scripts
             
             # Create environment file if template exists
             if [ -f "env.example" ]; then
