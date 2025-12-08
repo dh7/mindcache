@@ -51,8 +51,8 @@ jobs:
     
     - name: 📊 Test coverage
       run: |
-        echo "Generating test coverage..."
-        pnpm test -- --coverage
+        echo "Running tests..."
+        pnpm test
     
     - name: 🔒 Security check
       run: |
