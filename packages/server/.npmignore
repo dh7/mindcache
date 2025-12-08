@@ -1,0 +1,16 @@
+# Wrangler dev state
+.wrangler/
+.dev.vars
+.dev.vars.example
+
+# Turbo
+.turbo/
+
+# Tests
+tests/
+vitest.config.ts
+
+# Config
+wrangler.toml
+tsconfig.json
+
