@@ -135,9 +135,10 @@ jobs:
     
     - name: Test examples
       run: |
-        # Find all example directories with package.json
+        # Find all example directories with package-lock.json (npm-based examples)
+        # Examples using workspace:* are already built by turbo
         for example_dir in examples/*/; do
-          if [ -f "$example_dir/package.json" ]; then
+          if [ -f "$example_dir/package-lock.json" ]; then
             echo "Testing example: $example_dir"
             cd "$example_dir"
             
@@ -176,5 +177,7 @@ jobs:
             
             # Go back to root
             cd ../..
+          else
+            echo "Skipping $example_dir (no package-lock.json, managed by pnpm workspace)"
           fi
         done
