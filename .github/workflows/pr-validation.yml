@@ -45,6 +45,9 @@ jobs:
         echo "Building project..."
         pnpm run build
         echo "✅ Build successful!"
+      env:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
+        CLERK_SECRET_KEY: sk_test_dummy-key-for-ci-build
     
     - name: 📊 Test coverage
       run: |
@@ -89,6 +92,9 @@ jobs:
         pnpm run build
         echo "📦 Checking bundle size..."
         du -sh lib/
+      env:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
+        CLERK_SECRET_KEY: sk_test_dummy-key-for-ci-build
         
     - name: Package size check
       run: |
