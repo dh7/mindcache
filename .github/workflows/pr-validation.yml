@@ -99,5 +99,5 @@ jobs:
         
     - name: Package size check
       run: |
-        cd packages/mindcache && pnpm pack --dry-run
+        cd packages/mindcache && pnpm pack && ls -lh *.tgz && rm *.tgz
         echo "✅ Package size check complete!"
