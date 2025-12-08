@@ -109,22 +109,22 @@ export interface ClearedByMessage {
   timestamp: number;
 }
 
-export type IncomingMessage = 
-  | AuthSuccessMessage 
-  | AuthErrorMessage 
-  | SyncMessage 
-  | SetMessage 
-  | DeleteMessage 
-  | ClearMessage 
+export type IncomingMessage =
+  | AuthSuccessMessage
+  | AuthErrorMessage
+  | SyncMessage
+  | SetMessage
+  | DeleteMessage
+  | ClearMessage
   | ErrorMessage
   | KeyUpdatedMessage
   | KeyDeletedMessage
   | ClearedByMessage;
 
-export type OutgoingMessage = 
-  | AuthMessage 
-  | SetOperation 
-  | DeleteOperation 
+export type OutgoingMessage =
+  | AuthMessage
+  | SetOperation
+  | DeleteOperation
   | ClearOperation;
 
 /**

@@ -79,12 +79,14 @@ export class MindCache {
   }
 
   private async _initCloud(): Promise<void> {
-    if (!this._cloudConfig) return;
+    if (!this._cloudConfig) {
+      return;
+    }
 
     try {
       // Dynamic import to avoid circular dependency
       const { CloudAdapter } = await import('../cloud/CloudAdapter');
-      
+
       // Convert HTTP URL to WebSocket URL, default to production
       const configUrl = this._cloudConfig.baseUrl || 'https://api.mindcache.io';
       const baseUrl = configUrl
@@ -95,14 +97,14 @@ export class MindCache {
         instanceId: this._cloudConfig.instanceId,
         projectId: this._cloudConfig.projectId || 'default',
         baseUrl,
-        apiKey: this._cloudConfig.apiKey,
+        apiKey: this._cloudConfig.apiKey
       });
 
       // Set up token provider if tokenEndpoint is provided
       if (this._cloudConfig.tokenEndpoint) {
         const tokenEndpoint = this._cloudConfig.tokenEndpoint;
         const instanceId = this._cloudConfig.instanceId;
-        
+
         // Resolve relative URL to absolute (needed for reconnect in some contexts)
         const resolveUrl = (endpoint: string): string => {
           if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
@@ -115,19 +117,19 @@ export class MindCache {
           // Fallback: return as-is and hope fetch handles it
           return endpoint;
         };
-        
+
         adapter.setTokenProvider(async () => {
           const baseUrl = resolveUrl(tokenEndpoint);
           const url = baseUrl.includes('?')
             ? `${baseUrl}&instanceId=${instanceId}`
             : `${baseUrl}?instanceId=${instanceId}`;
-          
+
           const response = await fetch(url);
           if (!response.ok) {
             const error = await response.json().catch(() => ({ error: 'Failed to get token' }));
             throw new Error(error.error || 'Failed to get token');
           }
-          
+
           const data = await response.json();
           return data.token;
         });
@@ -138,17 +140,17 @@ export class MindCache {
         this._connectionState = 'connected';
         this.notifyGlobalListeners();
       });
-      
+
       adapter.on('disconnected', () => {
         this._connectionState = 'disconnected';
         this.notifyGlobalListeners();
       });
-      
+
       adapter.on('error', () => {
         this._connectionState = 'error';
         this.notifyGlobalListeners();
       });
-      
+
       adapter.on('synced', () => {
         this._isLoaded = true;
         this.notifyGlobalListeners();
@@ -158,7 +160,7 @@ export class MindCache {
       adapter.attach(this);
       this._cloudAdapter = adapter;
       this._connectionState = 'connecting';
-      
+
       adapter.connect();
     } catch (error) {
       console.error('MindCache: Failed to initialize cloud connection:', error);
@@ -327,7 +329,7 @@ export class MindCache {
     }
 
     this._isRemoteUpdate = true;
-    
+
     this.stm[key] = {
       value,
       attributes
@@ -336,10 +338,10 @@ export class MindCache {
     if (this.listeners[key]) {
       this.listeners[key].forEach(listener => listener());
     }
-    
+
     // Still notify global listeners for UI updates, but adapter should check _isRemoteUpdate
     this.notifyGlobalListeners();
-    
+
     this._isRemoteUpdate = false;
   }
 
@@ -355,7 +357,7 @@ export class MindCache {
     }
 
     this._isRemoteUpdate = true;
-    
+
     if (key in this.stm) {
       delete this.stm[key];
       if (this.listeners[key]) {
@@ -363,7 +365,7 @@ export class MindCache {
       }
       this.notifyGlobalListeners();
     }
-    
+
     this._isRemoteUpdate = false;
   }
 
@@ -386,8 +388,7 @@ export class MindCache {
       return false;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { hardcoded, ...allowedAttributes } = attributes;
+    const { hardcoded: _hardcoded, ...allowedAttributes } = attributes;
     entry.attributes = { ...entry.attributes, ...allowedAttributes };
 
     if (entry.attributes.hardcoded) {

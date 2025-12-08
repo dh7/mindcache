@@ -47,6 +47,6 @@ export const DEFAULT_KEY_ATTRIBUTES: KeyAttributes = {
   hardcoded: false,
   template: false,
   type: 'text',
-  tags: [],
+  tags: []
 };
 

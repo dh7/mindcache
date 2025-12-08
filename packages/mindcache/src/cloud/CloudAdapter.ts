@@ -1,11 +1,11 @@
 import type { MindCache } from '../core/MindCache';
 import type { KeyAttributes } from '../core/types';
-import type { 
-  CloudConfig, 
-  Operation, 
-  IncomingMessage, 
+import type {
+  CloudConfig,
+  Operation,
+  IncomingMessage,
   ConnectionState,
-  CloudAdapterEvents 
+  CloudAdapterEvents
 } from './types';
 
 const DEFAULT_BASE_URL = 'wss://api.mindcache.io';
@@ -15,7 +15,7 @@ const MAX_RECONNECT_DELAY = 30000;
 /**
  * CloudAdapter connects a MindCache instance to the cloud service
  * for real-time sync and persistence.
- * 
+ *
  * Auth modes:
  * 1. Token (recommended): Pass a short-lived token from /api/ws-token
  * 2. API Key (server-to-server): Pass apiKey for direct connections
@@ -108,13 +108,13 @@ export class CloudAdapter {
     }
 
     this._state = 'connecting';
-    
+
     try {
       // Get token if we have a provider and no current token
       if (this.config.tokenProvider && !this.token) {
         this.token = await this.config.tokenProvider();
       }
-      
+
       // Build URL with token if available
       let url = `${this.config.baseUrl}/sync/${this.config.instanceId}`;
       if (this.token) {
@@ -122,7 +122,7 @@ export class CloudAdapter {
         // Token is single-use, clear it after connecting
         this.token = null;
       }
-      
+
       this.ws = new WebSocket(url);
       this.setupWebSocket();
     } catch (error) {
@@ -188,15 +188,17 @@ export class CloudAdapter {
   }
 
   private setupWebSocket(): void {
-    if (!this.ws) return;
+    if (!this.ws) {
+      return;
+    }
 
     this.ws.onopen = () => {
       // If using API key (server-to-server), send auth message
       // If using token, auth was already verified by Worker
       if (this.config.apiKey) {
-        this.ws!.send(JSON.stringify({ 
-          type: 'auth', 
-          apiKey: this.config.apiKey 
+        this.ws!.send(JSON.stringify({
+          type: 'auth',
+          apiKey: this.config.apiKey
         }));
       }
       // If using token auth, Worker already authenticated us
@@ -318,7 +320,7 @@ export class CloudAdapter {
     this.reconnectTimeout = setTimeout(async () => {
       this.reconnectTimeout = null;
       this.reconnectAttempts++;
-      
+
       // Get fresh token before reconnecting (if using token auth)
       if (this.config.tokenProvider) {
         try {
@@ -329,19 +331,21 @@ export class CloudAdapter {
           return;
         }
       }
-      
+
       this.connect();
     }, delay);
   }
 
   private syncLocalChanges(): void {
-    if (!this.mindcache) return;
+    if (!this.mindcache) {
+      return;
+    }
 
     // Get all current entries and sync them
     const entries = this.mindcache.serialize();
-    
+
     console.log('☁️ CloudAdapter: Syncing local changes:', Object.keys(entries));
-    
+
     Object.entries(entries).forEach(([key, entry]) => {
       console.log('☁️ CloudAdapter: Pushing key:', key, '=', entry.value);
       this.push({
