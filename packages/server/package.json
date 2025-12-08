@@ -6,7 +6,8 @@
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "echo 'Integration tests require running server - run manually with: pnpm test:integration'",
+    "test:integration": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "wrangler d1 migrations apply mindcache-db --env production --remote",
     "db:migrate:local": "wrangler d1 migrations apply mindcache-db --local"
