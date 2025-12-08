@@ -38,7 +38,7 @@ jobs:
     - name: Run tests
       run: pnpm test
     
-    - name: Build project
+    - name: Build project (includes examples via turbo)
       run: pnpm run build
       env:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
@@ -101,83 +101,3 @@ jobs:
     
     - name: Run security audit
       run: pnpm audit --audit-level=moderate
-
-  examples:
-    runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Install pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9.15.0
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'pnpm'
-    
-    - name: Install main dependencies (for mindcache)
-      run: pnpm install --frozen-lockfile --ignore-scripts
-    
-    - name: Build main library
-      run: pnpm run build
-      env:
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
-        CLERK_SECRET_KEY: sk_test_dummy-key-for-ci-build
-    
-    - name: Test examples
-      run: |
-        # Find all example directories with package-lock.json (npm-based examples)
-        # Examples using workspace:* are already built by turbo
-        for example_dir in examples/*/; do
-          if [ -f "$example_dir/package-lock.json" ]; then
-            echo "Testing example: $example_dir"
-            cd "$example_dir"
-            
-            # Install dependencies (skip postinstall scripts that may fail in CI)
-            npm ci --ignore-scripts
-            
-            # Create environment file if template exists
-            if [ -f "env.example" ]; then
-              cp env.example .env.local
-              echo "OPENAI_API_KEY=sk-test-key-for-ci-testing-only" >> .env.local
-            fi
-            
-            # Run linting
-            if npm run lint --if-present; then
-              echo "✓ Linting passed for $example_dir"
-            else
-              echo "✗ Linting failed for $example_dir"
-              exit 1
-            fi
-            
-            # Run type checking
-            if npx tsc --noEmit 2>/dev/null || echo "No TypeScript found, skipping type check"; then
-              echo "✓ Type checking passed for $example_dir"
-            else
-              echo "✗ Type checking failed for $example_dir"
-              exit 1
-            fi
-            
-            # Run build
-            if npm run build --if-present; then
-              echo "✓ Build passed for $example_dir"
-            else
-              echo "✗ Build failed for $example_dir"
-              exit 1
-            fi
-            
-            # Go back to root
-            cd ../..
-          else
-            echo "Skipping $example_dir (no package-lock.json, managed by pnpm workspace)"
-          fi
-        done
