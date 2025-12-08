@@ -20,7 +20,9 @@ export function ProjectList() {
       setLoading(true);
       setError(null);
       const token = await getToken();
-      if (!token) throw new Error('Not authenticated');
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
       const data = await listProjects(token);
       setProjects(data);
     } catch (err) {
@@ -35,10 +37,14 @@ export function ProjectList() {
   }, []);
 
   const handleDelete = async (projectId: string) => {
-    if (!confirm('Delete this project?')) return;
+    if (!confirm('Delete this project?')) {
+      return;
+    }
     try {
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       await deleteProject(token, projectId);
       setProjects(projects.filter(p => p.id !== projectId));
     } catch (err) {
@@ -54,7 +60,7 @@ export function ProjectList() {
     return (
       <div className="p-8 text-center">
         <p className="text-red-400 mb-4">{error}</p>
-        <button 
+        <button
           onClick={fetchProjects}
           className="px-4 py-2 bg-zinc-800 rounded hover:bg-zinc-700"
         >
@@ -157,7 +163,7 @@ export function ProjectList() {
 
 function CreateProjectModal({
   onClose,
-  onCreated,
+  onCreated
 }: {
   onClose: () => void;
   onCreated: (project: Project) => void;
@@ -170,13 +176,17 @@ function CreateProjectModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      return;
+    }
 
     try {
       setSubmitting(true);
       setError(null);
       const token = await getToken();
-      if (!token) throw new Error('Not authenticated');
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
       const project = await createProject(token, name.trim(), description.trim() || undefined);
       onCreated(project);
     } catch (err) {

@@ -5,11 +5,11 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'MindCache',
-  description: 'Collaborative key-value store for AI agents',
+  description: 'Collaborative key-value store for AI agents'
 };
 
 export default function RootLayout({
-  children,
+  children
 }: {
   children: React.ReactNode;
 }) {

@@ -39,16 +39,18 @@ export default function ProjectPage() {
   const fetchData = async () => {
     try {
       const token = await getToken() || 'dev';
-      
+
       const projectRes = await fetch(`${API_URL}/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` }
       });
-      if (!projectRes.ok) throw new Error('Project not found');
+      if (!projectRes.ok) {
+        throw new Error('Project not found');
+      }
       const projectData = await projectRes.json();
       setProject(projectData);
 
       const instancesRes = await fetch(`${API_URL}/api/projects/${projectId}/instances`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` }
       });
       if (instancesRes.ok) {
         const data = await instancesRes.json();
@@ -66,7 +68,9 @@ export default function ProjectPage() {
   }, [projectId]);
 
   const handleCreateInstance = async () => {
-    if (!newInstanceName.trim()) return;
+    if (!newInstanceName.trim()) {
+      return;
+    }
     setCreating(true);
     try {
       const token = await getToken() || 'dev';
@@ -74,11 +78,13 @@ export default function ProjectPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: newInstanceName }),
+        body: JSON.stringify({ name: newInstanceName })
       });
-      if (!res.ok) throw new Error('Failed to create instance');
+      if (!res.ok) {
+        throw new Error('Failed to create instance');
+      }
       setNewInstanceName('');
       setShowCreateModal(false);
       fetchData();
@@ -96,15 +102,19 @@ export default function ProjectPage() {
   };
 
   const handleDeleteInstance = async () => {
-    if (!deleteInstance) return;
+    if (!deleteInstance) {
+      return;
+    }
     setDeleting(true);
     try {
       const token = await getToken() || 'dev';
       const res = await fetch(`${API_URL}/api/projects/${projectId}/instances/${deleteInstance.id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('Failed to delete instance');
+      if (!res.ok) {
+        throw new Error('Failed to delete instance');
+      }
       setDeleteInstance(null);
       fetchData();
     } catch (err) {
@@ -189,7 +199,7 @@ export default function ProjectPage() {
 
             {/* Table Body */}
             {instances.map((instance, index) => (
-              <div 
+              <div
                 key={instance.id}
                 onClick={() => router.push(`/projects/${projectId}/instances/${instance.id}`)}
                 className={`flex items-center px-6 py-3 hover:bg-zinc-900/50 transition cursor-pointer group ${

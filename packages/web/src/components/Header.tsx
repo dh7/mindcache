@@ -46,7 +46,7 @@ export function Header() {
       try {
         const token = await getToken() || 'dev';
         const res = await fetch(`${API_URL}/api/projects/${projectId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
           setProject(await res.json());
@@ -69,12 +69,14 @@ export function Header() {
       try {
         const token = await getToken() || 'dev';
         const res = await fetch(`${API_URL}/api/projects/${projectId}/instances`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
           const data = await res.json();
           const found = data.instances?.find((i: Instance) => i.id === instanceId);
-          if (found) setInstance(found);
+          if (found) {
+            setInstance(found);
+          }
         }
       } catch {
         // ignore
@@ -100,8 +102,8 @@ export function Header() {
       <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* Left: Brand + Breadcrumbs */}
         <div className="flex items-center gap-2 min-w-0">
-          <Link 
-            href="/" 
+          <Link
+            href="/"
             className="font-semibold text-lg tracking-tight text-white hover:text-zinc-300 transition shrink-0"
           >
             mindcache

@@ -23,7 +23,7 @@ interface CloudflareResponse<T> {
 
 export async function GET() {
   const { userId } = await auth();
-  
+
   // Admin check - add your admin user IDs here
   const ADMIN_USERS = process.env.ADMIN_USER_IDS?.split(',') || [];
   if (!userId || (ADMIN_USERS.length > 0 && !ADMIN_USERS.includes(userId))) {
@@ -42,7 +42,7 @@ export async function GET() {
 
   const headers = {
     'Authorization': `Bearer ${apiToken}`,
-    'Content-Type': 'application/json',
+    'Content-Type': 'application/json'
   };
 
   try {
@@ -75,7 +75,7 @@ export async function GET() {
           class: ns.class,
           script: ns.script,
           objects: objData.success ? objData.result : [],
-          objectCount: objData.success ? objData.result.length : 0,
+          objectCount: objData.success ? objData.result.length : 0
         };
       })
     );

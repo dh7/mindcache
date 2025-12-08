@@ -32,15 +32,15 @@ async function fetchApi<T>(
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
-      ...options?.headers,
-    },
+      ...options?.headers
+    }
   });
-  
+
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || 'Request failed');
   }
-  
+
   return res.json();
 }
 
@@ -58,7 +58,7 @@ export async function createProject(
 ): Promise<Project> {
   return fetchApi<Project>('/api/projects', token, {
     method: 'POST',
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description })
   });
 }
 
@@ -82,7 +82,7 @@ export async function createInstance(
 ): Promise<Instance> {
   return fetchApi<Instance>(`/api/projects/${projectId}/instances`, token, {
     method: 'POST',
-    body: JSON.stringify({ name, cloneFrom }),
+    body: JSON.stringify({ name, cloneFrom })
   });
 }
 
@@ -118,7 +118,7 @@ export async function createShare(
 ): Promise<Share> {
   return fetchApi<Share>(`/api/${resourceType}/${resourceId}/shares`, token, {
     method: 'POST',
-    body: JSON.stringify(share),
+    body: JSON.stringify(share)
   });
 }
 
@@ -151,7 +151,7 @@ export async function createApiKey(
 ): Promise<ApiKey> {
   return fetchApi<ApiKey>('/api/keys', token, {
     method: 'POST',
-    body: JSON.stringify(key),
+    body: JSON.stringify(key)
   });
 }
 

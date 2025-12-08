@@ -43,7 +43,7 @@ export default function InstanceEditorPage() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permission, setPermission] = useState<'read' | 'write' | 'admin'>('read');
-  
+
   // New key form
   const [showAddKey, setShowAddKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
@@ -62,7 +62,7 @@ export default function InstanceEditorPage() {
       try {
         const token = await getToken() || 'dev';
         const res = await fetch(`${API_URL}/api/projects/${projectId}/instances`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
           const data = await res.json();
@@ -90,9 +90,9 @@ export default function InstanceEditorPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: instanceName }),
+        body: JSON.stringify({ name: instanceName })
       });
       if (res.ok) {
         const updated = await res.json();
@@ -113,19 +113,19 @@ export default function InstanceEditorPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {}),
+          ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
         },
-        body: JSON.stringify({ instanceId }),
+        body: JSON.stringify({ instanceId })
       });
-      
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to get token' }));
         setError(err.details || err.error || 'Failed to authenticate');
         return;
       }
-      
+
       const { token: wsToken, permission: perm } = await res.json();
-      
+
       // Connect with token in URL (server validates before upgrade)
       const ws = new WebSocket(`${WS_URL}/sync/${instanceId}?token=${wsToken}`);
       wsRef.current = ws;
@@ -137,47 +137,47 @@ export default function InstanceEditorPage() {
         setError(null);
       };
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      console.log('Received message:', msg);
-      
-      switch (msg.type) {
-        case 'sync':
-          setKeys(msg.data || {});
-          break;
-        case 'key_updated':
-          setKeys(prev => ({
-            ...prev,
-            [msg.key]: {
-              value: msg.value,
-              attributes: msg.attributes,
-              updatedAt: msg.timestamp,
-            },
-          }));
-          break;
-        case 'key_deleted':
-          setKeys(prev => {
-            const next = { ...prev };
-            delete next[msg.key];
-            return next;
-          });
-          break;
-        case 'cleared':
-          setKeys({});
-          break;
-        case 'error':
-          console.error('Server error:', msg.error);
-          break;
-      }
-    };
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        console.log('Received message:', msg);
 
-    ws.onclose = () => {
-      setConnected(false);
-    };
+        switch (msg.type) {
+          case 'sync':
+            setKeys(msg.data || {});
+            break;
+          case 'key_updated':
+            setKeys(prev => ({
+              ...prev,
+              [msg.key]: {
+                value: msg.value,
+                attributes: msg.attributes,
+                updatedAt: msg.timestamp
+              }
+            }));
+            break;
+          case 'key_deleted':
+            setKeys(prev => {
+              const next = { ...prev };
+              delete next[msg.key];
+              return next;
+            });
+            break;
+          case 'cleared':
+            setKeys({});
+            break;
+          case 'error':
+            console.error('Server error:', msg.error);
+            break;
+        }
+      };
 
-    ws.onerror = () => {
-      setError('Connection error');
-    };
+      ws.onclose = () => {
+        setConnected(false);
+      };
+
+      ws.onerror = () => {
+        setError('Connection error');
+      };
     } catch (err) {
       console.error('Failed to connect:', err);
       setError(err instanceof Error ? err.message : 'Failed to connect');
@@ -202,8 +202,10 @@ export default function InstanceEditorPage() {
   };
 
   const handleAddKey = () => {
-    if (!newKeyName.trim()) return;
-    
+    if (!newKeyName.trim()) {
+      return;
+    }
+
     let value: unknown = newKeyValue;
     if (newKeyType === 'json') {
       try {
@@ -224,9 +226,9 @@ export default function InstanceEditorPage() {
         hardcoded: false,
         template: false,
         type: newKeyType,
-        tags: [],
+        tags: []
       },
-      timestamp: Date.now(),
+      timestamp: Date.now()
     });
 
     setNewKeyName('');
@@ -251,12 +253,12 @@ export default function InstanceEditorPage() {
 
   const handleKeyValueChange = (key: string, newValue: string) => {
     setKeyValues(prev => ({ ...prev, [key]: newValue }));
-    
+
     // Clear existing timeout for this key
     if (saveTimeoutRef.current[key]) {
       clearTimeout(saveTimeoutRef.current[key]);
     }
-    
+
     // Debounce save - auto-save after 500ms of no typing
     saveTimeoutRef.current[key] = setTimeout(() => {
       saveKeyValue(key, newValue);
@@ -265,7 +267,9 @@ export default function InstanceEditorPage() {
 
   const saveKeyValue = (key: string, valueStr: string) => {
     const entry = keys[key];
-    if (!entry) return;
+    if (!entry) {
+      return;
+    }
 
     let value: unknown = valueStr;
     if (entry.attributes.type === 'json') {
@@ -282,16 +286,18 @@ export default function InstanceEditorPage() {
       key,
       value,
       attributes: entry.attributes,
-      timestamp: Date.now(),
+      timestamp: Date.now()
     });
   };
 
   const handleDeleteKey = (key: string) => {
-    if (!confirm(`Delete key "${key}"?`)) return;
+    if (!confirm(`Delete key "${key}"?`)) {
+      return;
+    }
     sendMessage({
       type: 'delete',
       key,
-      timestamp: Date.now(),
+      timestamp: Date.now()
     });
     // Clean up local state
     setKeyValues(prev => {
@@ -316,7 +322,9 @@ export default function InstanceEditorPage() {
                 onChange={(e) => setInstanceName(e.target.value)}
                 onBlur={handleUpdateInstanceName}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleUpdateInstanceName();
+                  if (e.key === 'Enter') {
+                    handleUpdateInstanceName();
+                  }
                   if (e.key === 'Escape') {
                     setInstanceName(instance?.name || '');
                     setEditingName(false);
@@ -340,7 +348,7 @@ export default function InstanceEditorPage() {
               </h1>
             )}
           </div>
-          
+
           {/* Status bar */}
           <div className="flex items-center gap-3">
             <span

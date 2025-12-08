@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ objectId: string }> }
 ) {
   const { userId } = await auth();
-  
+
   const ADMIN_USERS = process.env.ADMIN_USER_IDS?.split(',') || [];
   if (!userId || (ADMIN_USERS.length > 0 && !ADMIN_USERS.includes(userId))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,14 +26,14 @@ export async function GET(
 
   try {
     const res = await fetch(`${workerUrl}/admin/do/${objectId}`, {
-      headers: { 'X-Admin-Token': adminToken },
+      headers: { 'X-Admin-Token': adminToken }
     });
     const data = await res.json();
-    
+
     if (!res.ok) {
       return NextResponse.json(data, { status: res.status });
     }
-    
+
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json(

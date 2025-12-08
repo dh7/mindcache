@@ -47,12 +47,12 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin/durable-objects');
       const data = await res.json();
-      
+
       if (!res.ok) {
         setError(data.error || 'Failed to fetch');
         return;
       }
-      
+
       setNamespaces(data.namespaces);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -66,16 +66,16 @@ export default function AdminPage() {
     setObjectLoading(true);
     setObjectError(null);
     setObjectData(null);
-    
+
     try {
       const res = await fetch(`/api/admin/durable-objects/${objectId}`);
       const data = await res.json();
-      
+
       if (!res.ok) {
         setObjectError(data.error + (data.details ? `\n\n${data.details}` : ''));
         return;
       }
-      
+
       setObjectData(data.keys);
     } catch (err) {
       setObjectError(err instanceof Error ? err.message : 'Unknown error');
@@ -155,8 +155,8 @@ export default function AdminPage() {
                     </thead>
                     <tbody className="divide-y divide-zinc-800">
                       {ns.objects.map((obj) => (
-                        <tr 
-                          key={obj.id} 
+                        <tr
+                          key={obj.id}
                           className="hover:bg-zinc-800/30 transition cursor-pointer"
                           onClick={() => fetchObjectData(obj.id)}
                         >
@@ -196,11 +196,11 @@ export default function AdminPage() {
 
       {/* Object Detail Modal */}
       {selectedObject && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50"
           onClick={() => setSelectedObject(null)}
         >
-          <div 
+          <div
             className="bg-zinc-900 border border-zinc-700 rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
@@ -236,7 +236,7 @@ export default function AdminPage() {
                     <p className="text-gray-500 text-center py-8">No keys stored</p>
                   ) : (
                     Object.entries(objectData).map(([key, entry]) => (
-                      <div 
+                      <div
                         key={key}
                         className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3"
                       >
@@ -255,8 +255,8 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <pre className="text-xs text-gray-300 bg-zinc-900 p-2 rounded overflow-x-auto max-h-40">
-                          {typeof entry.value === 'string' 
-                            ? entry.value 
+                          {typeof entry.value === 'string'
+                            ? entry.value
                             : JSON.stringify(entry.value, null, 2)}
                         </pre>
                         <div className="text-xs text-gray-600 mt-2">

@@ -16,7 +16,7 @@ export function ShareModal({ resourceType, resourceId, resourceName, onClose }: 
   const [shares, setShares] = useState<Share[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // New share form
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<'read' | 'write' | 'admin'>('read');
@@ -27,7 +27,9 @@ export function ShareModal({ resourceType, resourceId, resourceName, onClose }: 
     try {
       setLoading(true);
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       const data = await listShares(token, resourceType, resourceId);
       setShares(data);
     } catch (err) {
@@ -43,18 +45,22 @@ export function ShareModal({ resourceType, resourceId, resourceName, onClose }: 
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isPublic && !email.trim()) return;
+    if (!isPublic && !email.trim()) {
+      return;
+    }
 
     try {
       setSubmitting(true);
       setError(null);
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
 
       const newShare = await createShare(token, resourceType, resourceId, {
         targetType: isPublic ? 'public' : 'user',
         targetEmail: isPublic ? undefined : email.trim(),
-        permission,
+        permission
       });
 
       setShares([...shares, newShare]);
@@ -70,7 +76,9 @@ export function ShareModal({ resourceType, resourceId, resourceName, onClose }: 
   const handleDelete = async (shareId: string) => {
     try {
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       await deleteShare(token, shareId);
       setShares(shares.filter(s => s.id !== shareId));
     } catch (err) {

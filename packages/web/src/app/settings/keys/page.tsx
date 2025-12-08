@@ -29,16 +29,18 @@ export default function ApiKeysPage() {
     try {
       setLoading(true);
       const token = await getToken();
-      if (!token) return;
-      
+      if (!token) {
+        return;
+      }
+
       // Fetch keys and projects in parallel
       const [keysData, projectsData] = await Promise.all([
         listApiKeys(token),
-        listProjects(token),
+        listProjects(token)
       ]);
-      
+
       setKeys(keysData);
-      
+
       // Build project lookup
       const projectMap: Record<string, Project> = {};
       for (const p of projectsData) {
@@ -71,10 +73,14 @@ export default function ApiKeysPage() {
   }, []);
 
   const handleDelete = async (keyId: string) => {
-    if (!confirm('Delete this API key? This cannot be undone.')) return;
+    if (!confirm('Delete this API key? This cannot be undone.')) {
+      return;
+    }
     try {
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       await deleteApiKey(token, keyId);
       setKeys(keys.filter(k => k.id !== keyId));
     } catch (err) {
@@ -236,7 +242,7 @@ export default function ApiKeysPage() {
 
 function CreateKeyModal({
   onClose,
-  onCreated,
+  onCreated
 }: {
   onClose: () => void;
   onCreated: (key: ApiKey) => void;
@@ -249,7 +255,7 @@ function CreateKeyModal({
   const [permissions, setPermissions] = useState<string[]>(['read', 'write']);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [instances, setInstances] = useState<{ id: string; name: string }[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -271,7 +277,9 @@ function CreateKeyModal({
     try {
       setLoadingProjects(true);
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       const data = await listProjects(token);
       setProjects(data);
     } catch (err) {
@@ -285,7 +293,9 @@ function CreateKeyModal({
     try {
       setLoadingInstances(true);
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
       const data = await listInstances(token, projectId);
       setInstances(data);
     } catch (err) {
@@ -297,20 +307,28 @@ function CreateKeyModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    if (scopeType === 'project' && !scopeId) return;
-    if (scopeType === 'instance' && !scopeId) return;
+    if (!name.trim()) {
+      return;
+    }
+    if (scopeType === 'project' && !scopeId) {
+      return;
+    }
+    if (scopeType === 'instance' && !scopeId) {
+      return;
+    }
 
     try {
       setSubmitting(true);
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
 
       const key = await createApiKey(token, {
         name: name.trim(),
         scopeType,
         scopeId: scopeType === 'account' ? undefined : scopeId,
-        permissions,
+        permissions
       });
       onCreated(key);
     } catch (err) {
@@ -442,8 +460,8 @@ function CreateKeyModal({
             <button
               type="submit"
               disabled={
-                !name.trim() || 
-                submitting || 
+                !name.trim() ||
+                submitting ||
                 (scopeType === 'project' && !scopeId) ||
                 (scopeType === 'instance' && !scopeId)
               }
