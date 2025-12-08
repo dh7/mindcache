@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MindCache, ConnectionState } from 'mindcache';
+import { MindCache } from 'mindcache';
 
 interface CloudSTMMenuProps {
-  connectionState: ConnectionState;
+  connectionState: string;
   instanceId: string;
   onReconnect?: () => void;
   onRefresh?: () => void;
@@ -23,6 +23,9 @@ export default function CloudSTMMenu({
   mindcacheInstance 
 }: CloudSTMMenuProps) {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [showAddKeyModal, setShowAddKeyModal] = useState(false);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     const updateTags = () => {
@@ -45,18 +48,18 @@ export default function CloudSTMMenu({
   };
 
   const handleAddKey = () => {
-    const key = prompt('Enter new STM key:');
-    if (key && key.trim()) {
-      if (!mindcacheInstance.has(key.trim())) {
-        mindcacheInstance.set_value(key.trim(), '');
-      } else {
-        alert(`Key "${key.trim()}" already exists`);
+    if (newKeyName.trim()) {
+      if (!mindcacheInstance.has(newKeyName.trim())) {
+        mindcacheInstance.set_value(newKeyName.trim(), '');
+        setNewKeyName('');
+        setShowAddKeyModal(false);
       }
     }
   };
 
   const clearSTM = () => {
     mindcacheInstance.clear();
+    setShowClearConfirm(false);
     if (onRefresh) setTimeout(() => onRefresh(), 0);
   };
 
@@ -145,8 +148,8 @@ export default function CloudSTMMenu({
 
       {/* Actions */}
       <div className="flex space-x-4 mb-2">
-        <button onClick={handleAddKey} className="text-cyan-400 hover:text-cyan-300">Add Key</button>
-        <button onClick={() => confirm('Clear all data?') && clearSTM()} className="text-cyan-400 hover:text-cyan-300">Clear</button>
+        <button onClick={() => setShowAddKeyModal(true)} className="text-cyan-400 hover:text-cyan-300">Add Key</button>
+        <button onClick={() => setShowClearConfirm(true)} className="text-cyan-400 hover:text-cyan-300">Clear</button>
         <button onClick={exportSTM} className="text-cyan-400 hover:text-cyan-300">Export</button>
         <button onClick={importSTM} className="text-cyan-400 hover:text-cyan-300">Import</button>
       </div>
@@ -169,6 +172,65 @@ export default function CloudSTMMenu({
                 {tag}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add Key Modal */}
+      {showAddKeyModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+          <div className="bg-black border-2 border-cyan-400 rounded-lg p-6 w-80">
+            <h3 className="text-cyan-300 font-mono text-sm mb-4">Add New Key</h3>
+            <input
+              type="text"
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddKey();
+                if (e.key === 'Escape') setShowAddKeyModal(false);
+              }}
+              placeholder="Key name..."
+              className="w-full bg-black text-cyan-400 font-mono text-sm border border-cyan-400 rounded px-3 py-2 mb-4 focus:outline-none"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleAddKey}
+                className="flex-1 bg-cyan-400 text-black font-mono text-sm px-4 py-2 rounded hover:bg-cyan-300"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => { setShowAddKeyModal(false); setNewKeyName(''); }}
+                className="flex-1 border border-cyan-400 text-cyan-400 font-mono text-sm px-4 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Confirm Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+          <div className="bg-black border-2 border-red-400 rounded-lg p-6 w-80">
+            <h3 className="text-red-400 font-mono text-sm mb-4">Clear All Data?</h3>
+            <p className="text-gray-400 text-sm mb-4">This will delete all keys. This cannot be undone.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={clearSTM}
+                className="flex-1 bg-red-400 text-black font-mono text-sm px-4 py-2 rounded hover:bg-red-300"
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 border border-gray-400 text-gray-400 font-mono text-sm px-4 py-2 rounded hover:bg-gray-900"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
