@@ -1,0 +1,9 @@
+# Copy this file to .dev.vars and fill in your values
+
+# Required
+OPENAI_API_KEY=sk-proj-xxx
+
+# Optional
+FIREWORKS_API_KEY=fw_xxx
+GEMINI_API_KEY=xxx
+

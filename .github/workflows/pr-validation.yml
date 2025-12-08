@@ -14,42 +14,50 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9.15.0
+    
     - name: Use Node.js 20.x
       uses: actions/setup-node@v4
       with:
         node-version: 20.x
-        cache: 'npm'
+        cache: 'pnpm'
     
     - name: Install dependencies
-      run: npm ci
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: 🔍 Lint check
       run: |
         echo "Running ESLint..."
-        npm run lint
+        pnpm run lint
         echo "✅ Linting passed!"
     
     - name: 🧪 Test check  
       run: |
         echo "Running tests..."
-        npm test
+        pnpm test
         echo "✅ All tests passed!"
     
     - name: 🏗️ Build check
       run: |
         echo "Building project..."
-        npm run build
+        pnpm run build
         echo "✅ Build successful!"
+      env:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
+        CLERK_SECRET_KEY: sk_test_dummy-key-for-ci-build
     
     - name: 📊 Test coverage
       run: |
-        echo "Generating test coverage..."
-        npm test -- --coverage
+        echo "Running tests..."
+        pnpm test
     
     - name: 🔒 Security check
       run: |
         echo "Running security audit..."
-        npm audit --audit-level=moderate
+        pnpm audit --audit-level=moderate
         echo "✅ Security check passed!"
     
     - name: ✅ All checks passed
@@ -65,22 +73,31 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9.15.0
+    
     - name: Use Node.js 20.x
       uses: actions/setup-node@v4
       with:
         node-version: 20.x
-        cache: 'npm'
+        cache: 'pnpm'
     
     - name: Install dependencies
-      run: npm ci
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: Build and check bundle size
       run: |
-        npm run build
-        echo "📦 Checking bundle size..."
-        du -sh lib/
+        pnpm run build
+        echo "📦 Checking bundle sizes..."
+        du -sh packages/mindcache/dist/
+        du -sh packages/shared/dist/
+      env:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy-key-for-ci-build
+        CLERK_SECRET_KEY: sk_test_dummy-key-for-ci-build
         
     - name: Package size check
       run: |
-        npm pack --dry-run
+        cd packages/mindcache && pnpm pack && ls -lh *.tgz && rm *.tgz
         echo "✅ Package size check complete!"

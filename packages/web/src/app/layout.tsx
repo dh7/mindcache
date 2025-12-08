@@ -1,0 +1,30 @@
+import type { Metadata } from 'next';
+import { ClerkProvider } from '@clerk/nextjs';
+import { Header } from '@/components/Header';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'MindCache',
+  description: 'Collaborative key-value store for AI agents'
+};
+
+// Disable static generation - this app requires auth
+export const dynamic = 'force-dynamic';
+
+export default function RootLayout({
+  children
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <ClerkProvider>
+      <html lang="en">
+        <body>
+          <Header />
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
+  );
+}
+

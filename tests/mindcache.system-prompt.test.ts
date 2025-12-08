@@ -1,4 +1,4 @@
-import { MindCache } from '../src/index';
+import { MindCache } from 'mindcache';
 
 describe('MindCache System Prompt Generation', () => {
   let cache: MindCache;

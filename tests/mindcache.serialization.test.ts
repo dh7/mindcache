@@ -1,4 +1,4 @@
-import { MindCache } from '../src/index';
+import { MindCache } from 'mindcache';
 
 describe('MindCache Complete Serialization', () => {
   let cache: MindCache;

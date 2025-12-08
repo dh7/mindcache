@@ -1,4 +1,4 @@
-import { MindCache, mindcache } from '../src/index';
+import { MindCache, mindcache } from 'mindcache';
 
 describe('MindCache', () => {
   let cache: MindCache;

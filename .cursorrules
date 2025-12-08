@@ -1,0 +1,18 @@
+# MindCache Project Rules
+
+## Specification Document
+
+Always refer to `mindcache_2.0_spec.md` as the source of truth for MindCache 2.0 architecture, decisions, and implementation details.
+
+When making changes that affect:
+- Architecture or tech stack
+- Data models
+- API design
+- Package structure
+- Core features or workflows
+- Authentication or sharing model
+
+**Update `mindcache_2.0_spec.md`** to reflect those changes and increment the version number in the changelog.
+
+## GIT HUB
+DUDE NEVER COMMIT WITHOUT MY CONSCENT. I'LL COMMIT MYSELF.

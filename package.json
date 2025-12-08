@@ -1,75 +1,38 @@
 {
-  "name": "mindcache",
-  "version": "1.0.1",
-  "description": "A TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository",
-  "main": "lib/index.js",
-  "types": "lib/index.d.ts",
-  "files": [
-    "lib/**/*",
-    "README.md",
-    "LICENSE"
-  ],
+  "name": "mindcache-monorepo",
+  "version": "0.0.0",
+  "private": true,
   "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix",
-    "prepublishOnly": "npm run build",
-    "dev": "tsc --watch",
-    "clean": "rimraf lib"
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean && rm -rf node_modules",
+    "prepare": "husky"
   },
-  "keywords": [
-    "ai",
-    "llm",
-    "memory",
-    "agent",
-    "typescript",
-    "vercel-ai-sdk",
-    "nextjs",
-    "key-value",
-    "storage",
-    "context"
-  ],
-  "author": "MindCache Team",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dh7/mindcache.git"
-  },
-  "bugs": {
-    "url": "https://github.com/dh7/mindcache/issues"
-  },
-  "homepage": "https://github.com/dh7/mindcache#readme",
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.44.1",
-    "@typescript-eslint/parser": "^8.44.1",
-    "audit-ci": "^7.0.0",
-    "eslint": "^8.0.0",
-    "eslint-config-standard": "^17.1.0",
-    "jest": "^29.5.0",
-    "rimraf": "^5.0.0",
-    "ts-jest": "^29.1.0",
-    "typescript": "^5.0.0"
+    "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "lint-staged": "^16.2.7",
+    "ts-jest": "^29.2.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.0.0",
+    "zod": "^3.23.0"
   },
-  "peerDependencies": {
-    "ai": ">=3.0.0"
+  "lint-staged": {
+    "packages/**/*.{ts,tsx}": "eslint --fix"
   },
-  "peerDependenciesMeta": {
-    "ai": {
-      "optional": true
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.25.0",
+      "jsondiffpatch": ">=0.7.2"
     }
   },
+  "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=18.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "dependencies": {
-    "zod": "^4.1.9"
   }
 }

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MindCache - AI Agent Memory Management</title>
-    <meta name="description" content="A TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository.">
+    <meta name="description" content="MindCache 2.0 - A TypeScript library for AI agent memory with cloud persistence, real-time sync, and collaboration. Try the hosted cloud version or use the npm package locally.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,9 +20,11 @@
                 <span class="nav-title">MindCache</span>
             </div>
             <div class="nav-links">
+                <a href="#cloud">Cloud</a>
                 <a href="#features">Features</a>
                 <a href="#examples">Examples</a>
                 <a href="#docs">Docs</a>
+                <a href="https://app.mindcache.dev" target="_blank" class="cloud-link">☁️ App</a>
                 <a href="https://github.com/dh7/mindcache" target="_blank" class="github-link">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
@@ -38,39 +40,79 @@
         <div class="container">
             <div class="hero-content">
                 <div class="hero-badge">
-                    <span>🚀 Now Available on npm</span>
+                    <span>🚀 MindCache 2.0 — Now with Cloud Sync!</span>
                 </div>
                 <h1 class="hero-title">
                     AI Agent Memory<br>
                     <span class="gradient-text">Made Simple</span>
                 </h1>
                 <p class="hero-description">
-                    MindCache is a TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository. Perfect for chatbots, AI assistants, and intelligent workflows.
+                    MindCache is a TypeScript library for managing short-term memory in AI agents through a simple, LLM-friendly key-value repository. Now with cloud persistence, real-time sync, and collaboration.
                 </p>
                 <div class="hero-actions">
-                    <button class="btn-primary" onclick="copyInstallCommand()">
+                    <a href="https://app.mindcache.dev" target="_blank" class="btn-primary btn-cloud">
+                        <span>☁️ Try MindCache Cloud</span>
+                    </a>
+                    <button class="btn-secondary" onclick="copyInstallCommand()">
                         <span>npm install mindcache</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                             <path d="m5 15-4-4 4-4"></path>
                         </svg>
                     </button>
-                    <a href="#examples" class="btn-secondary">View Examples</a>
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
-                        <span class="stat-number">100%</span>
-                        <span class="stat-label">Test Coverage</span>
+                        <span class="stat-number">2.0</span>
+                        <span class="stat-label">Version</span>
                     </div>
                     <div class="stat">
-                        <span class="stat-number">18.9kB</span>
-                        <span class="stat-label">Package Size</span>
+                        <span class="stat-number">Real-time</span>
+                        <span class="stat-label">Sync</span>
                     </div>
                     <div class="stat">
                         <span class="stat-number">TypeScript</span>
                         <span class="stat-label">First</span>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Cloud Section -->
+    <section id="cloud" class="cloud-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>MindCache 2.0 <span class="gradient-text">Cloud</span></h2>
+                <p>A hosted, collaborative key-value store for AI agents</p>
+            </div>
+            <div class="cloud-features">
+                <div class="cloud-feature">
+                    <div class="cloud-icon">☁️</div>
+                    <h3>Cloud Persistence</h3>
+                    <p>All key-value data stored securely in the cloud with automatic sync between clients.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">⚡</div>
+                    <h3>Real-Time Sync</h3>
+                    <p>WebSocket-based live updates. Subscribe to specific keys or entire instances.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">👥</div>
+                    <h3>Collaboration</h3>
+                    <p>Share projects and instances with teams. Granular permissions for read/write/admin access.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">🤖</div>
+                    <h3>Built-in AI APIs</h3>
+                    <p>Chat API, image generation, web search, and transform APIs — all reading from MindCache.</p>
+                </div>
+            </div>
+            <div class="cloud-cta">
+                <a href="https://app.mindcache.dev" target="_blank" class="btn-primary btn-cloud-large">
+                    <span>☁️ Start Using MindCache Cloud</span>
+                </a>
+                <p class="cloud-note">Free tier available • No credit card required</p>
             </div>
         </div>
     </section>
@@ -127,6 +169,7 @@
             <div class="examples-tabs">
                 <button class="tab-btn active" onclick="showExample('tools')">LLM Tools</button>
                 <button class="tab-btn" onclick="showExample('context')">Context Management</button>
+                <button class="tab-btn" onclick="showExample('cloud')">Cloud Sync</button>
             </div>
             <div class="example-content">
                 <div id="example-tools" class="example active">
@@ -212,6 +255,46 @@ const contextKeys = allKeys.filter(key =>
                         <p>Use tags to mark important context items, extract only tagged content when needed, and automatically generate system prompts with all memory context. Perfect for building focused AI workflows while maintaining full memory access.</p>
                     </div>
                 </div>
+                <div id="example-cloud" class="example">
+                    <div class="example-code">
+                        <pre><code>// MindCache 2.0 Cloud Sync
+import { MindCache } from 'mindcache';
+
+// Connect to MindCache Cloud with built-in sync
+const mc = new MindCache({
+  cloud: {
+    instanceId: 'my-instance-id',
+    tokenEndpoint: '/api/ws-token', // Your API endpoint
+  }
+});
+
+// Same API as local — now with cloud persistence!
+mc.set_value('userName', 'Alice');
+mc.set_value('notes', 'Meeting at 3pm', { tags: ['important'] });
+
+// Real-time sync across all connected clients
+mc.subscribeToAll(() => {
+  console.log('Data synced from cloud!');
+});
+
+// Check connection state
+console.log(mc.connectionState); // 'connected'
+console.log(mc.isLoaded);        // true when initial sync done
+console.log(mc.isCloud);         // true
+
+// AI tools work the same way
+const tools = mc.get_aisdk_tools();
+const prompt = mc.get_system_prompt();
+
+// Clean up when done
+mc.disconnect();</code></pre>
+                    </div>
+                    <div class="example-description">
+                        <h4>Cloud Sync & Real-Time Collaboration</h4>
+                        <p>MindCache 2.0 adds seamless cloud persistence. Same simple API — data automatically syncs across all clients in real-time. Share instances with your team, connect AI agents, and build collaborative workflows.</p>
+                        <a href="https://app.mindcache.dev" target="_blank" class="btn-secondary" style="margin-top: 1rem; display: inline-flex;">Try MindCache Cloud →</a>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -224,6 +307,11 @@ const contextKeys = allKeys.filter(key =>
                 <p>Complete API reference and guides</p>
             </div>
             <div class="docs-grid">
+                <a href="https://app.mindcache.dev" target="_blank" class="doc-card doc-card-cloud">
+                    <div class="doc-icon">☁️</div>
+                    <h3>MindCache Cloud</h3>
+                    <p>Try the hosted cloud version with real-time sync and collaboration</p>
+                </a>
                 <a href="https://github.com/dh7/mindcache#api" class="doc-card">
                     <div class="doc-icon">📚</div>
                     <h3>API Reference</h3>
@@ -239,11 +327,6 @@ const contextKeys = allKeys.filter(key =>
                     <h3>Vercel AI SDK</h3>
                     <p>Integration guide for Vercel AI SDK and Next.js</p>
                 </a>
-                <a href="https://github.com/dh7/mindcache/blob/main/CONTRIBUTING.md" class="doc-card">
-                    <div class="doc-icon">🤝</div>
-                    <h3>Contributing</h3>
-                    <p>How to contribute to the MindCache project</p>
-                </a>
             </div>
         </div>
     </section>
@@ -257,6 +340,7 @@ const contextKeys = allKeys.filter(key =>
                     <span class="footer-title">MindCache</span>
                 </div>
                 <div class="footer-links">
+                    <a href="https://app.mindcache.dev" target="_blank">☁️ Cloud App</a>
                     <a href="https://github.com/dh7/mindcache">GitHub</a>
                     <a href="https://www.npmjs.com/package/mindcache">npm</a>
                     <a href="https://github.com/dh7/mindcache/issues">Issues</a>

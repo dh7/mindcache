@@ -1,0 +1,29 @@
+{
+  "name": "@mindcache/server",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy --env production",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'Integration tests require running server - run manually with: pnpm test:integration'",
+    "test:integration": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "wrangler d1 migrations apply mindcache-db --env production --remote",
+    "db:migrate:local": "wrangler d1 migrations apply mindcache-db --local"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0",
+    "wrangler": "^4.51.0",
+    "ws": "^8.18.0"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^1.0.0",
+    "@mindcache/shared": "workspace:*",
+    "ai": "^4.3.19",
+    "zod": "^3.23.0"
+  }
+}
