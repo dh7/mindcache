@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   description: 'Collaborative key-value store for AI agents'
 };
 
+// Disable static generation - this app requires auth
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children
 }: {
