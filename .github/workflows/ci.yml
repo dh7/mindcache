@@ -30,7 +30,7 @@ jobs:
         cache: 'pnpm'
     
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: Run linter
       run: pnpm run lint
@@ -70,7 +70,7 @@ jobs:
         cache: 'pnpm'
     
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: Run ESLint
       run: pnpm run lint
@@ -97,7 +97,7 @@ jobs:
         cache: 'pnpm'
     
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: Run security audit
       run: pnpm audit --audit-level=moderate
@@ -125,7 +125,7 @@ jobs:
         cache: 'pnpm'
     
     - name: Install main dependencies (for mindcache)
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: Build main library
       run: pnpm run build

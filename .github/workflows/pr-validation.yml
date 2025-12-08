@@ -26,7 +26,7 @@ jobs:
         cache: 'pnpm'
     
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: 🔍 Lint check
       run: |
@@ -85,7 +85,7 @@ jobs:
         cache: 'pnpm'
     
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
     
     - name: Build and check bundle size
       run: |
