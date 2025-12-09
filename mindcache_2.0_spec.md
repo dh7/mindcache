@@ -1,7 +1,7 @@
 # MindCache 2.0 Specification
 
-**Version**: 1.2-alpha  
-**Last Updated**: 2024-12-05  
+**Version**: 1.3.1-alpha  
+**Last Updated**: 2024-12-08  
 **Production URL**: https://mindcache-api.dh7777777.workers.dev
 
 ## Overview
@@ -622,9 +622,10 @@ mindcache/
 │       │   └── protocol.ts           # WebSocket message types
 │       └── package.json
 │
-├── examples/
-│   ├── local-only/                   # 1.0 style (no cloud)
-│   └── cloud-sync/                   # 2.0 with cloud
+├── examples/                         # STANDALONE (not part of pnpm workspace!)
+│   ├── nextjs_client_demo/           # 1.0 style (client STM, no cloud)
+│   └── nextjs_cloud_demo/            # 2.0 with cloud sync
+│   # Run `npm install` inside each example - they're independent
 │
 ├── docs/
 ├── turbo.json                        # Turborepo config
@@ -888,6 +889,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-08 | 1.3.1-alpha | Clarified examples/ are standalone (not part of pnpm workspace) - run `npm install` inside each |
 | 2024-12-06 | 1.3-alpha | Built-in cloud sync via `MindCache({ cloud: {...} })` constructor - same DX as local |
 | 2024-12-05 | 1.2-alpha | Added Hybrid Architecture (DO for state, external chat). Simplified Next.js routes to `/api/instances` + `/api/chat` only |
 | 2024-12-04 | 1.1-alpha | ✅ **Phase 3 Complete!** Chat API + LLM Tools (transform, generate-image, analyze-image) |

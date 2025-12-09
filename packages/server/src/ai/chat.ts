@@ -1,28 +1,29 @@
 /**
  * Chat API Handler
- * 
+ *
  * Provides AI chat with MindCache-aware tools:
  * - Read keys from the instance
  * - Write keys to the instance
  * - Uses SystemPrompt-tagged keys for context
- * 
+ *
  * Two modes:
  * - Edit mode: Can modify readonly keys, system prompt keys, and attributes
  * - Use mode: Can only modify non-readonly, non-system-prompt keys
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText, tool, CoreMessage } from 'ai';
+import { streamText, tool, convertToModelMessages, UIMessage } from 'ai';
 import { z } from 'zod';
 import type { KeyAttributes, KeyEntry } from '@mindcache/shared';
 
 export interface ChatEnv {
   OPENAI_API_KEY?: string;
+  // eslint-disable-next-line no-undef
   MINDCACHE_INSTANCE: DurableObjectNamespace;
 }
 
 export interface ChatRequest {
-  messages: CoreMessage[];
+  messages: UIMessage[];
   instanceId: string;
   mode: 'edit' | 'use';
   model?: string;
@@ -41,7 +42,7 @@ async function fetchInstanceData(
 ): Promise<InstanceData> {
   const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
   const stub = env.MINDCACHE_INSTANCE.get(id);
-  
+
   // Use internal HTTP endpoint to get all keys
   const response = await stub.fetch(new Request('http://internal/keys'));
   if (!response.ok) {
@@ -62,13 +63,13 @@ async function setInstanceKey(
 ): Promise<void> {
   const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
   const stub = env.MINDCACHE_INSTANCE.get(id);
-  
+
   const response = await stub.fetch(new Request('http://internal/keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value, attributes }),
+    body: JSON.stringify({ key, value, attributes })
   }));
-  
+
   if (!response.ok) {
     throw new Error('Failed to set key');
   }
@@ -84,11 +85,11 @@ async function deleteInstanceKey(
 ): Promise<void> {
   const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
   const stub = env.MINDCACHE_INSTANCE.get(id);
-  
+
   const response = await stub.fetch(new Request(`http://internal/keys/${encodeURIComponent(key)}`, {
-    method: 'DELETE',
+    method: 'DELETE'
   }));
-  
+
   if (!response.ok) {
     throw new Error('Failed to delete key');
   }
@@ -113,8 +114,8 @@ function buildSystemPrompt(data: InstanceData): string {
   // Add system prompt keys
   for (const [key, entry] of Object.entries(data)) {
     if (entry.attributes.tags?.includes('SystemPrompt')) {
-      const value = typeof entry.value === 'string' 
-        ? entry.value 
+      const value = typeof entry.value === 'string'
+        ? entry.value
         : JSON.stringify(entry.value, null, 2);
       systemPromptParts.push(`### ${key}`);
       systemPromptParts.push(value);
@@ -125,7 +126,7 @@ function buildSystemPrompt(data: InstanceData): string {
   // Add summary of available keys
   systemPromptParts.push('## Available Keys');
   systemPromptParts.push('');
-  
+
   for (const [key, entry] of Object.entries(data)) {
     const tags = entry.attributes.tags?.join(', ') || '';
     const readonly = entry.attributes.readonly ? ' (readonly)' : '';
@@ -141,14 +142,13 @@ function buildSystemPrompt(data: InstanceData): string {
 function createMindCacheTools(
   env: ChatEnv,
   instanceId: string,
-  mode: 'edit' | 'use',
-  currentData: InstanceData
+  mode: 'edit' | 'use'
 ) {
   return {
     read_key: tool({
       description: 'Read the value of a key from MindCache',
-      parameters: z.object({
-        key: z.string().describe('The key name to read'),
+      inputSchema: z.object({
+        key: z.string().describe('The key name to read')
       }),
       execute: async ({ key }) => {
         // Refresh data to get latest
@@ -162,19 +162,19 @@ function createMindCacheTools(
           value: entry.value,
           type: entry.attributes.type,
           tags: entry.attributes.tags,
-          readonly: entry.attributes.readonly,
+          readonly: entry.attributes.readonly
         };
-      },
+      }
     }),
 
     write_key: tool({
       description: 'Write or update a key in MindCache. Creates the key if it does not exist.',
-      parameters: z.object({
+      inputSchema: z.object({
         key: z.string().describe('The key name to write'),
         value: z.union([z.string(), z.number(), z.boolean(), z.record(z.unknown()), z.array(z.unknown())])
           .describe('The value to store'),
         type: z.enum(['text', 'json']).optional().describe('Value type (default: text)'),
-        tags: z.array(z.string()).optional().describe('Tags to apply to the key'),
+        tags: z.array(z.string()).optional().describe('Tags to apply to the key')
       }),
       execute: async ({ key, value, type, tags }) => {
         // Refresh data to check current state
@@ -197,22 +197,26 @@ function createMindCacheTools(
           hardcoded: false,
           template: false,
           type: type || 'text',
-          tags: tags || [],
+          tags: tags || []
         };
 
         // Update type and tags if provided
-        if (type) attributes.type = type;
-        if (tags) attributes.tags = tags;
+        if (type) {
+          attributes.type = type;
+        }
+        if (tags) {
+          attributes.tags = tags;
+        }
 
         await setInstanceKey(env, instanceId, key, value, attributes);
         return { success: true, key, value };
-      },
+      }
     }),
 
     delete_key: tool({
       description: 'Delete a key from MindCache',
-      parameters: z.object({
-        key: z.string().describe('The key name to delete'),
+      inputSchema: z.object({
+        key: z.string().describe('The key name to delete')
       }),
       execute: async ({ key }) => {
         const data = await fetchInstanceData(env, instanceId);
@@ -234,22 +238,22 @@ function createMindCacheTools(
 
         await deleteInstanceKey(env, instanceId, key);
         return { success: true, key };
-      },
+      }
     }),
 
     list_keys: tool({
       description: 'List all keys in MindCache with their types and tags',
-      parameters: z.object({
-        tag: z.string().optional().describe('Filter by tag'),
+      inputSchema: z.object({
+        tag: z.string().optional().describe('Filter by tag')
       }),
       execute: async ({ tag }) => {
         const data = await fetchInstanceData(env, instanceId);
-        
+
         let keys = Object.entries(data).map(([key, entry]) => ({
           key,
           type: entry.attributes.type,
           tags: entry.attributes.tags,
-          readonly: entry.attributes.readonly,
+          readonly: entry.attributes.readonly
         }));
 
         if (tag) {
@@ -257,8 +261,8 @@ function createMindCacheTools(
         }
 
         return { keys };
-      },
-    }),
+      }
+    })
   };
 }
 
@@ -298,23 +302,26 @@ export async function handleChatRequest(
 
     // Create OpenAI provider
     const openai = createOpenAI({
-      apiKey: env.OPENAI_API_KEY,
+      apiKey: env.OPENAI_API_KEY
     });
 
     // Create tools
-    const tools = createMindCacheTools(env, instanceId, mode, instanceData);
+    const tools = createMindCacheTools(env, instanceId, mode);
+
+    // Convert UIMessage format to CoreMessage format for the model
+    const modelMessages = convertToModelMessages(messages);
 
     // Stream the response
     const result = streamText({
       model: openai(model),
       system: systemPrompt,
-      messages,
+      messages: modelMessages,
       tools,
-      maxSteps: 10, // Allow multi-step tool calls
+      maxSteps: 10 // Allow multi-step tool calls
     });
 
-    // Return streaming response
-    return result.toDataStreamResponse();
+    // Return streaming response in UI message format for @ai-sdk/react
+    return result.toUIMessageStreamResponse();
   } catch (error) {
     console.error('Chat error:', error);
     return Response.json(

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { MindCache, CloudAdapter, ConnectionState } from 'mindcache';
+import { MindCache } from 'mindcache';
 import { useInstances } from './InstanceProvider';
 import ChatInterface from './ChatInterface';
 import CloudSTMEditor from './CloudSTMEditor';
@@ -9,18 +9,28 @@ import CloudSTMMenu from './CloudSTMMenu';
 import Workflows from './Workflows';
 
 export default function CloudSTMDemo() {
-  const { getInstanceId } = useInstances();
+  const { getInstanceId, error: instanceError } = useInstances();
   const instanceId = getInstanceId('mindcache-editor');
-  
-  const mindcacheRef = useRef(new MindCache());
-  const cloudAdapterRef = useRef<CloudAdapter | null>(null);
+
+  // Create MindCache with cloud config
+  const mindcacheRef = useRef<MindCache | null>(null);
+  if (!mindcacheRef.current && instanceId) {
+    mindcacheRef.current = new MindCache({
+      cloud: {
+        instanceId,
+        tokenEndpoint: '/api/ws-token',
+        baseUrl: process.env.NEXT_PUBLIC_MINDCACHE_API_URL,
+      }
+    });
+  }
+
   const [leftWidth, setLeftWidth] = useState(70);
   const [isResizing, setIsResizing] = useState(false);
-  const [stmLoaded, setStmLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [stmVersion, setStmVersion] = useState(0);
   const [chatKey, setChatKey] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [connectionState, setConnectionState] = useState<string>('disconnected');
   
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
   const [chatStatus, setChatStatus] = useState<string>('ready');
@@ -35,67 +45,29 @@ export default function CloudSTMDemo() {
   }, []);
 
   useEffect(() => {
-    if (!instanceId) return;
+    const mc = mindcacheRef.current;
+    if (!mc) return;
 
-    const apiKey = process.env.NEXT_PUBLIC_MINDCACHE_API_KEY;
-    const rawUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL || '';
-    const baseUrl = rawUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-
-    // Initialize with default keys
-    const currentKeys = Object.keys(mindcacheRef.current.getAll());
-    if (currentKeys.filter(k => !k.startsWith('$')).length === 0) {
-      mindcacheRef.current.set_value('name', 'Anonymous User');
-      mindcacheRef.current.set_value('preferences', 'No preferences set');
-      mindcacheRef.current.set_value('notes', 'No notes');
-    }
-
-    if (apiKey) {
-      console.log('☁️ Connecting to instance:', instanceId);
+    const handleChange = () => {
+      setIsLoaded(mc.isLoaded);
+      setConnectionState(mc.connectionState);
       
-      const adapter = new CloudAdapter({
-        apiKey,
-        instanceId,
-        projectId: 'cloud-demo',
-        baseUrl,
-      });
+      if (mc.isLoaded) {
+        // Initialize with default keys if empty
+        const currentKeys = Object.keys(mc.getAll());
+        if (currentKeys.filter(k => !k.startsWith('$')).length === 0) {
+          mc.set_value('name', 'Anonymous User');
+          mc.set_value('preferences', 'No preferences set');
+          mc.set_value('notes', 'No notes');
+        }
+      }
+      
+      setStmVersion(v => v + 1);
+    };
 
-      adapter.on('connected', () => {
-        console.log('☁️ Connected');
-        setConnectionState('connected');
-      });
-
-      adapter.on('disconnected', () => {
-        console.log('☁️ Disconnected');
-        setConnectionState('disconnected');
-      });
-
-      adapter.on('error', (error) => {
-        console.error('☁️ Error:', error);
-        setConnectionState('error');
-      });
-
-      adapter.on('synced', () => {
-        console.log('☁️ Synced');
-        setStmLoaded(true);
-        setStmVersion(v => v + 1);
-      });
-
-      adapter.attach(mindcacheRef.current);
-      cloudAdapterRef.current = adapter;
-
-      adapter.connect();
-      setConnectionState('connecting');
-
-      mindcacheRef.current.subscribeToAll(handleSTMChange);
-
-      return () => {
-        adapter.disconnect();
-        adapter.detach();
-        mindcacheRef.current.unsubscribeFromAll(handleSTMChange);
-      };
-    } else {
-      setStmLoaded(true);
-    }
+    handleChange();
+    mc.subscribeToAll(handleChange);
+    return () => mc.unsubscribeFromAll(handleChange);
   }, [instanceId, handleSTMChange]);
 
   // Resizing handlers
@@ -132,12 +104,26 @@ export default function CloudSTMDemo() {
   if (!instanceId) {
     return (
       <div className="h-screen bg-black text-cyan-400 font-mono p-6 flex items-center justify-center">
-        <div className="text-yellow-400">Waiting for instance...</div>
+        <div className="max-w-lg text-center space-y-4">
+          <div className="text-yellow-400 text-lg">⚠️ Instance Not Configured</div>
+          <p className="text-gray-400 text-sm">
+            {instanceError || 'MindCache Editor instance ID not set.'}
+          </p>
+          <div className="text-left bg-gray-900 p-4 rounded-lg border border-gray-700">
+            <p className="text-gray-500 text-xs mb-2">Add to .env.local:</p>
+            <code className="text-green-400 text-sm">
+              NEXT_PUBLIC_INSTANCE_MINDCACHE_EDITOR=your-instance-id
+            </code>
+          </div>
+          <p className="text-gray-500 text-xs">
+            Get instance IDs from the MindCache web UI (localhost:3003)
+          </p>
+        </div>
       </div>
     );
   }
 
-  if (!stmLoaded && connectionState === 'connecting') {
+  if (!isLoaded && connectionState === 'connecting') {
     return (
       <div className="h-screen bg-black text-cyan-400 font-mono p-6 flex items-center justify-center">
         <div className="text-center">
@@ -158,9 +144,9 @@ export default function CloudSTMDemo() {
           workflowPrompt={workflowPrompt}
           onWorkflowPromptSent={() => setWorkflowPrompt('')}
           onStatusChange={setChatStatus}
-          stmLoaded={stmLoaded}
+          stmLoaded={isLoaded}
           stmVersion={stmVersion}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcacheRef.current!}
           mode="use"
         />
       </div>
@@ -176,24 +162,24 @@ export default function CloudSTMDemo() {
         <CloudSTMMenu 
           connectionState={connectionState}
           instanceId={instanceId}
-          onReconnect={() => cloudAdapterRef.current?.connect()}
+          onReconnect={() => {/* MindCache handles reconnection automatically */}}
           onRefresh={handleFullRefresh} 
           selectedTags={selectedTags}
           onSelectedTagsChange={setSelectedTags}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcacheRef.current!}
         />
         <CloudSTMEditor 
           onSTMChange={handleSTMChange} 
           selectedTags={selectedTags}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcacheRef.current!}
         />
         <Workflows 
           onSendPrompt={setWorkflowPrompt}
           isExecuting={chatStatus !== 'ready'}
           onExecutionComplete={() => {}}
-          stmLoaded={stmLoaded}
+          stmLoaded={isLoaded}
           stmVersion={stmVersion}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcacheRef.current!}
         />
       </div>
     </div>

@@ -8,7 +8,6 @@ import ChatConversation from './ChatConversation';
 
 interface ChatInterfaceProps {
   instanceId: string;
-  initialMessages?: UIMessage[];
   workflowPrompt?: string;
   onWorkflowPromptSent?: () => void;
   onStatusChange?: (status: string) => void;
@@ -20,7 +19,6 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ 
   instanceId,
-  initialMessages, 
   workflowPrompt, 
   onWorkflowPromptSent, 
   onStatusChange, 
@@ -34,13 +32,13 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
 
   const { messages, sendMessage, status, error } = useChat({
-    messages: initialMessages || [
+    messages: [
       {
         id: 'welcome',
         role: 'assistant',
         parts: [{ type: 'text', text: 'Hello! I\'m connected to MindCache Cloud. I can read and write data that syncs in real-time!' }],
       }
-    ],
+    ] as UIMessage[],
     transport: new DefaultChatTransport({
       api: '/api/chat-cloud-stm',
       fetch: async (url, init) => {
@@ -117,14 +115,14 @@ export default function ChatInterface({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={status !== 'ready'}
-            placeholder={status === 'streaming' ? "AI is thinking..." : "Ask something..."}
+            placeholder={status !== 'ready' ? "AI is thinking..." : "Ask something..."}
           />
           <button 
             type="submit"
             disabled={status !== 'ready' || !input.trim()}
             className="bg-cyan-400 text-black font-mono px-2 py-1 text-sm rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
-            {status === 'streaming' ? '...' : 'Send'}
+            {status !== 'ready' ? '...' : 'Send'}
           </button>
         </div>
       </form>
