@@ -24,7 +24,8 @@ export const POST = async (req: NextRequest) => {
     console.log('☁️ Proxying chat to MindCache Cloud:', {
       instanceId,
       messageCount: messages?.length,
-      mode
+      mode,
+      lastMessage: messages?.[messages.length - 1]
     });
 
     // Forward to MindCache Cloud Chat API
