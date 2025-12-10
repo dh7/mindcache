@@ -1,6 +1,6 @@
 /**
  * MindCacheInstance Durable Object
- * 
+ *
  * Each MindCache Instance maps to one Durable Object.
  * Handles:
  * - Key-value storage (SQLite)
@@ -8,11 +8,11 @@
  * - Broadcasting changes to all connected clients
  */
 
-import type { 
-  ClientMessage, 
-  ServerMessage, 
+import type {
+  ClientMessage,
+  ServerMessage,
   KeyAttributes,
-  KeyEntry 
+  KeyEntry
 } from '@mindcache/shared';
 
 interface SessionData {
@@ -60,7 +60,7 @@ export class MindCacheInstanceDO implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    
+
     // Handle WebSocket upgrade
     const upgradeHeader = request.headers.get('Upgrade');
     if (upgradeHeader?.toLowerCase() === 'websocket') {
@@ -76,28 +76,28 @@ export class MindCacheInstanceDO implements DurableObject {
 
     // POST /keys - Set a key
     if (url.pathname === '/keys' && request.method === 'POST') {
-      const body = await request.json() as { 
-        key: string; 
-        value: unknown; 
+      const body = await request.json() as {
+        key: string;
+        value: unknown;
         attributes: KeyAttributes;
         userId?: string;
       };
-      
+
       const now = Date.now();
       this.sql.exec(`
         INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-        body.key,
-        JSON.stringify(body.value),
-        body.attributes.type,
-        body.attributes.contentType || null,
-        body.attributes.readonly ? 1 : 0,
-        body.attributes.visible ? 1 : 0,
-        body.attributes.hardcoded ? 1 : 0,
-        body.attributes.template ? 1 : 0,
-        body.attributes.tags ? JSON.stringify(body.attributes.tags) : null,
-        now
+      body.key,
+      JSON.stringify(body.value),
+      body.attributes.type,
+      body.attributes.contentType || null,
+      body.attributes.readonly ? 1 : 0,
+      body.attributes.visible ? 1 : 0,
+      body.attributes.hardcoded ? 1 : 0,
+      body.attributes.template ? 1 : 0,
+      body.attributes.tags ? JSON.stringify(body.attributes.tags) : null,
+      now
       );
 
       // Broadcast to connected WebSocket clients
@@ -107,7 +107,7 @@ export class MindCacheInstanceDO implements DurableObject {
         value: body.value,
         attributes: body.attributes,
         updatedBy: body.userId || 'system',
-        timestamp: now,
+        timestamp: now
       });
 
       return Response.json({ success: true });
@@ -117,7 +117,7 @@ export class MindCacheInstanceDO implements DurableObject {
     if (url.pathname.startsWith('/keys/') && request.method === 'DELETE') {
       const key = decodeURIComponent(url.pathname.slice(6));
       const now = Date.now();
-      
+
       this.sql.exec('DELETE FROM keys WHERE name = ?', key);
 
       // Broadcast to connected WebSocket clients
@@ -125,8 +125,26 @@ export class MindCacheInstanceDO implements DurableObject {
         type: 'key_deleted',
         key,
         deletedBy: 'system',
-        timestamp: now,
+        timestamp: now
       });
+
+      return Response.json({ success: true });
+    }
+
+    // DELETE /destroy - Delete all storage and close connections
+    if (url.pathname === '/destroy' && request.method === 'DELETE') {
+      // Close all WebSocket connections
+      const webSockets = this.state.getWebSockets();
+      for (const ws of webSockets) {
+        try {
+          ws.close(1000, 'Instance deleted');
+        } catch {
+          // Ignore close errors
+        }
+      }
+
+      // Delete all storage
+      await this.state.storage.deleteAll();
 
       return Response.json({ success: true });
     }
@@ -150,13 +168,13 @@ export class MindCacheInstanceDO implements DurableObject {
     if (preAuth) {
       const session: SessionData = { userId, permission };
       this.setSession(server, session);
-      
+
       // Send auth success
       this.send(server, {
         type: 'auth_success',
         instanceId: this.state.id.toString(),
         userId: session.userId,
-        permission: session.permission,
+        permission: session.permission
       });
 
       // Send current state
@@ -164,13 +182,13 @@ export class MindCacheInstanceDO implements DurableObject {
       this.send(server, {
         type: 'sync',
         data,
-        instanceId: this.state.id.toString(),
+        instanceId: this.state.id.toString()
       });
     }
 
     return new Response(null, {
       status: 101,
-      webSocket: client,
+      webSocket: client
     });
   }
 
@@ -217,15 +235,15 @@ export class MindCacheInstanceDO implements DurableObject {
     }
   }
 
-  private async handleAuth(ws: WebSocket, apiKey: string): Promise<void> {
+  private async handleAuth(ws: WebSocket, _apiKey: string): Promise<void> {
     // TODO: Verify API key against D1 database
     // For now, accept all connections in development
-    
+
     const session: SessionData = {
       userId: 'dev-user',
-      permission: 'write',
+      permission: 'write'
     };
-    
+
     // Attach session to WebSocket (survives hibernation)
     this.setSession(ws, session);
 
@@ -234,7 +252,7 @@ export class MindCacheInstanceDO implements DurableObject {
       type: 'auth_success',
       instanceId: this.state.id.toString(),
       userId: session.userId,
-      permission: session.permission,
+      permission: session.permission
     });
 
     // Send current state
@@ -242,14 +260,14 @@ export class MindCacheInstanceDO implements DurableObject {
     this.send(ws, {
       type: 'sync',
       data,
-      instanceId: this.state.id.toString(),
+      instanceId: this.state.id.toString()
     });
   }
 
   private async handleSet(
-    ws: WebSocket, 
-    key: string, 
-    value: unknown, 
+    ws: WebSocket,
+    key: string,
+    value: unknown,
     attributes: KeyAttributes
   ): Promise<void> {
     const session = this.getSession(ws);
@@ -259,22 +277,22 @@ export class MindCacheInstanceDO implements DurableObject {
     }
 
     const now = Date.now();
-    
+
     // Store in SQLite
     this.sql.exec(`
       INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-      key,
-      JSON.stringify(value),
-      attributes.type,
-      attributes.contentType || null,
-      attributes.readonly ? 1 : 0,
-      attributes.visible ? 1 : 0,
-      attributes.hardcoded ? 1 : 0,
-      attributes.template ? 1 : 0,
-      attributes.tags ? JSON.stringify(attributes.tags) : null,
-      now
+    key,
+    JSON.stringify(value),
+    attributes.type,
+    attributes.contentType || null,
+    attributes.readonly ? 1 : 0,
+    attributes.visible ? 1 : 0,
+    attributes.hardcoded ? 1 : 0,
+    attributes.template ? 1 : 0,
+    attributes.tags ? JSON.stringify(attributes.tags) : null,
+    now
     );
 
     // Broadcast to all connected clients
@@ -285,7 +303,7 @@ export class MindCacheInstanceDO implements DurableObject {
       value,
       attributes,
       updatedBy: session.userId,
-      timestamp: now,
+      timestamp: now
     });
   }
 
@@ -297,7 +315,7 @@ export class MindCacheInstanceDO implements DurableObject {
     }
 
     const now = Date.now();
-    
+
     this.sql.exec('DELETE FROM keys WHERE name = ?', key);
 
     // Broadcast to all connected clients
@@ -306,7 +324,7 @@ export class MindCacheInstanceDO implements DurableObject {
       type: 'key_deleted',
       key,
       deletedBy: session.userId,
-      timestamp: now,
+      timestamp: now
     });
   }
 
@@ -318,7 +336,7 @@ export class MindCacheInstanceDO implements DurableObject {
     }
 
     const now = Date.now();
-    
+
     this.sql.exec('DELETE FROM keys');
 
     // Broadcast to all connected clients
@@ -326,15 +344,15 @@ export class MindCacheInstanceDO implements DurableObject {
     this.broadcast({
       type: 'cleared',
       clearedBy: session.userId,
-      timestamp: now,
+      timestamp: now
     });
   }
 
   private getAllKeys(): Record<string, KeyEntry> {
     const result: Record<string, KeyEntry> = {};
-    
+
     const cursor = this.sql.exec('SELECT * FROM keys');
-    
+
     for (const row of cursor) {
       const name = row.name as string;
       result[name] = {
@@ -346,12 +364,12 @@ export class MindCacheInstanceDO implements DurableObject {
           visible: Boolean(row.visible),
           hardcoded: Boolean(row.hardcoded),
           template: Boolean(row.template),
-          tags: row.tags ? JSON.parse(row.tags as string) : [],
+          tags: row.tags ? JSON.parse(row.tags as string) : []
         },
-        updatedAt: row.updated_at as number,
+        updatedAt: row.updated_at as number
       };
     }
-    
+
     return result;
   }
 
