@@ -108,6 +108,22 @@ check_web_env() {
     return $errors
 }
 
+apply_migrations() {
+    echo ""
+    echo -e "${BLUE}Applying database migrations...${NC}"
+    cd "$SCRIPT_DIR/server"
+    
+    # Apply migrations (idempotent - safe to run multiple times)
+    # Suppress output unless there's an error
+    if pnpm db:migrate:local > /dev/null 2>&1; then
+        echo -e "  ${GREEN}✓${NC} Database migrations applied"
+    else
+        # If it fails, show what happened (might just be "already applied")
+        echo -e "  ${YELLOW}○${NC} Checking migration status..."
+        pnpm db:migrate:local 2>&1 | head -5 || true
+    fi
+}
+
 start_server() {
     echo ""
     echo -e "${BLUE}Starting server...${NC}"
@@ -140,6 +156,9 @@ if [ "$server_ok" = false ]; then
     echo -e "${RED}Server environment check failed. Please fix the issues above.${NC}"
     exit 1
 fi
+
+# Apply database migrations before starting server
+apply_migrations
 
 # Start services
 start_server
