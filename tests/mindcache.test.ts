@@ -322,8 +322,8 @@ describe('MindCache', () => {
     test('should maintain state across imports', () => {
       mindcache.set('persistent', 'value');
 
-      // Simulate another import
-      const { mindcache: anotherRef } = require('../src/index');
+      // Simulate another import - use package name since tests import from 'mindcache'
+      const { mindcache: anotherRef } = require('mindcache');
       expect(anotherRef.get('persistent')).toBe('value');
     });
   });
@@ -353,6 +353,7 @@ describe('MindCache', () => {
     });
 
     test('should deserialize object data correctly', () => {
+      // Using legacy format to test migration (cast to any to simulate old data)
       const testData = {
         name: {
           value: 'Bob',
@@ -366,7 +367,7 @@ describe('MindCache', () => {
           value: { notifications: true },
           attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         }
-      };
+      } as any;
 
       cache.deserialize(testData);
 
@@ -377,6 +378,10 @@ describe('MindCache', () => {
       // System keys should still be available
       expect(cache.get('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(cache.get('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+
+      // Should have migrated to new tag format
+      expect(cache.get_attributes('name')?.contentTags).toEqual([]);
+      expect(cache.get_attributes('name')?.systemTags).toContain('prompt');
     });
 
     test('should clear existing data before deserializing', () => {
@@ -384,7 +389,7 @@ describe('MindCache', () => {
       cache.set('existing', 'old');
       cache.set('toBeRemoved', 'value');
 
-      // Deserialize new data (without toBeRemoved)
+      // Deserialize new data (without toBeRemoved) - using legacy format
       cache.deserialize({
         existing: {
           value: 'new',
@@ -394,7 +399,7 @@ describe('MindCache', () => {
           value: 'newValue',
           attributes: { readonly: false, visible: true, hardcoded: false, template: false, type: 'text' as const, tags: [] }
         }
-      });
+      } as any);
 
       expect(cache.get('existing')).toBe('new');
       expect(cache.get('newKey')).toBe('newValue');

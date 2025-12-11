@@ -1,7 +1,8 @@
 # MindCache 2.0 Specification
 
-**Version**: 1.3.1-alpha  
-**Last Updated**: 2024-12-08  
+**Package Version**: 2.0.0  
+**Spec Revision**: 1.4.0  
+**Last Updated**: 2024-12-11  
 **Production URL**: https://mindcache-api.dh7777777.workers.dev
 
 ## Overview
@@ -84,15 +85,47 @@ Sharing happens at two levels:
 ## Core Features (inherited from 1.0)
 
 - ✅ Key-value storage with types: `text`, `json`, `image`, `file`
-- ✅ Attributes: `readonly`, `visible`, `hardcoded`, `tags`
+- ✅ Two-tier tag system: `contentTags` (user) + `systemTags` (admin)
 - ✅ Template injection: `{{key}}` syntax
 - ✅ Automatic LLM tool generation (`write_<key>` tools)
-- ✅ System prompt generation from keys tagged with `SystemPrompt`
+- ✅ System prompt generation from keys with `prompt` system tag
 - ✅ Serialization (JSON, Markdown)
 
 **Changes from 1.0**:
-- Removed `template` attribute (simplified)
-- System prompt now uses `SystemPrompt` tag instead of `visible` attribute
+- Replaced boolean attributes with `systemTags` array
+- Added `contentTags` for user-level organization
+- Added `accessLevel` for permission control
+
+### Tag System (1.4.0)
+
+MindCache uses a two-tier tag system:
+
+| Tag Type | Purpose | Access Required | Examples |
+|----------|---------|-----------------|----------|
+| **Content Tags** | User organization | Any (`user` or `system`) | `"persona"`, `"draft"`, `"important"` |
+| **System Tags** | Behavior control | `system` access only | `"prompt"`, `"readonly"`, `"protected"`, `"template"` |
+
+**System Tags:**
+- `prompt` - Include key in system prompt (replaces `visible`)
+- `readonly` - Cannot be modified by AI tools
+- `protected` - Cannot be deleted (replaces `hardcoded`)
+- `template` - Process value through template injection
+
+**Access Levels:**
+```typescript
+// User access (default) - can only manage content tags
+const mc = new MindCache();
+mc.addTag('myKey', 'important');      // ✓ content tag
+mc.systemAddTag('myKey', 'readonly'); // ✗ warns, returns false
+
+// System access - can manage both content and system tags
+const mcAdmin = new MindCache({ accessLevel: 'system' });
+mcAdmin.addTag('myKey', 'important');      // ✓ content tag
+mcAdmin.systemAddTag('myKey', 'readonly'); // ✓ system tag
+```
+
+**Legacy Compatibility:**
+Legacy boolean attributes (`readonly`, `visible`, `hardcoded`, `template`) are automatically synced with `systemTags` for backward compatibility.
 
 ---
 
@@ -889,6 +922,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-11 | 1.4.0-alpha | Two-tier tag system: `contentTags` (user) + `systemTags` (admin) with access level control |
 | 2024-12-08 | 1.3.1-alpha | Clarified examples/ are standalone (not part of pnpm workspace) - run `npm install` inside each |
 | 2024-12-06 | 1.3-alpha | Built-in cloud sync via `MindCache({ cloud: {...} })` constructor - same DX as local |
 | 2024-12-05 | 1.2-alpha | Added Hybrid Architecture (DO for state, external chat). Simplified Next.js routes to `/api/instances` + `/api/chat` only |

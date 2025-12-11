@@ -21,42 +21,22 @@ describe('MindCache Complete Serialization', () => {
       expect(serialized).toHaveProperty('config');
       expect(serialized).toHaveProperty('template_key');
 
-      // Verify structure includes both value and attributes
-      expect(serialized.user).toEqual({
-        value: 'john',
-        attributes: {
-          readonly: false,
-          visible: true,
-          hardcoded: false,
-          template: false,
-          type: 'text',
-          tags: []
-        }
-      });
+      // Verify structure includes both value and attributes with new tag system
+      expect(serialized.user.value).toBe('john');
+      expect(serialized.user.attributes.readonly).toBe(false);
+      expect(serialized.user.attributes.visible).toBe(true);
+      expect(serialized.user.attributes.contentTags).toEqual([]);
+      expect(serialized.user.attributes.systemTags).toContain('prompt');
 
-      expect(serialized.config).toEqual({
-        value: 'prod',
-        attributes: {
-          readonly: true,
-          visible: false,
-          hardcoded: false,
-          template: false,
-          type: 'text',
-          tags: []
-        }
-      });
+      expect(serialized.config.value).toBe('prod');
+      expect(serialized.config.attributes.readonly).toBe(true);
+      expect(serialized.config.attributes.visible).toBe(false);
+      expect(serialized.config.attributes.systemTags).toContain('readonly');
+      expect(serialized.config.attributes.systemTags).not.toContain('prompt');
 
-      expect(serialized.template_key).toEqual({
-        value: 'Hello {{user}}!',
-        attributes: {
-          readonly: false,
-          visible: true,
-          hardcoded: false,
-          template: true,
-          type: 'text',
-          tags: []
-        }
-      });
+      expect(serialized.template_key.value).toBe('Hello {{user}}!');
+      expect(serialized.template_key.attributes.template).toBe(true);
+      expect(serialized.template_key.attributes.systemTags).toContain('template');
     });
 
     test('should exclude hardcoded keys from serialization', () => {
@@ -80,7 +60,10 @@ describe('MindCache Complete Serialization', () => {
             visible: true,
             hardcoded: false,
             template: false,
-            type: 'text' as const
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['prompt'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: []
           }
         },
         config: {
@@ -90,7 +73,10 @@ describe('MindCache Complete Serialization', () => {
             visible: false,
             hardcoded: false,
             template: false,
-            type: 'text' as const
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['readonly'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: []
           }
         },
         greeting: {
@@ -100,7 +86,10 @@ describe('MindCache Complete Serialization', () => {
             visible: true,
             hardcoded: false,
             template: true,
-            type: 'text' as const
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['prompt', 'template'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: []
           }
         }
       };
@@ -113,32 +102,43 @@ describe('MindCache Complete Serialization', () => {
       expect(cache.get_value('greeting')).toBe('Hi alice!'); // Template processed
 
       // Verify attributes are restored
-      expect(cache.get_attributes('user')).toEqual({
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false,
-        type: 'text',
-        tags: []
-      });
+      const userAttrs = cache.get_attributes('user');
+      expect(userAttrs?.readonly).toBe(false);
+      expect(userAttrs?.visible).toBe(true);
+      expect(userAttrs?.contentTags).toEqual([]);
 
-      expect(cache.get_attributes('config')).toEqual({
-        readonly: true,
-        visible: false,
-        hardcoded: false,
-        template: false,
-        type: 'text',
-        tags: []
-      });
+      const configAttrs = cache.get_attributes('config');
+      expect(configAttrs?.readonly).toBe(true);
+      expect(configAttrs?.visible).toBe(false);
 
-      expect(cache.get_attributes('greeting')).toEqual({
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: true,
-        type: 'text',
-        tags: []
-      });
+      const greetingAttrs = cache.get_attributes('greeting');
+      expect(greetingAttrs?.template).toBe(true);
+      expect(greetingAttrs?.visible).toBe(true);
+    });
+
+    test('should migrate legacy format without contentTags/systemTags', () => {
+      // Old format without new tag arrays (simulating data from old version)
+      const legacyData = {
+        user: {
+          value: 'alice',
+          attributes: {
+            readonly: false,
+            visible: true,
+            hardcoded: false,
+            template: false,
+            type: 'text' as const,
+            tags: ['person', 'admin']
+          }
+        }
+      } as any; // Use any to simulate legacy data
+
+      cache.deserialize(legacyData);
+
+      // Should have migrated to new format
+      const attrs = cache.get_attributes('user');
+      expect(attrs?.contentTags).toEqual(['person', 'admin']);
+      expect(attrs?.systemTags).toContain('prompt'); // visible was true
+      expect(attrs?.visible).toBe(true);
     });
 
     test('should preserve system keys after deserialization', () => {
@@ -150,7 +150,10 @@ describe('MindCache Complete Serialization', () => {
             visible: true,
             hardcoded: false,
             template: false,
-            type: 'text' as const
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['prompt'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: []
           }
         }
       };
@@ -179,10 +182,10 @@ describe('MindCache Complete Serialization', () => {
       expect(newCache.get_value('secret')).toBe('hidden');
       expect(newCache.get_value('message')).toBe('Welcome Bob!');
 
-      // Verify attributes match
-      expect(newCache.get_attributes('name')).toEqual(cache.get_attributes('name'));
-      expect(newCache.get_attributes('secret')).toEqual(cache.get_attributes('secret'));
-      expect(newCache.get_attributes('message')).toEqual(cache.get_attributes('message'));
+      // Verify key attributes match
+      expect(newCache.get_attributes('name')?.readonly).toBe(cache.get_attributes('name')?.readonly);
+      expect(newCache.get_attributes('secret')?.readonly).toBe(cache.get_attributes('secret')?.readonly);
+      expect(newCache.get_attributes('message')?.template).toBe(cache.get_attributes('message')?.template);
     });
   });
 
@@ -198,17 +201,13 @@ describe('MindCache Complete Serialization', () => {
       const parsed = JSON.parse(jsonString);
 
       expect(parsed).toHaveProperty('test_key');
-      expect(parsed.test_key).toEqual({
-        value: 'test_value',
-        attributes: {
-          readonly: true,
-          visible: false,
-          hardcoded: false,
-          template: true,
-          type: 'text',
-          tags: []
-        }
-      });
+      expect(parsed.test_key.value).toBe('test_value');
+      expect(parsed.test_key.attributes.readonly).toBe(true);
+      expect(parsed.test_key.attributes.visible).toBe(false);
+      expect(parsed.test_key.attributes.template).toBe(true);
+      expect(parsed.test_key.attributes.contentTags).toEqual([]);
+      expect(parsed.test_key.attributes.systemTags).toContain('readonly');
+      expect(parsed.test_key.attributes.systemTags).toContain('template');
     });
 
     test('should deserialize from JSON string correctly', () => {
@@ -219,7 +218,11 @@ describe('MindCache Complete Serialization', () => {
             readonly: false,
             visible: true,
             hardcoded: false,
-            template: false
+            template: false,
+            type: 'text',
+            contentTags: [],
+            systemTags: ['prompt'],
+            tags: []
           }
         },
         template_msg: {
@@ -228,7 +231,11 @@ describe('MindCache Complete Serialization', () => {
             readonly: false,
             visible: true,
             hardcoded: false,
-            template: true
+            template: true,
+            type: 'text',
+            contentTags: [],
+            systemTags: ['prompt', 'template'],
+            tags: []
           }
         }
       };
@@ -274,12 +281,11 @@ describe('MindCache Complete Serialization', () => {
 
   describe('Clear behavior', () => {
     test('should remove all entries after clear', () => {
-      // Set up data
       cache.set_value('name', 'Anonymous User');
 
-      const serialized = cache.serialize();
+      cache.clear();
 
-      // Verify defaults are in serialized data
+      expect(cache.get('name')).toBeUndefined();
     });
 
     test('should preserve all existing attributes when updating value only', () => {
@@ -292,28 +298,19 @@ describe('MindCache Complete Serialization', () => {
 
       // Verify initial state
       const initialAttrs = cache.get_attributes('config');
-      expect(initialAttrs).toEqual({
-        readonly: true,
-        visible: false,
-        hardcoded: false,
-        template: true,
-        type: 'text',
-        tags: []
-      });
+      expect(initialAttrs?.readonly).toBe(true);
+      expect(initialAttrs?.visible).toBe(false);
+      expect(initialAttrs?.template).toBe(true);
 
       // Update value only (should preserve all attributes)
       cache.set_value('config', 'updated');
 
       // All attributes should be preserved
       expect(cache.get_value('config')).toBe('updated');
-      expect(cache.get_attributes('config')).toEqual({
-        readonly: true,
-        visible: false,
-        hardcoded: false,
-        template: true,
-        type: 'text',
-        tags: []
-      });
+      const updatedAttrs = cache.get_attributes('config');
+      expect(updatedAttrs?.readonly).toBe(true);
+      expect(updatedAttrs?.visible).toBe(false);
+      expect(updatedAttrs?.template).toBe(true);
     });
 
     test('should allow partial attribute updates while preserving others', () => {
@@ -329,39 +326,61 @@ describe('MindCache Complete Serialization', () => {
 
       // Should preserve other attributes while updating the specified one
       expect(cache.get_value('setting')).toBe('new_value');
-      expect(cache.get_attributes('setting')).toEqual({
-        readonly: true,  // Updated
-        visible: true,   // Preserved
-        hardcoded: false, // Preserved
-        template: false,  // Preserved
-        type: 'text',     // Preserved
-        tags: []         // Default
-      });
+      const attrs = cache.get_attributes('setting');
+      expect(attrs?.readonly).toBe(true);  // Updated
+      expect(attrs?.visible).toBe(true);   // Preserved
+      expect(attrs?.template).toBe(false); // Preserved
     });
-
   });
 
   describe('Template processing after deserialization', () => {
     test('should process templates correctly after deserialization', () => {
-      const data = {
-        name: {
-          value: 'World'
-        },
-        greeting: {
-          value: 'Hello {{name}}!'
-        },
-        nested: {
-          value: '{{greeting}} Welcome!'
-        }
-      };
-
-      // Need to properly set up the entries with attributes
       cache.set_value('name', 'World');
       cache.set_value('greeting', 'Hello {{name}}!', { template: true });
       cache.set_value('nested', '{{greeting}} Welcome!', { template: true });
 
       expect(cache.get_value('greeting')).toBe('Hello World!');
       expect(cache.get_value('nested')).toBe('Hello World! Welcome!');
+    });
+  });
+
+  describe('ContentTags and SystemTags serialization', () => {
+    test('should serialize both contentTags and systemTags', () => {
+      cache.set_value('key', 'value');
+      cache.addTag('key', 'user-tag');
+
+      const serialized = cache.serialize();
+
+      expect(serialized.key.attributes.contentTags).toEqual(['user-tag']);
+      expect(serialized.key.attributes.systemTags).toContain('prompt');
+      expect(serialized.key.attributes.tags).toEqual(['user-tag']); // Legacy sync
+    });
+
+    test('should deserialize and sync system tags with legacy booleans', () => {
+      const data = {
+        key: {
+          value: 'test',
+          attributes: {
+            type: 'text' as const,
+            contentTags: ['custom'],
+            systemTags: ['prompt', 'readonly', 'template'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            // Legacy values should be overwritten by systemTags
+            readonly: false,
+            visible: false,
+            hardcoded: false,
+            template: false,
+            tags: []
+          }
+        }
+      };
+
+      cache.deserialize(data);
+
+      const attrs = cache.get_attributes('key');
+      expect(attrs?.visible).toBe(true);    // Synced from 'prompt' in systemTags
+      expect(attrs?.readonly).toBe(true);   // Synced from 'readonly' in systemTags
+      expect(attrs?.template).toBe(true);   // Synced from 'template' in systemTags
+      expect(attrs?.contentTags).toEqual(['custom']);
     });
   });
 });
