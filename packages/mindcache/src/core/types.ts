@@ -56,9 +56,16 @@ export type STM = {
 };
 
 /**
- * A function that is called when a key changes
+ * Listener callback for key-specific subscriptions
+ * Receives the new value when the key changes
  */
-export type Listener = () => void;
+export type Listener = (value: unknown) => void;
+
+/**
+ * Global listener callback for all changes
+ * Called when any key changes (no parameters - use getAll() to get current state)
+ */
+export type GlobalListener = () => void;
 
 /**
  * Default attributes for new keys

@@ -14,6 +14,7 @@ import {
   checkDelegatePermission,
   checkUserPermission,
   grantDelegateAccess,
+  grantUserAccess,
   revokeAccess
 } from './auth/permissions';
 import { generateSecureSecret, hashSecret } from './auth/clerk';
@@ -345,11 +346,13 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       const tokenHash = await hashToken(token);
       const expiresAt = Math.floor(Date.now() / 1000) + 60; // 60 seconds
       const requestedPermission = body.permission || permission;
+      // Map 'system' to 'admin' for ws_tokens table (which uses 'admin' instead of 'system')
+      const wsTokenPermission = requestedPermission === 'system' ? 'admin' : requestedPermission;
 
       await env.DB.prepare(`
       INSERT INTO ws_tokens (token_hash, user_id, instance_id, permission, expires_at)
       VALUES (?, ?, ?, ?, ?)
-    `).bind(tokenHash, userId, body.instanceId, requestedPermission, expiresAt).run();
+    `).bind(tokenHash, userId, body.instanceId, wsTokenPermission, expiresAt).run();
 
       return Response.json({
         token,
@@ -601,7 +604,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         return Response.json({ error: 'Name is required' }, { status: 400, headers: corsHeaders });
       }
       await env.DB.prepare(`
-      UPDATE instances SET name = ?, updated_at = CURRENT_TIMESTAMP
+      UPDATE instances SET name = ?, updated_at = unixepoch()
       WHERE id = ? AND owner_id = ?
     `).bind(body.name.trim(), instanceId, userId).run();
       const updated = await env.DB.prepare(`
@@ -633,7 +636,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       targetType: 'user' | 'public';
       targetId?: string;
       targetEmail?: string;
-      permission: 'read' | 'write' | 'admin'
+      permission: 'read' | 'write' | 'admin'  // 'admin' maps to 'system' in do_permissions
     };
 
       // If sharing by email, look up user
@@ -649,6 +652,10 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       }
 
       const id = crypto.randomUUID();
+
+      // Map 'admin' to 'system' for shares table (legacy compatibility)
+      const sharePermission = body.permission === 'admin' ? 'admin' : body.permission;
+
       await env.DB.prepare(`
       INSERT INTO shares (id, resource_type, resource_id, target_type, target_id, permission)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -658,8 +665,21 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         resourceId,
         body.targetType,
         body.targetType === 'public' ? null : targetId,
-        body.permission
+        sharePermission
       ).run();
+
+      // If sharing an instance with a user, also create do_permissions entry
+      if (resourceType === 'instances' && body.targetType === 'user' && targetId) {
+        const doId = env.MINDCACHE_INSTANCE.idFromName(resourceId).toString();
+        // Map 'admin' permission to 'system' for do_permissions
+        const doPermission = body.permission === 'admin' ? 'system' : body.permission;
+        try {
+          await grantUserAccess(userId, targetId, doId, doPermission as 'read' | 'write' | 'system', env.DB);
+        } catch (err) {
+          // If grant fails, continue - share was created, do_permission is optional
+          console.error('Failed to create do_permission for share:', err);
+        }
+      }
 
       return Response.json({ id, ...body }, { status: 201, headers: corsHeaders });
     }

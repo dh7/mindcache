@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from 'zod';
-import type { KeyAttributes, STM, STMEntry, Listener, AccessLevel, SystemTag } from './types';
+import type { KeyAttributes, STM, STMEntry, Listener, GlobalListener, AccessLevel, SystemTag } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
 
 // Browser environment type declarations
@@ -59,7 +59,7 @@ interface ICloudAdapter {
 export class MindCache {
   private stm: STM = {};
   private listeners: { [key: string]: Listener[] } = {};
-  private globalListeners: Listener[] = [];
+  private globalListeners: GlobalListener[] = [];
 
   // Internal flag to prevent sync loops when receiving remote updates
   private _isRemoteUpdate = false;
@@ -406,7 +406,7 @@ export class MindCache {
     };
 
     if (this.listeners[key]) {
-      this.listeners[key].forEach(listener => listener());
+      this.listeners[key].forEach(listener => listener(value));
     }
     this.notifyGlobalListeners();
   }
@@ -453,7 +453,7 @@ export class MindCache {
     };
 
     if (this.listeners[key]) {
-      this.listeners[key].forEach(listener => listener());
+      this.listeners[key].forEach(listener => listener(value));
     }
 
     // Still notify global listeners for UI updates, but adapter should check _isRemoteUpdate
@@ -478,7 +478,7 @@ export class MindCache {
     if (key in this.stm) {
       delete this.stm[key];
       if (this.listeners[key]) {
-        this.listeners[key].forEach(listener => listener());
+        this.listeners[key].forEach(listener => listener(undefined)); // Pass undefined for deleted keys
       }
       this.notifyGlobalListeners();
     }
@@ -641,7 +641,7 @@ export class MindCache {
     if (deleted) {
       this.notifyGlobalListeners();
       if (this.listeners[key]) {
-        this.listeners[key].forEach(listener => listener());
+        this.listeners[key].forEach(listener => listener(undefined)); // Pass undefined for deleted keys
       }
     }
     return deleted;
@@ -705,7 +705,7 @@ export class MindCache {
         };
 
         if (this.listeners[key]) {
-          this.listeners[key].forEach(listener => listener());
+          this.listeners[key].forEach(listener => listener(this.stm[key]?.value));
         }
       }
     });
@@ -725,11 +725,11 @@ export class MindCache {
     }
   }
 
-  subscribeToAll(listener: Listener): void {
+  subscribeToAll(listener: GlobalListener): void {
     this.globalListeners.push(listener);
   }
 
-  unsubscribeFromAll(listener: Listener): void {
+  unsubscribeFromAll(listener: GlobalListener): void {
     this.globalListeners = this.globalListeners.filter(l => l !== listener);
   }
 
@@ -1630,7 +1630,11 @@ export class MindCache {
         const attrs = entry.attributes;
 
         // Sync tags to contentTags if tags was parsed from markdown
-        if (attrs.tags && attrs.tags.length > 0 && (!attrs.contentTags || attrs.contentTags.length === 0)) {
+        if (
+          attrs.tags &&
+          attrs.tags.length > 0 &&
+          (!attrs.contentTags || attrs.contentTags.length === 0)
+        ) {
           attrs.contentTags = [...attrs.tags];
         }
 
