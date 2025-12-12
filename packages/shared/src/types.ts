@@ -13,6 +13,7 @@ export interface KeyAttributes {
   type: 'text' | 'image' | 'file' | 'json';
   contentType?: string;
   tags?: string[];
+  zIndex?: number;
 }
 
 /**
