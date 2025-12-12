@@ -506,7 +506,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       await env.DB.prepare(`
         INSERT INTO do_permissions 
         (do_id, actor_id, actor_type, permission, granted_by_user_id)
-        VALUES (?, ?, 'user', 'system', ?)
+        VALUES (?, ?, 'user', 'admin', ?)
       `).bind(doId, userId, userId).run();
 
       return Response.json({
@@ -620,7 +620,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       await env.DB.prepare(`
         INSERT INTO do_permissions 
         (do_id, actor_id, actor_type, permission, granted_by_user_id)
-        VALUES (?, ?, 'user', 'system', ?)
+        VALUES (?, ?, 'user', 'admin', ?)
       `).bind(doId, userId, userId).run();
 
       return Response.json({ id, name: body.name }, { status: 201, headers: corsHeaders });
@@ -1111,7 +1111,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         await env.DB.prepare(`
           INSERT OR IGNORE INTO do_permissions 
           (do_id, actor_id, actor_type, permission, granted_by_user_id)
-          VALUES (?, ?, 'user', 'system', ?)
+          VALUES (?, ?, 'user', 'admin', ?)
         `).bind(doId, userId, userId).run();
       }
 
