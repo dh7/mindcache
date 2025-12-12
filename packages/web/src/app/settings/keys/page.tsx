@@ -196,7 +196,7 @@ export default function DelegatesPage() {
         <div>
           <h1 className="text-2xl font-bold">Delegates</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Create API keys (delegates) with fine-grained permissions.
+            Create delegates (API keys) with fine-grained permissions.
           </p>
         </div>
         <button

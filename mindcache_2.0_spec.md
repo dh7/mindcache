@@ -72,7 +72,7 @@ Sharing happens at two levels:
 
 **Note**: Key-level sharing is achieved by creating an instance with only the keys you want to share.
 
-**Permissions**: `read`, `write`, `admin`
+**Permissions**: `read`, `write`, `admin` (admin = full system access)
 
 **Share Targets**:
 - Specific users (by email or user ID)
@@ -102,8 +102,8 @@ MindCache uses a two-tier tag system:
 
 | Tag Type | Purpose | Access Required | Examples |
 |----------|---------|-----------------|----------|
-| **Content Tags** | User organization | Any (`user` or `system`) | `"persona"`, `"draft"`, `"important"` |
-| **System Tags** | Behavior control | `system` access only | `"prompt"`, `"readonly"`, `"protected"`, `"template"` |
+| **Content Tags** | User organization | Any (`user` or `admin`) | `"persona"`, `"draft"`, `"important"` |
+| **System Tags** | Behavior control | `admin` access only | `"prompt"`, `"readonly"`, `"protected"`, `"template"` |
 
 **System Tags:**
 - `prompt` - Include key in system prompt (replaces `visible`)
@@ -118,8 +118,8 @@ const mc = new MindCache();
 mc.addTag('myKey', 'important');      // ✓ content tag
 mc.systemAddTag('myKey', 'readonly'); // ✗ warns, returns false
 
-// System access - can manage both content and system tags
-const mcAdmin = new MindCache({ accessLevel: 'system' });
+// Admin access - can manage both content and system tags
+const mcAdmin = new MindCache({ accessLevel: 'admin' });
 mcAdmin.addTag('myKey', 'important');      // ✓ content tag
 mcAdmin.systemAddTag('myKey', 'readonly'); // ✓ system tag
 ```
@@ -151,11 +151,11 @@ Legacy boolean attributes (`readonly`, `visible`, `hardcoded`, `template`) are a
 1. **Key-Level Capabilities** (what the delegate CAN do):
    - `can_read`: Can read data
    - `can_write`: Can modify data
-   - `can_system`: Can perform admin operations (share, delete, etc.)
+   - `can_system`: Can perform admin operations (share, delete, etc.) - Note: stored as `can_system` in DB but permission level is `admin`
 
 2. **Resource-Level Grants** (which instances the delegate can access):
    - Grants are per-instance (Durable Object)
-   - Permission levels: `read`, `write`, `system`
+   - Permission levels: `read`, `write`, `admin`
    - Both layers must allow the operation
 
 **Multiple Secrets per Delegate:**
@@ -366,7 +366,7 @@ Using **Clerk** for authentication (standard auth provider):
 
 2. **Resource-Level Grants** (`do_permissions` table):
    - Per-instance (Durable Object) access grants
-   - Permission levels: `read`, `write`, `system`
+   - Permission levels: `read`, `write`, `admin`
    - Can be added/removed dynamically
 
 **Both layers must allow the operation** - prevents privilege escalation.
@@ -384,7 +384,7 @@ Using **Clerk** for authentication (standard auth provider):
 async function checkDelegatePermission(
   delegateId: string,
   doId: string,
-  requiredPermission: 'read' | 'write' | 'system'
+  requiredPermission: 'read' | 'write' | 'admin'
 ): Promise<boolean> {
   // Layer 1: Check key-level capabilities
   const delegate = await db.prepare(`
@@ -396,7 +396,7 @@ async function checkDelegatePermission(
   const hasKeyPermission = (
     (requiredPermission === 'read' && delegate.can_read) ||
     (requiredPermission === 'write' && delegate.can_write) ||
-    (requiredPermission === 'system' && delegate.can_system)
+    (requiredPermission === 'admin' && delegate.can_system)
   );
   
   if (!hasKeyPermission) return false;
@@ -409,8 +409,8 @@ async function checkDelegatePermission(
   
   if (!grant) return false;
   
-  // Check permission hierarchy (system > write > read)
-  const hierarchy = { read: 1, write: 2, system: 3 };
+  // Check permission hierarchy (admin > write > read)
+  const hierarchy = { read: 1, write: 2, admin: 3 };
   return hierarchy[grant.permission] >= hierarchy[requiredPermission];
 }
 ```
@@ -605,7 +605,7 @@ do_permissions (
   do_id TEXT NOT NULL,
   actor_id TEXT NOT NULL,
   actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'delegate')),
-  permission TEXT NOT NULL CHECK (permission IN ('read', 'write', 'system')),
+  permission TEXT NOT NULL CHECK (permission IN ('read', 'write', 'admin')),
   granted_by_user_id TEXT NOT NULL REFERENCES users(id),
   granted_at INTEGER NOT NULL DEFAULT (unixepoch()),
   expires_at INTEGER,

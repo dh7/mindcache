@@ -106,7 +106,7 @@ export default {
           const headers = new Headers(request.headers);
           headers.set('X-MindCache-PreAuth', 'true');
           headers.set('X-MindCache-UserId', 'dev-user');
-          headers.set('X-MindCache-Permission', 'write');
+          headers.set('X-MindCache-Permission', 'admin'); // Full access in dev mode
           const modifiedRequest = new Request(request.url, {
             method: request.method,
             headers,
@@ -114,6 +114,9 @@ export default {
           });
           return stub.fetch(modifiedRequest);
         }
+
+        let wsUserId: string;
+        let wsPermission: 'read' | 'write' | 'admin' = 'read';
 
         if (token) {
           // Verify short-lived token
@@ -140,6 +143,10 @@ export default {
             return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
           }
 
+          wsUserId = tokenData.user_id;
+          // Token permission is 'read', 'write', or 'admin'
+          wsPermission = tokenData.permission as 'read' | 'write' | 'admin';
+
           // Delete used token (one-time use)
           await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
             .bind(await hashToken(token)).run();
@@ -154,6 +161,47 @@ export default {
           if (!auth.valid) {
             return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
           }
+
+          wsUserId = auth.userId || 'api-key-user';
+
+          // Check do_permissions to determine permission level
+          const doId = env.MINDCACHE_INSTANCE.idFromName(instanceId).toString();
+
+          if (await checkUserPermission(wsUserId, doId, 'admin', env.DB)) {
+            wsPermission = 'admin';
+          } else if (await checkUserPermission(wsUserId, doId, 'write', env.DB)) {
+            wsPermission = 'write';
+          } else if (await checkUserPermission(wsUserId, doId, 'read', env.DB)) {
+            wsPermission = 'read';
+          } else {
+            // Fallback: Check instance ownership directly (for legacy instances)
+            const instance = await env.DB.prepare(`
+              SELECT owner_id FROM instances WHERE id = ?
+            `).bind(instanceId).first<{ owner_id: string }>();
+
+            if (instance && instance.owner_id === wsUserId) {
+              // Owner has full access
+              wsPermission = 'admin';
+
+              // Create missing do_ownership entry for future use
+              try {
+                await env.DB.prepare(`
+                  INSERT OR IGNORE INTO do_ownership (do_id, owner_user_id)
+                  VALUES (?, ?)
+                `).bind(doId, wsUserId).run();
+
+                await env.DB.prepare(`
+                  INSERT OR IGNORE INTO do_permissions 
+                  (do_id, actor_id, actor_type, permission, granted_by_user_id)
+                  VALUES (?, ?, 'user', 'admin', ?)
+                `).bind(doId, wsUserId, wsUserId).run();
+              } catch (e) {
+                // Ignore errors - migration will happen eventually
+              }
+            } else {
+              return Response.json({ error: 'Instance not found or access denied' }, { status: 403, headers: corsHeaders });
+            }
+          }
         }
 
         // Auth verified - forward to Durable Object with auth info
@@ -163,8 +211,8 @@ export default {
         // Add header to indicate pre-auth (token auth was verified by Worker)
         const headers = new Headers(request.headers);
         headers.set('X-MindCache-PreAuth', 'true');
-        headers.set('X-MindCache-UserId', token ? 'token-user' : 'api-key-user');
-        headers.set('X-MindCache-Permission', 'write');
+        headers.set('X-MindCache-UserId', wsUserId);
+        headers.set('X-MindCache-Permission', wsPermission);
 
         const modifiedRequest = new Request(request.url, {
           method: request.method,
@@ -308,15 +356,15 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       const doId = env.MINDCACHE_INSTANCE.idFromName(body.instanceId).toString();
 
       let hasAccess = false;
-      let permission: 'read' | 'write' | 'system' = 'read';
+      let permission: 'read' | 'write' | 'admin' = 'read';
 
       if (actorType === 'delegate' && delegateId) {
         // Check delegate permissions (two-layer)
         hasAccess = await checkDelegatePermission(delegateId, doId, 'read', env.DB);
         if (hasAccess) {
           // Determine max permission level
-          if (await checkDelegatePermission(delegateId, doId, 'system', env.DB)) {
-            permission = 'system';
+          if (await checkDelegatePermission(delegateId, doId, 'admin', env.DB)) {
+            permission = 'admin';
           } else if (await checkDelegatePermission(delegateId, doId, 'write', env.DB)) {
             permission = 'write';
           }
@@ -326,10 +374,37 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         hasAccess = await checkUserPermission(userId, doId, 'read', env.DB);
         if (hasAccess) {
           // Determine max permission level
-          if (await checkUserPermission(userId, doId, 'system', env.DB)) {
-            permission = 'system';
+          if (await checkUserPermission(userId, doId, 'admin', env.DB)) {
+            permission = 'admin';
           } else if (await checkUserPermission(userId, doId, 'write', env.DB)) {
             permission = 'write';
+          }
+        } else {
+          // Fallback: Check instance ownership directly (for legacy instances)
+          const instance = await env.DB.prepare(`
+            SELECT owner_id FROM instances WHERE id = ?
+          `).bind(body.instanceId).first<{ owner_id: string }>();
+
+          if (instance && instance.owner_id === userId) {
+            // Owner has full access
+            permission = 'admin';
+            hasAccess = true;
+
+            // Create missing do_ownership entry for future use
+            try {
+              await env.DB.prepare(`
+                INSERT OR IGNORE INTO do_ownership (do_id, owner_user_id)
+                VALUES (?, ?)
+              `).bind(doId, userId).run();
+
+              await env.DB.prepare(`
+                INSERT OR IGNORE INTO do_permissions 
+                (do_id, actor_id, actor_type, permission, granted_by_user_id)
+                VALUES (?, ?, 'user', 'admin', ?)
+              `).bind(doId, userId, userId).run();
+            } catch (e) {
+              // Ignore errors - migration will happen eventually
+            }
           }
         }
       }
@@ -346,8 +421,9 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       const tokenHash = await hashToken(token);
       const expiresAt = Math.floor(Date.now() / 1000) + 60; // 60 seconds
       const requestedPermission = body.permission || permission;
-      // Map 'system' to 'admin' for ws_tokens table (which uses 'admin' instead of 'system')
-      const wsTokenPermission = requestedPermission === 'system' ? 'admin' : requestedPermission;
+      // ws_tokens uses 'admin' (same as do_permissions now)
+      const wsTokenPermission = requestedPermission;
+      const responsePermission = requestedPermission;
 
       await env.DB.prepare(`
       INSERT INTO ws_tokens (token_hash, user_id, instance_id, permission, expires_at)
@@ -358,7 +434,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         token,
         expiresAt,
         instanceId: body.instanceId,
-        permission: requestedPermission
+        permission: responsePermission
       }, { headers: corsHeaders });
     }
 
@@ -636,7 +712,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       targetType: 'user' | 'public';
       targetId?: string;
       targetEmail?: string;
-      permission: 'read' | 'write' | 'admin'  // 'admin' maps to 'system' in do_permissions
+      permission: 'read' | 'write' | 'admin'  // Standardized to 'admin' everywhere
     };
 
       // If sharing by email, look up user
@@ -671,10 +747,10 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       // If sharing an instance with a user, also create do_permissions entry
       if (resourceType === 'instances' && body.targetType === 'user' && targetId) {
         const doId = env.MINDCACHE_INSTANCE.idFromName(resourceId).toString();
-        // Map 'admin' permission to 'system' for do_permissions
-        const doPermission = body.permission === 'admin' ? 'system' : body.permission;
+        // do_permissions now uses 'admin' (standardized)
+        const doPermission = body.permission;
         try {
-          await grantUserAccess(userId, targetId, doId, doPermission as 'read' | 'write' | 'system', env.DB);
+          await grantUserAccess(userId, targetId, doId, doPermission as 'read' | 'write' | 'admin', env.DB);
         } catch (err) {
           // If grant fails, continue - share was created, do_permission is optional
           console.error('Failed to create do_permission for share:', err);
@@ -1004,7 +1080,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       const delId = delegateGrantMatch[1];
       const body = await request.json() as {
         instanceId: string;
-        permission: 'read' | 'write' | 'system';
+        permission: 'read' | 'write' | 'admin';
       };
 
       if (!body.instanceId || !body.permission) {

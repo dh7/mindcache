@@ -42,7 +42,7 @@ export default function InstanceEditorPage() {
   const [keys, setKeys] = useState<SyncData>({});
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [permission, setPermission] = useState<'read' | 'write' | 'admin'>('read');
+  const [permission, setPermission] = useState<'read' | 'write' | 'admin' | 'system'>('read');
 
   // New key form
   const [showAddKey, setShowAddKey] = useState(false);
@@ -307,7 +307,7 @@ export default function InstanceEditorPage() {
     });
   };
 
-  const canEdit = permission === 'write' || permission === 'admin';
+  const canEdit = permission === 'write' || permission === 'admin' || permission === 'system';
 
   return (
     <div className="min-h-screen p-8">
@@ -360,7 +360,7 @@ export default function InstanceEditorPage() {
             </span>
             {connected && (
               <span className="px-2 py-1 text-xs bg-gray-700 rounded">
-                {permission}
+                {permission === 'system' ? 'admin' : permission}
               </span>
             )}
             {error && <span className="text-red-500 text-sm ml-2">{error}</span>}

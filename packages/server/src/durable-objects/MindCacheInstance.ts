@@ -17,7 +17,7 @@ import type {
 
 interface SessionData {
   userId: string;
-  permission: 'read' | 'write' | 'admin';  // 'admin' is internal, maps to 'system' in do_permissions
+  permission: 'read' | 'write' | 'admin';  // Standardized to 'admin' everywhere
 }
 
 export class MindCacheInstanceDO implements DurableObject {
@@ -330,7 +330,7 @@ export class MindCacheInstanceDO implements DurableObject {
 
   private async handleClear(ws: WebSocket): Promise<void> {
     const session = this.getSession(ws);
-    // 'admin' permission internally maps to 'system' in do_permissions
+    // 'admin' permission required for system operations
     if (!session || session.permission !== 'admin') {
       this.sendError(ws, 'System permission required', 'NO_PERMISSION');
       return;

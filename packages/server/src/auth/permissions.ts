@@ -12,7 +12,7 @@
 export async function checkDelegatePermission(
   delegateId: string,
   doId: string,
-  requiredPermission: 'read' | 'write' | 'system',
+  requiredPermission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<boolean> {
   // Layer 1: Key-level capability
@@ -40,7 +40,7 @@ export async function checkDelegatePermission(
   const hasKeyPermission = (
     (requiredPermission === 'read' && delegate.can_read === 1) ||
     (requiredPermission === 'write' && delegate.can_write === 1) ||
-    (requiredPermission === 'system' && delegate.can_system === 1)
+    (requiredPermission === 'admin' && delegate.can_system === 1)
   );
 
   if (!hasKeyPermission) {
@@ -66,8 +66,8 @@ export async function checkDelegatePermission(
     return false;
   }
 
-  // Permission hierarchy: read < write < system
-  const hierarchy = { read: 1, write: 2, system: 3 };
+  // Permission hierarchy: read < write < admin
+  const hierarchy = { read: 1, write: 2, admin: 3 };
   const grantedLevel = hierarchy[doPermission.permission as keyof typeof hierarchy] || 0;
   const requiredLevel = hierarchy[requiredPermission];
 
@@ -82,7 +82,7 @@ export async function checkDelegatePermission(
 export async function checkUserPermission(
   userId: string,
   doId: string,
-  requiredPermission: 'read' | 'write' | 'system',
+  requiredPermission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<boolean> {
   // Check ownership (owners have system permission)
@@ -142,11 +142,11 @@ export async function grantDelegateAccess(
   grantingUserId: string,
   delegateId: string,
   doId: string,
-  permission: 'read' | 'write' | 'system',
+  permission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<void> {
   // Verify granting user has system permission on DO
-  const canGrant = await checkUserPermission(grantingUserId, doId, 'system', db);
+  const canGrant = await checkUserPermission(grantingUserId, doId, 'admin', db);
   if (!canGrant) {
     throw new Error('Insufficient permissions to grant access');
   }
@@ -203,11 +203,11 @@ export async function grantUserAccess(
   grantingUserId: string,
   targetUserId: string,
   doId: string,
-  permission: 'read' | 'write' | 'system',
+  permission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<void> {
   // Verify granting user has system permission on DO
-  const canGrant = await checkUserPermission(grantingUserId, doId, 'system', db);
+  const canGrant = await checkUserPermission(grantingUserId, doId, 'admin', db);
   if (!canGrant) {
     throw new Error('Insufficient permissions to grant access');
   }
