@@ -63,7 +63,8 @@ describe('MindCache Complete Serialization', () => {
             type: 'text' as const,
             contentTags: [],
             systemTags: ['prompt'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
-            tags: []
+            tags: [],
+            zIndex: 0
           }
         },
         config: {
@@ -76,7 +77,8 @@ describe('MindCache Complete Serialization', () => {
             type: 'text' as const,
             contentTags: [],
             systemTags: ['readonly'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
-            tags: []
+            tags: [],
+            zIndex: 0
           }
         },
         greeting: {
@@ -89,7 +91,8 @@ describe('MindCache Complete Serialization', () => {
             type: 'text' as const,
             contentTags: [],
             systemTags: ['prompt', 'template'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
-            tags: []
+            tags: [],
+            zIndex: 0
           }
         }
       };
@@ -153,7 +156,8 @@ describe('MindCache Complete Serialization', () => {
             type: 'text' as const,
             contentTags: [],
             systemTags: ['prompt'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
-            tags: []
+            tags: [],
+            zIndex: 0
           }
         }
       };
@@ -369,7 +373,8 @@ describe('MindCache Complete Serialization', () => {
             visible: false,
             hardcoded: false,
             template: false,
-            tags: []
+            tags: [],
+            zIndex: 0
           }
         }
       };
