@@ -3,33 +3,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-
-interface Instance {
-  id: string;
-  name: string;
-  is_readonly: number;
-}
-
-interface KeyEntry {
-  value: unknown;
-  attributes: {
-    readonly: boolean;
-    visible: boolean;
-    hardcoded: boolean;
-    template: boolean;
-    type: 'text' | 'image' | 'file' | 'json';
-    contentType?: string;
-    tags?: string[];
-    zIndex?: number;
-  };
-  updatedAt?: number;
-}
-
-type SyncData = Record<string, KeyEntry>;
-
-// Use WSS for production, WS for localhost
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
-const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://');
+import { Instance, KeyEntry, SyncData, Permission, API_URL, WS_URL } from './types';
+import { InstanceHeader, ActionButtons, TagFilter } from './components';
 
 export default function InstanceEditorPage() {
   const params = useParams();
@@ -43,7 +18,7 @@ export default function InstanceEditorPage() {
   const [keys, setKeys] = useState<SyncData>({});
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [permission, setPermission] = useState<'read' | 'write' | 'admin' | 'system'>('read');
+  const [permission, setPermission] = useState<Permission>('read');
 
   // New key form
   const [showAddKey, setShowAddKey] = useState(false);
@@ -372,8 +347,8 @@ export default function InstanceEditorPage() {
     const oldKey = editingAttributes;
     const newKey = editingKeyName.trim();
 
-    // Parse z-index from input string
-    const zIndexValue = parseFloat(zIndexInput);
+    // Parse z-index from input string (must be integer)
+    const zIndexValue = parseInt(zIndexInput, 10);
     const finalZIndex = isNaN(zIndexValue) ? 0 : zIndexValue;
 
     const finalTags = [...attributesForm.tags];
@@ -804,7 +779,7 @@ export default function InstanceEditorPage() {
             } else if (trimmed.startsWith('- **Z-Index**: `')) {
               const zIndexStr = trimmed.match(/`([^`]+)`/)?.[1];
               if (currentEntry && zIndexStr) {
-                const zIndex = parseFloat(zIndexStr);
+                const zIndex = parseInt(zIndexStr, 10);
                 if (!isNaN(zIndex)) {
                   currentEntry.attributes!.zIndex = zIndex;
                 }
@@ -944,174 +919,50 @@ export default function InstanceEditorPage() {
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Instance Header with Editable Name */}
-        <div className="mb-6 mt-2">
-          <div className="flex items-center gap-3 mb-2">
-            {editingName ? (
-              <input
-                type="text"
-                value={instanceName}
-                onChange={(e) => setInstanceName(e.target.value)}
-                onBlur={handleUpdateInstanceName}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleUpdateInstanceName();
-                  }
-                  if (e.key === 'Escape') {
-                    setInstanceName(instance?.name || '');
-                    setEditingName(false);
-                  }
-                }}
-                className="text-2xl font-semibold bg-transparent border-b-2 border-zinc-500 outline-none px-1"
-                autoFocus
-              />
-            ) : (
-              <h1
-                className="text-2xl font-semibold cursor-pointer hover:text-zinc-300 transition group flex items-center gap-2"
-                onClick={() => canEdit && setEditingName(true)}
-                title={canEdit ? 'Click to edit name' : undefined}
-              >
-                {instance?.name || 'Loading...'}
-                {canEdit && (
-                  <svg className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                )}
-              </h1>
-            )}
-          </div>
+        <InstanceHeader
+          instance={instance}
+          instanceName={instanceName}
+          editingName={editingName}
+          canEdit={canEdit}
+          connected={connected}
+          permission={permission}
+          error={error}
+          onNameChange={setInstanceName}
+          onStartEdit={() => setEditingName(true)}
+          onCancelEdit={() => {
+            setInstanceName(instance?.name || '');
+            setEditingName(false);
+          }}
+          onSaveName={handleUpdateInstanceName}
+        />
 
-          {/* Status bar */}
-          <div className="flex items-center gap-3">
-            <span
-              className={`px-2 py-1 text-xs rounded ${
-                connected ? 'bg-green-600' : 'bg-red-600'
-              }`}
-            >
-              {connected ? '● Connected' : '○ Disconnected'}
-            </span>
-            {connected && (
-              <span className="px-2 py-1 text-xs bg-gray-700 rounded">
-                {permission === 'system' ? 'admin' : permission}
-              </span>
-            )}
-            {error && <span className="text-red-500 text-sm ml-2">{error}</span>}
-          </div>
-        </div>
-
-        {/* Action Buttons */}
         {canEdit && (
-          <div className="mb-4 flex gap-2 flex-wrap items-center">
-            <button
-              onClick={() => setShowAddKey(true)}
-              className="px-3 py-1.5 bg-white text-black text-xs font-medium rounded hover:bg-zinc-200 transition flex items-center gap-1.5"
-              title="Add Key"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Key
-            </button>
-            <div className="flex gap-1 border-l border-zinc-700 pl-2">
-              <button
-                onClick={handleExportJSON}
-                className="px-2 py-1.5 bg-zinc-700 text-white text-xs font-medium rounded hover:bg-zinc-600 transition flex items-center gap-1.5"
-                title="Export as JSON"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                JSON
-              </button>
-              <button
-                onClick={handleExportMarkdown}
-                className="px-2 py-1.5 bg-zinc-700 text-white text-xs font-medium rounded hover:bg-zinc-600 transition flex items-center gap-1.5"
-                title="Export as Markdown"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                MD
-              </button>
-            </div>
-            <div className="flex gap-1 border-l border-zinc-700 pl-2">
-              <button
-                onClick={handleImportJSON}
-                className="px-2 py-1.5 bg-zinc-700 text-white text-xs font-medium rounded hover:bg-zinc-600 transition flex items-center gap-1.5"
-                title="Import from JSON"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                JSON
-              </button>
-              <button
-                onClick={handleImportMarkdown}
-                className="px-2 py-1.5 bg-zinc-700 text-white text-xs font-medium rounded hover:bg-zinc-600 transition flex items-center gap-1.5"
-                title="Import from Markdown"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                MD
-              </button>
-            </div>
-          </div>
+          <ActionButtons
+            onAddKey={() => setShowAddKey(true)}
+            onExportJSON={handleExportJSON}
+            onImportJSON={handleImportJSON}
+            onExportMarkdown={handleExportMarkdown}
+            onImportMarkdown={handleImportMarkdown}
+          />
         )}
 
-        {/* Tag Filter */}
-        <div className="mb-4">
-          <div className="text-sm text-zinc-400 mb-2">Filter by tags:</div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                setShowUntagged(!showUntagged);
-              }}
-              className={`px-2 py-1 text-xs rounded transition ${
-                showUntagged
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-              }`}
-              title="Show keys with no tags"
-            >
-              untagged
-            </button>
-            {availableTags.map(tag => (
-              <button
-                key={tag}
-                onClick={() => {
-                  setSelectedTags(prev =>
-                    prev.includes(tag)
-                      ? prev.filter(t => t !== tag)
-                      : [...prev, tag]
-                  );
-                }}
-                className={`px-2 py-1 text-xs rounded transition ${
-                  selectedTags.includes(tag)
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-            {(selectedTags.length > 0 || showUntagged) && (
-              <button
-                onClick={() => {
-                  setSelectedTags([]);
-                  setShowUntagged(false);
-                }}
-                className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 transition flex items-center gap-1"
-                title="Clear filters"
-              >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
+        <TagFilter
+          availableTags={availableTags}
+          selectedTags={selectedTags}
+          showUntagged={showUntagged}
+          onToggleTag={(tag) => {
+            setSelectedTags(prev =>
+              prev.includes(tag)
+                ? prev.filter(t => t !== tag)
+                : [...prev, tag]
+            );
+          }}
+          onToggleUntagged={() => setShowUntagged(!showUntagged)}
+          onClearFilters={() => {
+            setSelectedTags([]);
+            setShowUntagged(false);
+          }}
+        />
 
         {/* Keys List */}
         <div className="space-y-3">
@@ -1175,9 +1026,9 @@ export default function InstanceEditorPage() {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono font-bold text-blue-400">{key}</span>
+                      <span className="font-mono text-blue-400">{key}</span>
                       {indicators.length > 0 && (
-                        <span className="text-xs text-yellow-400 font-mono">
+                        <span className="text-xs text-yellow-400">
                           [{indicators.join('')}]
                         </span>
                       )}
@@ -1203,10 +1054,12 @@ export default function InstanceEditorPage() {
                       {canEdit && (
                         <button
                           onClick={() => startEditingAttributes(key)}
-                          className="text-cyan-600 hover:text-yellow-400 font-mono text-sm leading-none px-1"
+                          className="text-cyan-600 hover:text-yellow-400 text-sm leading-none px-1"
                           title="Edit Properties"
                         >
-                          ...
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
                         </button>
                       )}
                       {canEdit && !entry.attributes.readonly && (
@@ -1245,7 +1098,7 @@ export default function InstanceEditorPage() {
                             };
                             input.click();
                           }}
-                          className="mt-2 px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
+                          className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
                         >
                           Replace Image
                         </button>
@@ -1253,7 +1106,7 @@ export default function InstanceEditorPage() {
                     </div>
                   ) : contentType === 'file' ? (
                     <div className="mt-2">
-                      <div className="text-sm text-zinc-400">
+                      <div className="text-xs text-zinc-400">
                         {entry.attributes.contentType || 'File'}
                       </div>
                       {canEdit && (
@@ -1269,7 +1122,7 @@ export default function InstanceEditorPage() {
                             };
                             input.click();
                           }}
-                          className="mt-2 px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
+                          className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
                         >
                           Replace File
                         </button>
@@ -1277,14 +1130,14 @@ export default function InstanceEditorPage() {
                     </div>
                   ) : canEdit && !entry.attributes.readonly ? (
                     <textarea
-                      className="w-full p-2 bg-zinc-800 border border-zinc-700 rounded font-mono text-sm text-zinc-300 focus:border-zinc-500 outline-none resize-y"
+                      className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-zinc-500 outline-none resize-y"
                       rows={contentType === 'json' ? 6 : 2}
                       value={keyValues[key] ?? ''}
                       onChange={(e) => handleKeyValueChange(key, e.target.value)}
                       placeholder="Enter value..."
                     />
                   ) : (
-                    <pre className="text-sm text-zinc-300 bg-zinc-800 p-2 rounded overflow-x-auto">
+                    <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
                       {displayValue}
                     </pre>
                   )}
@@ -1298,10 +1151,10 @@ export default function InstanceEditorPage() {
         {showAddKey && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
-              <h3 className="text-xl font-bold mb-4">Add New Key</h3>
+              <h3 className="text-lg mb-4">Add New Key</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Key Name</label>
+                  <label className="block text-xs text-gray-400 mb-1">Key Name</label>
                   <input
                     type="text"
                     className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
@@ -1312,7 +1165,7 @@ export default function InstanceEditorPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Type</label>
+                  <label className="block text-xs text-gray-400 mb-1">Type</label>
                   <select
                     className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
                     value={newKeyType}
@@ -1326,9 +1179,9 @@ export default function InstanceEditorPage() {
                 </div>
                 {(newKeyType === 'text' || newKeyType === 'json') && (
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Value</label>
+                    <label className="block text-xs text-gray-400 mb-1">Value</label>
                     <textarea
-                      className="w-full p-2 bg-gray-700 border border-gray-600 rounded font-mono text-sm"
+                      className="w-full p-2 bg-gray-700 border border-gray-600 rounded font-mono text-xs"
                       rows={4}
                       value={newKeyValue}
                       onChange={(e) => setNewKeyValue(e.target.value)}
@@ -1355,7 +1208,7 @@ export default function InstanceEditorPage() {
                         };
                         input.click();
                       }}
-                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white"
+                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm"
                     >
                       Upload {newKeyType === 'image' ? 'Image' : 'File'}
                     </button>
@@ -1365,14 +1218,14 @@ export default function InstanceEditorPage() {
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowAddKey(false)}
-                  className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500"
+                  className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500 text-sm"
                 >
                   Cancel
                 </button>
                 {(newKeyType === 'text' || newKeyType === 'json') && (
                   <button
                     onClick={handleAddKey}
-                    className="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700"
+                    className="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 text-sm"
                     disabled={!newKeyName.trim()}
                   >
                     Add Key
@@ -1385,9 +1238,9 @@ export default function InstanceEditorPage() {
 
         {/* Attributes Editor Popup */}
         {editingAttributes && (
-          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div
-              className="bg-black border-2 border-cyan-400 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
+              className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   cancelAttributes();
@@ -1398,26 +1251,26 @@ export default function InstanceEditorPage() {
               tabIndex={0}
             >
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-cyan-300 font-mono text-sm">Key Properties</h3>
-                <button onClick={cancelAttributes} className="text-cyan-600 hover:text-red-400 font-mono text-sm leading-none">×</button>
+                <h3 className="text-cyan-300 text-sm">Key Properties</h3>
+                <button onClick={cancelAttributes} className="text-cyan-600 hover:text-red-400 text-sm leading-none">×</button>
               </div>
 
               <div className="space-y-2">
                 {/* Key Name */}
                 <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 font-mono text-sm">key name:</label>
+                  <label className="text-gray-400 text-xs">key name:</label>
                   <input
                     type="text"
                     value={editingKeyName}
                     onChange={(e) => setEditingKeyName(e.target.value)}
-                    className="bg-black text-cyan-400 font-mono text-sm border border-cyan-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-2 focus:outline-none focus:border-zinc-500"
                     placeholder="Key name..."
                   />
                 </div>
 
                 {/* Type Selection */}
                 <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 font-mono text-sm">type:</label>
+                  <label className="text-gray-400 text-xs">type:</label>
                   <select
                     value={attributesForm.type}
                     onChange={(e) => setAttributesForm({
@@ -1425,7 +1278,7 @@ export default function InstanceEditorPage() {
                       type: e.target.value as 'text' | 'image' | 'file' | 'json',
                       contentType: (e.target.value === 'text' || e.target.value === 'json') ? '' : attributesForm.contentType
                     })}
-                    className="bg-black text-cyan-400 font-mono text-sm border border-cyan-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-2 focus:outline-none focus:border-zinc-500"
                   >
                     <option value="text">text</option>
                     <option value="json">json</option>
@@ -1461,7 +1314,7 @@ export default function InstanceEditorPage() {
                         };
                         input.click();
                       }}
-                      className="border border-cyan-400 text-cyan-400 font-mono text-sm px-3 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20 transition-colors"
+                      className="border border-cyan-400 text-cyan-400 text-xs px-3 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20 transition-colors"
                     >
                       Upload {attributesForm.type === 'image' ? 'Image' : 'File'}
                     </button>
@@ -1470,7 +1323,7 @@ export default function InstanceEditorPage() {
 
                 {/* Z-Index */}
                 <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 font-mono text-sm">z-index:</label>
+                  <label className="text-gray-400 text-xs">z-index:</label>
                   <input
                     type="text"
                     value={zIndexInput}
@@ -1479,30 +1332,30 @@ export default function InstanceEditorPage() {
                       setZIndexInput(e.target.value);
                     }}
                     onBlur={(e) => {
-                      // Validate and update on blur
-                      const value = parseFloat(e.target.value);
+                      // Validate and update on blur (must be integer)
+                      const value = parseInt(e.target.value, 10);
                       const finalValue = isNaN(value) ? 0 : value;
                       setZIndexInput(String(finalValue));
                       setAttributesForm({ ...attributesForm, zIndex: finalValue });
                     }}
-                    className="bg-black text-cyan-400 font-mono text-sm border border-cyan-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-2 focus:outline-none focus:border-zinc-500"
                     placeholder="0"
                   />
-                  <div className="text-xs text-gray-500">Lower values appear first (supports decimals like 0.4)</div>
+                  <div className="text-xs text-gray-500">Lower values appear first (integer only)</div>
                 </div>
 
                 {/* Readonly */}
                 <div className="flex items-center justify-between">
-                  <div className="text-gray-400 font-mono text-sm">
+                  <div className="text-gray-400 text-xs">
                     <span className="text-yellow-400">[R]</span> readonly:
                     <div className="text-xs text-gray-500 mt-1">If true, won&apos;t appear in AI tools</div>
                   </div>
                   {attributesForm.hardcoded ? (
-                    <span className="text-gray-500 font-mono px-2 py-1">{attributesForm.readonly ? 'true' : 'false'}</span>
+                    <span className="text-gray-500 font-mono px-2 py-1 text-xs">{attributesForm.readonly ? 'true' : 'false'}</span>
                   ) : (
                     <button
                       onClick={() => setAttributesForm({ ...attributesForm, readonly: !attributesForm.readonly })}
-                      className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                      className="text-cyan-400 font-mono text-xs hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
                     >
                       {attributesForm.readonly ? 'true' : 'false'}
                     </button>
@@ -1511,13 +1364,13 @@ export default function InstanceEditorPage() {
 
                 {/* Visible */}
                 <div className="flex items-center justify-between">
-                  <div className="text-gray-400 font-mono text-sm">
+                  <div className="text-gray-400 text-xs">
                     <span className="text-yellow-400">[V]</span> visible:
                     <div className="text-xs text-gray-500 mt-1">If false, hidden from injectSTM/getSTM</div>
                   </div>
                   <button
                     onClick={() => setAttributesForm({ ...attributesForm, visible: !attributesForm.visible })}
-                    className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                    className="text-cyan-400 font-mono text-xs hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
                   >
                     {attributesForm.visible ? 'true' : 'false'}
                   </button>
@@ -1525,16 +1378,16 @@ export default function InstanceEditorPage() {
 
                 {/* Template */}
                 <div className="flex items-center justify-between">
-                  <div className="text-gray-400 font-mono text-sm">
+                  <div className="text-gray-400 text-xs">
                     <span className="text-yellow-400">[T]</span> template:
                     <div className="text-xs text-gray-500 mt-1">Process with injectSTM on get</div>
                   </div>
                   {attributesForm.hardcoded ? (
-                    <span className="text-gray-500 font-mono px-2 py-1">{attributesForm.template ? 'true' : 'false'}</span>
+                    <span className="text-gray-500 font-mono px-2 py-1 text-xs">{attributesForm.template ? 'true' : 'false'}</span>
                   ) : (
                     <button
                       onClick={() => setAttributesForm({ ...attributesForm, template: !attributesForm.template })}
-                      className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                      className="text-cyan-400 font-mono text-xs hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
                     >
                       {attributesForm.template ? 'true' : 'false'}
                     </button>
@@ -1543,18 +1396,18 @@ export default function InstanceEditorPage() {
 
                 {/* Hardcoded */}
                 <div className="flex items-center justify-between">
-                  <div className="text-gray-400 font-mono text-sm">
+                  <div className="text-gray-400 text-xs">
                     <span className="text-yellow-400">[H]</span> hardcoded:
                   </div>
-                  <span className="text-gray-500 font-mono px-2 py-1">{attributesForm.hardcoded ? 'true' : 'false'}</span>
+                  <span className="text-gray-500 font-mono px-2 py-1 text-xs">{attributesForm.hardcoded ? 'true' : 'false'}</span>
                 </div>
 
                 {/* Tags */}
                 <div className="flex flex-col space-y-2">
-                  <div className="text-gray-400 font-mono text-sm">tags:</div>
+                  <div className="text-gray-400 text-xs">tags:</div>
 
                   <div className="relative">
-                    <div className="bg-black border border-cyan-400 rounded px-2 py-2 focus-within:ring-1 focus-within:ring-cyan-400">
+                    <div className="bg-black border border-zinc-700 rounded px-2 py-2 focus-within:border-zinc-500">
                       <div className="flex flex-wrap gap-1 items-center">
                         {attributesForm.tags.map((tag, index) => (
                           <span
@@ -1577,7 +1430,7 @@ export default function InstanceEditorPage() {
                           value={newTagInput}
                           onChange={(e) => handleTagInputChange(e.target.value)}
                           onKeyDown={handleTagInput}
-                          className="bg-transparent text-cyan-400 font-mono text-sm focus:outline-none flex-1 min-w-0"
+                          className="bg-transparent text-cyan-400 font-mono text-xs focus:outline-none flex-1 min-w-0"
                           placeholder={attributesForm.tags.length === 0 ? 'Add tags...' : ''}
                           style={{ minWidth: '80px' }}
                         />
@@ -1585,12 +1438,12 @@ export default function InstanceEditorPage() {
                     </div>
 
                     {tagSuggestions.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-black border border-cyan-400 rounded shadow-lg max-h-40 overflow-y-auto">
+                      <div className="absolute z-10 w-full mt-1 bg-black border border-zinc-700 rounded shadow-lg max-h-40 overflow-y-auto">
                         {tagSuggestions.map((tag, index) => (
                           <button
                             key={index}
                             onClick={() => addTagFromSuggestion(tag)}
-                            className="w-full text-left px-3 py-2 text-sm font-mono text-cyan-400 hover:bg-cyan-900 hover:bg-opacity-30 transition-colors"
+                            className="w-full text-left px-3 py-2 text-xs font-mono text-cyan-400 hover:bg-cyan-900 hover:bg-opacity-30 transition-colors"
                           >
                             {tag}
                           </button>
@@ -1611,13 +1464,13 @@ export default function InstanceEditorPage() {
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={saveAttributes}
-                  className="flex-1 bg-cyan-400 text-black font-mono text-sm px-4 py-2 rounded hover:bg-cyan-300"
+                  className="flex-1 bg-cyan-400 text-black text-sm px-4 py-2 rounded hover:bg-cyan-300"
                 >
                   Save
                 </button>
                 <button
                   onClick={cancelAttributes}
-                  className="flex-1 border border-cyan-400 text-cyan-400 font-mono text-sm px-4 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20"
+                  className="flex-1 border border-cyan-400 text-cyan-400 text-sm px-4 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20"
                 >
                   Cancel
                 </button>
