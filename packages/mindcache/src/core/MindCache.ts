@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from 'zod';
-import type { KeyAttributes, STM, STMEntry, Listener } from './types';
+import type { KeyAttributes, STM, STMEntry, Listener, GlobalListener, AccessLevel, SystemTag } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
 
 // Browser environment type declarations
@@ -38,6 +38,8 @@ export interface MindCacheCloudOptions {
 export interface MindCacheOptions {
   /** Cloud sync configuration. If omitted, runs in local-only mode. */
   cloud?: MindCacheCloudOptions;
+  /** Access level for tag operations. 'system' allows managing system tags. */
+  accessLevel?: AccessLevel;
 }
 
 // Connection state type
@@ -57,7 +59,7 @@ interface ICloudAdapter {
 export class MindCache {
   private stm: STM = {};
   private listeners: { [key: string]: Listener[] } = {};
-  private globalListeners: Listener[] = [];
+  private globalListeners: GlobalListener[] = [];
 
   // Internal flag to prevent sync loops when receiving remote updates
   private _isRemoteUpdate = false;
@@ -68,7 +70,13 @@ export class MindCache {
   private _isLoaded = true; // Default true for local mode
   private _cloudConfig: MindCacheCloudOptions | null = null;
 
+  // Access level for system operations
+  private _accessLevel: AccessLevel = 'user';
+
   constructor(options?: MindCacheOptions) {
+    if (options?.accessLevel) {
+      this._accessLevel = options.accessLevel;
+    }
     if (options?.cloud) {
       this._cloudConfig = options.cloud;
       this._isLoaded = false; // Wait for sync
@@ -76,6 +84,20 @@ export class MindCache {
       // Initialize cloud connection asynchronously
       this._initCloud();
     }
+  }
+
+  /**
+   * Get the current access level
+   */
+  get accessLevel(): AccessLevel {
+    return this._accessLevel;
+  }
+
+  /**
+   * Check if this instance has system-level access
+   */
+  get hasSystemAccess(): boolean {
+    return this._accessLevel === 'system';
   }
 
   private async _initCloud(): Promise<void> {
@@ -279,11 +301,14 @@ export class MindCache {
   get_attributes(key: string): KeyAttributes | undefined {
     if (key === '$date' || key === '$time') {
       return {
+        type: 'text',
+        contentTags: [],
+        systemTags: ['prompt', 'readonly', 'protected'],
+        // Legacy attributes
         readonly: true,
         visible: true,
         hardcoded: true,
         template: false,
-        type: 'text',
         tags: []
       };
     }
@@ -299,14 +324,81 @@ export class MindCache {
     }
 
     const existingEntry = this.stm[key];
-    const baseAttributes = existingEntry ? existingEntry.attributes : { ...DEFAULT_KEY_ATTRIBUTES };
+    // Deep copy arrays to avoid shared references
+    const baseAttributes: KeyAttributes = existingEntry
+      ? {
+        ...existingEntry.attributes,
+        contentTags: [...(existingEntry.attributes.contentTags || [])],
+        systemTags: [...(existingEntry.attributes.systemTags || [])] as SystemTag[],
+        tags: [...(existingEntry.attributes.tags || [])]
+      }
+      : {
+        ...DEFAULT_KEY_ATTRIBUTES,
+        contentTags: [],  // Fresh array
+        systemTags: ['prompt'] as SystemTag[],  // Fresh array with default
+        tags: []  // Fresh array
+      };
 
     const finalAttributes = attributes ? { ...baseAttributes, ...attributes } : baseAttributes;
 
-    if (finalAttributes.hardcoded) {
-      finalAttributes.readonly = true;
-      finalAttributes.template = false;
+    // If legacy boolean attributes were explicitly provided, sync them TO systemTags first
+    if (attributes) {
+      let systemTags = [...(finalAttributes.systemTags || [])] as SystemTag[];
+
+      if ('readonly' in attributes) {
+        if (attributes.readonly && !systemTags.includes('readonly')) {
+          systemTags.push('readonly');
+        } else if (!attributes.readonly) {
+          systemTags = systemTags.filter(t => t !== 'readonly') as SystemTag[];
+        }
+      }
+      if ('visible' in attributes) {
+        if (attributes.visible && !systemTags.includes('prompt')) {
+          systemTags.push('prompt');
+        } else if (!attributes.visible) {
+          systemTags = systemTags.filter(t => t !== 'prompt') as SystemTag[];
+        }
+      }
+      if ('hardcoded' in attributes) {
+        if (attributes.hardcoded && !systemTags.includes('protected')) {
+          systemTags.push('protected');
+        } else if (!attributes.hardcoded) {
+          systemTags = systemTags.filter(t => t !== 'protected') as SystemTag[];
+        }
+      }
+      if ('template' in attributes) {
+        if (attributes.template && !systemTags.includes('template')) {
+          systemTags.push('template');
+        } else if (!attributes.template) {
+          systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
+        }
+      }
+      finalAttributes.systemTags = systemTags;
     }
+
+    // Enforce: protected (hardcoded) implies readonly and NOT template
+    let systemTags = finalAttributes.systemTags || [];
+    if (systemTags.includes('protected')) {
+      if (!systemTags.includes('readonly')) {
+        systemTags = [...systemTags, 'readonly'] as SystemTag[];
+      }
+      systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
+      finalAttributes.systemTags = systemTags;
+    }
+
+    // Sync legacy attributes FROM systemTags (canonical source)
+    finalAttributes.readonly = systemTags.includes('readonly');
+    finalAttributes.visible = systemTags.includes('prompt');
+    finalAttributes.hardcoded = systemTags.includes('protected');
+    finalAttributes.template = systemTags.includes('template');
+
+    // Sync tags <-> contentTags bidirectionally
+    // If tags was explicitly provided, use it as source for contentTags
+    if (attributes && 'tags' in attributes && attributes.tags) {
+      finalAttributes.contentTags = [...attributes.tags];
+    }
+    // Always sync tags FROM contentTags (canonical source)
+    finalAttributes.tags = [...(finalAttributes.contentTags || [])];
 
     this.stm[key] = {
       value,
@@ -314,7 +406,7 @@ export class MindCache {
     };
 
     if (this.listeners[key]) {
-      this.listeners[key].forEach(listener => listener());
+      this.listeners[key].forEach(listener => listener(value));
     }
     this.notifyGlobalListeners();
   }
@@ -328,13 +420,40 @@ export class MindCache {
 
     this._isRemoteUpdate = true;
 
+    // Ensure new tag arrays exist and sync legacy attributes
+    const systemTags: SystemTag[] = attributes.systemTags || [];
+    if (!attributes.systemTags) {
+      if (attributes.visible !== false) {
+        systemTags.push('prompt');
+      }
+      if (attributes.readonly) {
+        systemTags.push('readonly');
+      }
+      if (attributes.hardcoded) {
+        systemTags.push('protected');
+      }
+      if (attributes.template) {
+        systemTags.push('template');
+      }
+    }
+    const contentTags = attributes.contentTags || attributes.tags || [];
+
     this.stm[key] = {
       value,
-      attributes
+      attributes: {
+        ...attributes,
+        contentTags,
+        systemTags,
+        tags: contentTags,
+        readonly: systemTags.includes('readonly'),
+        visible: systemTags.includes('prompt'),
+        hardcoded: systemTags.includes('protected'),
+        template: systemTags.includes('template')
+      }
     };
 
     if (this.listeners[key]) {
-      this.listeners[key].forEach(listener => listener());
+      this.listeners[key].forEach(listener => listener(value));
     }
 
     // Still notify global listeners for UI updates, but adapter should check _isRemoteUpdate
@@ -359,7 +478,7 @@ export class MindCache {
     if (key in this.stm) {
       delete this.stm[key];
       if (this.listeners[key]) {
-        this.listeners[key].forEach(listener => listener());
+        this.listeners[key].forEach(listener => listener(undefined)); // Pass undefined for deleted keys
       }
       this.notifyGlobalListeners();
     }
@@ -386,12 +505,53 @@ export class MindCache {
       return false;
     }
 
-    const { hardcoded: _hardcoded, ...allowedAttributes } = attributes;
+    // Don't allow direct modification of hardcoded or systemTags without system access
+    const { hardcoded: _hardcoded, systemTags: _systemTags, ...allowedAttributes } = attributes;
+
+    // If entry is hardcoded (protected), don't allow changing readonly to false or template to true
+    if (entry.attributes.hardcoded) {
+      if ('readonly' in allowedAttributes) {
+        delete (allowedAttributes as any).readonly; // Can't change readonly on hardcoded
+      }
+      if ('template' in allowedAttributes) {
+        delete (allowedAttributes as any).template; // Can't change template on hardcoded
+      }
+    }
+
     entry.attributes = { ...entry.attributes, ...allowedAttributes };
 
-    if (entry.attributes.hardcoded) {
-      entry.attributes.readonly = true;
-      entry.attributes.template = false;
+    // Sync legacy boolean to systemTags if legacy props are set
+    if ('readonly' in attributes || 'visible' in attributes || 'template' in attributes) {
+      let newSystemTags: SystemTag[] = [];
+      if (entry.attributes.readonly) {
+        newSystemTags.push('readonly');
+      }
+      if (entry.attributes.visible) {
+        newSystemTags.push('prompt');
+      }
+      if (entry.attributes.template) {
+        newSystemTags.push('template');
+      }
+      if (entry.attributes.hardcoded) {
+        newSystemTags.push('protected');
+      }
+
+      // Enforce: protected implies readonly and NOT template
+      if (newSystemTags.includes('protected')) {
+        if (!newSystemTags.includes('readonly')) {
+          newSystemTags.push('readonly');
+        }
+        newSystemTags = newSystemTags.filter(t => t !== 'template');
+        entry.attributes.readonly = true;
+        entry.attributes.template = false;
+      }
+
+      entry.attributes.systemTags = newSystemTags;
+    }
+
+    // Sync contentTags to legacy tags
+    if ('contentTags' in attributes) {
+      entry.attributes.tags = [...(entry.attributes.contentTags || [])];
     }
 
     this.notifyGlobalListeners();
@@ -481,7 +641,7 @@ export class MindCache {
     if (deleted) {
       this.notifyGlobalListeners();
       if (this.listeners[key]) {
-        this.listeners[key].forEach(listener => listener());
+        this.listeners[key].forEach(listener => listener(undefined)); // Pass undefined for deleted keys
       }
     }
     return deleted;
@@ -545,7 +705,7 @@ export class MindCache {
         };
 
         if (this.listeners[key]) {
-          this.listeners[key].forEach(listener => listener());
+          this.listeners[key].forEach(listener => listener(this.stm[key]?.value));
         }
       }
     });
@@ -565,11 +725,11 @@ export class MindCache {
     }
   }
 
-  subscribeToAll(listener: Listener): void {
+  subscribeToAll(listener: GlobalListener): void {
     this.globalListeners.push(listener);
   }
 
-  unsubscribeFromAll(listener: Listener): void {
+  unsubscribeFromAll(listener: GlobalListener): void {
     this.globalListeners = this.globalListeners.filter(l => l !== listener);
   }
 
@@ -734,11 +894,41 @@ export class MindCache {
 
       Object.entries(data).forEach(([key, entry]) => {
         if (entry && typeof entry === 'object' && 'value' in entry && 'attributes' in entry) {
+          const attrs = entry.attributes;
+
+          // Migrate from legacy format: derive systemTags from boolean flags if missing
+          let systemTags: SystemTag[] = attrs.systemTags || [];
+          if (!attrs.systemTags) {
+            systemTags = [];
+            if (attrs.visible !== false) {
+              systemTags.push('prompt');
+            } // visible true by default
+            if (attrs.readonly) {
+              systemTags.push('readonly');
+            }
+            if (attrs.hardcoded) {
+              systemTags.push('protected');
+            }
+            if (attrs.template) {
+              systemTags.push('template');
+            }
+          }
+
+          // Migrate contentTags from legacy tags if missing
+          const contentTags = attrs.contentTags || attrs.tags || [];
+
           this.stm[key] = {
             value: entry.value,
             attributes: {
-              ...entry.attributes,
-              tags: entry.attributes.tags || []
+              ...attrs,
+              contentTags,
+              systemTags,
+              // Sync legacy attributes
+              tags: contentTags,
+              readonly: systemTags.includes('readonly'),
+              visible: systemTags.includes('prompt'),
+              hardcoded: systemTags.includes('protected'),
+              template: systemTags.includes('template')
             }
           };
         }
@@ -909,6 +1099,13 @@ export class MindCache {
     };
   }
 
+  // ============================================
+  // Content Tag Methods (available to all access levels)
+  // ============================================
+
+  /**
+   * Add a content tag to a key (user-level organization)
+   */
   addTag(key: string, tag: string): boolean {
     if (key === '$date' || key === '$time') {
       return false;
@@ -919,12 +1116,14 @@ export class MindCache {
       return false;
     }
 
-    if (!entry.attributes.tags) {
-      entry.attributes.tags = [];
+    if (!entry.attributes.contentTags) {
+      entry.attributes.contentTags = [];
     }
 
-    if (!entry.attributes.tags.includes(tag)) {
-      entry.attributes.tags.push(tag);
+    if (!entry.attributes.contentTags.includes(tag)) {
+      entry.attributes.contentTags.push(tag);
+      // Sync legacy tags array
+      entry.attributes.tags = [...entry.attributes.contentTags];
       this.notifyGlobalListeners();
       return true;
     }
@@ -932,19 +1131,24 @@ export class MindCache {
     return false;
   }
 
+  /**
+   * Remove a content tag from a key
+   */
   removeTag(key: string, tag: string): boolean {
     if (key === '$date' || key === '$time') {
       return false;
     }
 
     const entry = this.stm[key];
-    if (!entry || !entry.attributes.tags) {
+    if (!entry || !entry.attributes.contentTags) {
       return false;
     }
 
-    const tagIndex = entry.attributes.tags.indexOf(tag);
+    const tagIndex = entry.attributes.contentTags.indexOf(tag);
     if (tagIndex > -1) {
-      entry.attributes.tags.splice(tagIndex, 1);
+      entry.attributes.contentTags.splice(tagIndex, 1);
+      // Sync legacy tags array
+      entry.attributes.tags = [...entry.attributes.contentTags];
       this.notifyGlobalListeners();
       return true;
     }
@@ -952,41 +1156,53 @@ export class MindCache {
     return false;
   }
 
+  /**
+   * Get all content tags for a key
+   */
   getTags(key: string): string[] {
     if (key === '$date' || key === '$time') {
       return [];
     }
 
     const entry = this.stm[key];
-    return entry?.attributes.tags || [];
+    return entry?.attributes.contentTags || [];
   }
 
+  /**
+   * Get all unique content tags across all keys
+   */
   getAllTags(): string[] {
     const allTags = new Set<string>();
 
     Object.values(this.stm).forEach(entry => {
-      if (entry.attributes.tags) {
-        entry.attributes.tags.forEach(tag => allTags.add(tag));
+      if (entry.attributes.contentTags) {
+        entry.attributes.contentTags.forEach(tag => allTags.add(tag));
       }
     });
 
     return Array.from(allTags);
   }
 
+  /**
+   * Check if a key has a specific content tag
+   */
   hasTag(key: string, tag: string): boolean {
     if (key === '$date' || key === '$time') {
       return false;
     }
 
     const entry = this.stm[key];
-    return entry?.attributes.tags?.includes(tag) || false;
+    return entry?.attributes.contentTags?.includes(tag) || false;
   }
 
+  /**
+   * Get all keys with a specific content tag as formatted string
+   */
   getTagged(tag: string): string {
     const entries: Array<[string, any]> = [];
 
     Object.entries(this.stm).forEach(([key, entry]) => {
-      if (entry.attributes.tags?.includes(tag)) {
+      if (entry.attributes.contentTags?.includes(tag)) {
         entries.push([key, this.get_value(key)]);
       }
     });
@@ -994,6 +1210,167 @@ export class MindCache {
     return entries
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
+  }
+
+  /**
+   * Get all keys with a specific content tag
+   */
+  getKeysByTag(tag: string): string[] {
+    return Object.entries(this.stm)
+      .filter(([, entry]) => entry.attributes.contentTags?.includes(tag))
+      .map(([key]) => key);
+  }
+
+  // ============================================
+  // System Tag Methods (requires system access level)
+  // ============================================
+
+  /**
+   * Add a system tag to a key (requires system access)
+   * System tags: 'prompt', 'readonly', 'protected', 'template'
+   */
+  systemAddTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemAddTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    if (!entry) {
+      return false;
+    }
+
+    if (!entry.attributes.systemTags) {
+      entry.attributes.systemTags = [];
+    }
+
+    if (!entry.attributes.systemTags.includes(tag)) {
+      entry.attributes.systemTags.push(tag);
+      // Sync legacy boolean attributes
+      this.syncLegacyFromSystemTags(entry);
+      this.notifyGlobalListeners();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Remove a system tag from a key (requires system access)
+   */
+  systemRemoveTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemRemoveTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    if (!entry || !entry.attributes.systemTags) {
+      return false;
+    }
+
+    const tagIndex = entry.attributes.systemTags.indexOf(tag);
+    if (tagIndex > -1) {
+      entry.attributes.systemTags.splice(tagIndex, 1);
+      // Sync legacy boolean attributes
+      this.syncLegacyFromSystemTags(entry);
+      this.notifyGlobalListeners();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Get all system tags for a key (requires system access)
+   */
+  systemGetTags(key: string): SystemTag[] {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemGetTags requires system access level');
+      return [];
+    }
+
+    if (key === '$date' || key === '$time') {
+      return [];
+    }
+
+    const entry = this.stm[key];
+    return entry?.attributes.systemTags || [];
+  }
+
+  /**
+   * Check if a key has a specific system tag (requires system access)
+   */
+  systemHasTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemHasTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    return entry?.attributes.systemTags?.includes(tag) || false;
+  }
+
+  /**
+   * Set all system tags for a key at once (requires system access)
+   */
+  systemSetTags(key: string, tags: SystemTag[]): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemSetTags requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time') {
+      return false;
+    }
+
+    const entry = this.stm[key];
+    if (!entry) {
+      return false;
+    }
+
+    entry.attributes.systemTags = [...tags];
+    // Sync legacy boolean attributes
+    this.syncLegacyFromSystemTags(entry);
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Get all keys with a specific system tag (requires system access)
+   */
+  systemGetKeysByTag(tag: SystemTag): string[] {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemGetKeysByTag requires system access level');
+      return [];
+    }
+
+    return Object.entries(this.stm)
+      .filter(([, entry]) => entry.attributes.systemTags?.includes(tag))
+      .map(([key]) => key);
+  }
+
+  /**
+   * Helper to sync legacy boolean attributes from system tags
+   */
+  private syncLegacyFromSystemTags(entry: STMEntry): void {
+    const tags = entry.attributes.systemTags || [];
+    entry.attributes.readonly = tags.includes('readonly');
+    entry.attributes.visible = tags.includes('prompt');
+    entry.attributes.hardcoded = tags.includes('protected');
+    entry.attributes.template = tags.includes('template');
   }
 
   toMarkdown(): string {
@@ -1159,11 +1536,14 @@ export class MindCache {
           currentEntry = {
             value: undefined,
             attributes: {
+              type: 'text',
+              contentTags: [],
+              systemTags: ['prompt'], // visible by default
+              // Legacy attributes
               readonly: false,
               visible: true,
               hardcoded: false,
               template: false,
-              type: 'text',
               tags: []
             }
           };
@@ -1247,9 +1627,46 @@ export class MindCache {
       }
 
       if (entry.value !== undefined && entry.attributes) {
+        const attrs = entry.attributes;
+
+        // Sync tags to contentTags if tags was parsed from markdown
+        if (
+          attrs.tags &&
+          attrs.tags.length > 0 &&
+          (!attrs.contentTags || attrs.contentTags.length === 0)
+        ) {
+          attrs.contentTags = [...attrs.tags];
+        }
+
+        // Derive systemTags from legacy booleans if not present
+        if (!attrs.systemTags || attrs.systemTags.length === 0) {
+          const systemTags: SystemTag[] = [];
+          if (attrs.visible !== false) {
+            systemTags.push('prompt');
+          }
+          if (attrs.readonly) {
+            systemTags.push('readonly');
+          }
+          if (attrs.hardcoded) {
+            systemTags.push('protected');
+          }
+          if (attrs.template) {
+            systemTags.push('template');
+          }
+          attrs.systemTags = systemTags;
+        }
+
+        // Ensure all required fields exist
+        if (!attrs.contentTags) {
+          attrs.contentTags = [];
+        }
+        if (!attrs.tags) {
+          attrs.tags = [...attrs.contentTags];
+        }
+
         this.stm[key] = {
           value: entry.value,
-          attributes: entry.attributes as KeyAttributes
+          attributes: attrs as KeyAttributes
         };
       }
     });

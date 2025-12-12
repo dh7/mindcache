@@ -10,7 +10,10 @@
     "test:integration": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "wrangler d1 migrations apply mindcache-db --env production --remote",
-    "db:migrate:local": "wrangler d1 migrations apply mindcache-db --local"
+    "db:migrate:local": "wrangler d1 migrations apply mindcache-db --local",
+    "db:migrations:list": "wrangler d1 migrations list mindcache-db --remote",
+    "db:migrations:list:local": "wrangler d1 migrations list mindcache-db --local",
+    "deploy:full": "./deploy.sh"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",

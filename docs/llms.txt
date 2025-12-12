@@ -1,0 +1,109 @@
+# MindCache
+
+> AI Agent Memory Management - A TypeScript library for managing short-term memory in AI agents through an LLM-friendly key-value repository.
+
+MindCache helps AI agents maintain context during conversations and across tool calls. It provides automatic tool generation so agents can read/write memory without manual tool definitions.
+
+## Quick Links
+
+- Documentation: https://mindcache.dev
+- Full LLM Documentation: https://mindcache.dev/llms-full.md
+- GitHub: https://github.com/dh7/mindcache
+- npm: https://www.npmjs.com/package/mindcache
+- Cloud App: https://app.mindcache.dev
+
+## Installation
+
+npm install mindcache
+
+## Core Concepts
+
+### Key-Value Storage
+Store any data type: text, JSON, images, files. All data is stored in LLM-friendly format.
+
+### Automatic Tool Generation
+Tools are automatically generated for each writable key, integrating with Vercel AI SDK.
+
+### System Prompt Generation
+Automatically generate system prompts containing all memory context.
+
+### Template Injection
+Use {{key}} syntax to inject memory values into templates.
+
+## Quick Start
+
+```typescript
+import { mindcache } from 'mindcache';
+
+// Store values
+mindcache.set_value('userName', 'Alice');
+mindcache.set_value('favoriteColor', 'blue');
+
+// Generate system prompt for AI agent
+const systemPrompt = mindcache.get_system_prompt();
+
+// Generate tools for Vercel AI SDK
+const tools = mindcache.get_aisdk_tools();
+
+// Use with AI SDK
+import { generateText } from 'ai';
+const { text } = await generateText({
+  model: openai('gpt-4'),
+  tools: tools,
+  system: systemPrompt,
+  prompt: 'Remember that I love green now.'
+});
+// AI automatically calls write_favoriteColor('green')
+```
+
+## API Methods
+
+### Core Methods
+- set_value(key, value, attributes?) - Store a value
+- get_value(key) - Retrieve a value
+- delete(key) - Remove a key
+- has(key) - Check if key exists
+- clear() - Clear all memory
+
+### Memory Management
+- get_system_prompt() - Generate system prompt from visible keys
+- get_aisdk_tools() - Generate Vercel AI SDK tools
+- injectSTM(template) - Inject {{key}} values into template
+- getSTM() - Get formatted string of all visible entries
+
+### Attributes
+- readonly: boolean - Prevent AI from modifying
+- visible: boolean - Include in system prompt
+- tags: string[] - Categorize entries
+- template: boolean - Enable {{key}} resolution
+
+### Serialization
+- toJSON() / fromJSON() - JSON format
+- toMarkdown() / fromMarkdown() - Markdown format
+- serialize() / deserialize() - Complete state
+
+### Events
+- subscribe(key, listener) - Listen to key changes
+- subscribeToAll(listener) - Listen to all changes
+
+## Cloud Sync (MindCache 2.0)
+
+```typescript
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache({
+  cloud: {
+    instanceId: 'my-instance-id',
+    tokenEndpoint: '/api/ws-token',
+  }
+});
+
+// Same API as local - now with cloud persistence!
+mc.set_value('userName', 'Alice');
+mc.subscribeToAll(() => console.log('Synced!'));
+```
+
+## For Full Documentation
+
+See the comprehensive LLM documentation at:
+https://mindcache.dev/llms-full.md

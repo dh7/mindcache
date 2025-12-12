@@ -28,7 +28,8 @@
   "pnpm": {
     "overrides": {
       "esbuild": ">=0.25.0",
-      "jsondiffpatch": ">=0.7.2"
+      "jsondiffpatch": ">=0.7.2",
+      "next": ">=15.5.8"
     }
   },
   "packageManager": "pnpm@9.15.0",

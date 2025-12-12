@@ -12,14 +12,14 @@ describe('MindCache Key Properties', () => {
       cache.set_value('test_key', 'test_value');
       const attributes = cache.get_attributes('test_key');
 
-      expect(attributes).toEqual({
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false,
-        type: 'text' as const,
-        tags: []
-      });
+      // Check key properties individually (new format includes contentTags, systemTags)
+      expect(attributes?.readonly).toBe(false);
+      expect(attributes?.visible).toBe(true);
+      expect(attributes?.hardcoded).toBe(false);
+      expect(attributes?.template).toBe(false);
+      expect(attributes?.type).toBe('text');
+      expect(attributes?.contentTags).toEqual([]);
+      expect(attributes?.systemTags).toContain('prompt'); // visible by default
     });
 
     test('should set value with custom attributes', () => {
@@ -34,30 +34,26 @@ describe('MindCache Key Properties', () => {
       const attributes = cache.get_attributes('custom_key');
 
       // Hardcoded keys force readonly=true and template=false
-      const expectedAttributes = {
-        readonly: true,
-        visible: false,
-        hardcoded: true,
-        template: false, // Hardcoded keys cannot be templates
-        type: 'text' as const,
-        tags: []
-      };
-
-      expect(attributes).toEqual(expectedAttributes);
+      expect(attributes?.readonly).toBe(true);
+      expect(attributes?.visible).toBe(false);
+      expect(attributes?.hardcoded).toBe(true);
+      expect(attributes?.template).toBe(false); // Hardcoded keys cannot be templates
+      expect(attributes?.type).toBe('text');
+      expect(attributes?.systemTags).toContain('readonly');
+      expect(attributes?.systemTags).toContain('protected');
     });
 
     test('should set partial attributes', () => {
       cache.set_value('partial_key', 'partial_value', { readonly: true, visible: false });
       const attributes = cache.get_attributes('partial_key');
 
-      expect(attributes).toEqual({
-        readonly: true,
-        visible: false,
-        hardcoded: false,
-        template: false,
-        type: 'text' as const,
-        tags: []
-      });
+      expect(attributes?.readonly).toBe(true);
+      expect(attributes?.visible).toBe(false);
+      expect(attributes?.hardcoded).toBe(false);
+      expect(attributes?.template).toBe(false);
+      expect(attributes?.type).toBe('text');
+      expect(attributes?.systemTags).toContain('readonly');
+      expect(attributes?.systemTags).not.toContain('prompt'); // visible=false
     });
 
     test('should update attributes of existing key', () => {
@@ -84,23 +80,21 @@ describe('MindCache Key Properties', () => {
       const dateAttrs = cache.get_attributes('$date');
       const timeAttrs = cache.get_attributes('$time');
 
-      expect(dateAttrs).toEqual({
-        readonly: true,
-        visible: true,
-        hardcoded: true,
-        template: false,
-        type: 'text' as const,
-        tags: []
-      });
+      // Check key properties
+      expect(dateAttrs?.readonly).toBe(true);
+      expect(dateAttrs?.visible).toBe(true);
+      expect(dateAttrs?.hardcoded).toBe(true);
+      expect(dateAttrs?.template).toBe(false);
+      expect(dateAttrs?.type).toBe('text');
+      expect(dateAttrs?.systemTags).toContain('prompt');
+      expect(dateAttrs?.systemTags).toContain('readonly');
+      expect(dateAttrs?.systemTags).toContain('protected');
 
-      expect(timeAttrs).toEqual({
-        readonly: true,
-        visible: true,
-        hardcoded: true,
-        template: false,
-        type: 'text' as const,
-        tags: []
-      });
+      expect(timeAttrs?.readonly).toBe(true);
+      expect(timeAttrs?.visible).toBe(true);
+      expect(timeAttrs?.hardcoded).toBe(true);
+      expect(timeAttrs?.template).toBe(false);
+      expect(timeAttrs?.type).toBe('text');
     });
 
     test('should not allow setting attributes for hardcoded system keys', () => {
@@ -446,16 +440,15 @@ describe('MindCache Key Properties', () => {
       // Set using old method
       cache.set('old_key', 'old_value');
 
-      // Should have default attributes
+      // Should have default attributes (new format includes contentTags, systemTags)
       const attributes = cache.get_attributes('old_key');
-      expect(attributes).toEqual({
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false,
-        type: 'text' as const,
-        tags: []
-      });
+      expect(attributes?.readonly).toBe(false);
+      expect(attributes?.visible).toBe(true);
+      expect(attributes?.hardcoded).toBe(false);
+      expect(attributes?.template).toBe(false);
+      expect(attributes?.type).toBe('text');
+      expect(attributes?.contentTags).toEqual([]);
+      expect(attributes?.tags).toEqual([]); // Legacy tags synced from contentTags
 
       // Old get should work
       expect(cache.get('old_key')).toBe('old_value');

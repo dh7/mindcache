@@ -108,7 +108,7 @@ export default function ProjectPage() {
     setDeleting(true);
     try {
       const token = await getToken() || 'dev';
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/instances/${deleteInstance.id}`, {
+      const res = await fetch(`${API_URL}/api/instances/${deleteInstance.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -202,9 +202,10 @@ export default function ProjectPage() {
               <div
                 key={instance.id}
                 onClick={() => router.push(`/projects/${projectId}/instances/${instance.id}`)}
-                className={`flex items-center px-6 py-3 hover:bg-zinc-900/50 transition cursor-pointer group ${
-                  index !== instances.length - 1 ? 'border-b border-zinc-800/50' : ''
-                }`}
+                className={`flex items-center px-6 py-3 hover:bg-zinc-900/50 transition
+                  cursor-pointer group ${
+              index !== instances.length - 1 ? 'border-b border-zinc-800/50' : ''
+              }`}
               >
                 {/* Name */}
                 <div className="w-44 font-medium group-hover:text-white transition">{instance.name}</div>

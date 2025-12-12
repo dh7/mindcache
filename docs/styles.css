@@ -692,6 +692,15 @@ section {
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(16, 185, 129, 0.15) 100%);
 }
 
+.doc-card-llm {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%);
+    border-color: var(--secondary);
+}
+
+.doc-card-llm:hover {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+}
+
 /* Footer */
 .footer {
     background: var(--text-primary);
