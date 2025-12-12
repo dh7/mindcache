@@ -1,7 +1,7 @@
 # MindCache 2.0 Specification
 
 **Package Version**: 2.0.0  
-**Spec Revision**: 1.4.0  
+**Spec Revision**: 2.0.0  
 **Last Updated**: 2024-12-11  
 **Production URL**: https://mindcache-api.dh7777777.workers.dev
 
@@ -138,13 +138,42 @@ Legacy boolean attributes (`readonly`, `visible`, `hardcoded`, `template`) are a
 - Conflict resolution for concurrent edits
 
 ### 2. Authentication & Authorization
-- OAuth login (Google, GitHub, etc.)
-- API key generation for apps/agents
-- API keys can be scoped to:
-  - Entire user account
-  - Specific project(s)
-  - Specific MindCache instance(s)
-- Role-based access control
+
+#### User Authentication (OAuth)
+- Clerk handles OAuth (Google, GitHub, etc.)
+- JWT tokens verified in Worker
+- Users own projects and instances
+
+#### Delegate System (API Keys)
+**Delegates** are API keys created by users with fine-grained permissions:
+
+**Two-Layer Permission Model:**
+1. **Key-Level Capabilities** (what the delegate CAN do):
+   - `can_read`: Can read data
+   - `can_write`: Can modify data
+   - `can_system`: Can perform admin operations (share, delete, etc.)
+
+2. **Resource-Level Grants** (which instances the delegate can access):
+   - Grants are per-instance (Durable Object)
+   - Permission levels: `read`, `write`, `system`
+   - Both layers must allow the operation
+
+**Multiple Secrets per Delegate:**
+- Each delegate can have multiple secrets (for different environments)
+- Secrets can be revoked individually without affecting the delegate
+- Secret value shown once on creation, then only hash stored
+- Secrets can be named (e.g., "Production API", "Dev Environment")
+
+**Authentication Format:**
+```
+Authorization: ApiKey <delegateId>:<secret>
+```
+
+**Workflow:**
+1. User creates delegate with key-level permissions
+2. User creates one or more secrets for the delegate
+3. User grants delegate access to specific instances
+4. Delegate can authenticate and access granted instances
 
 ### 3. Real-Time Updates
 - WebSocket/SSE for live key changes
@@ -313,19 +342,90 @@ Using **Clerk** for authentication (standard auth provider):
 │  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
                               │
-                              │ JWT token in header
+                              │ JWT token OR ApiKey delegateId:secret
                               ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                    Cloudflare Workers                                 │
 │  ┌────────────────────────────────────────────────────────────────┐  │
 │  │  Auth Worker:                                                   │  │
-│  │  1. Verify Clerk JWT (using Clerk's public key)                │  │
-│  │  2. OR verify API key (hash lookup in DB)                      │  │
-│  │  3. Check permissions                                          │  │
+│  │  1. Verify Clerk JWT (using Clerk's public key) OR              │  │
+│  │  2. Verify delegate (hash lookup in delegate_secrets)           │  │
+│  │  3. Check two-layer permissions (key capabilities + grants)     │  │
 │  │  4. Route to Durable Object                                    │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+### Delegate System Architecture
+
+**Two-Layer Permission Model:**
+
+1. **Key-Level Capabilities** (`delegates` table):
+   - `can_read`, `can_write`, `can_system` - What the delegate CAN do
+   - Set at delegate creation, cannot be changed
+
+2. **Resource-Level Grants** (`do_permissions` table):
+   - Per-instance (Durable Object) access grants
+   - Permission levels: `read`, `write`, `system`
+   - Can be added/removed dynamically
+
+**Both layers must allow the operation** - prevents privilege escalation.
+
+**Multiple Secrets per Delegate:**
+- Each delegate can have multiple secrets (`delegate_secrets` table)
+- Secrets can be named (e.g., "Production", "Staging")
+- Secrets can be revoked individually without affecting the delegate
+- Secret value shown once on creation, then only hash stored
+- `last_used_at` tracked for each secret
+
+**Permission Checking:**
+```typescript
+// For delegates: two-layer check
+async function checkDelegatePermission(
+  delegateId: string,
+  doId: string,
+  requiredPermission: 'read' | 'write' | 'system'
+): Promise<boolean> {
+  // Layer 1: Check key-level capabilities
+  const delegate = await db.prepare(`
+    SELECT can_read, can_write, can_system FROM delegates WHERE delegate_id = ?
+  `).bind(delegateId).first();
+  
+  if (!delegate) return false;
+  
+  const hasKeyPermission = (
+    (requiredPermission === 'read' && delegate.can_read) ||
+    (requiredPermission === 'write' && delegate.can_write) ||
+    (requiredPermission === 'system' && delegate.can_system)
+  );
+  
+  if (!hasKeyPermission) return false;
+  
+  // Layer 2: Check resource-level grant
+  const grant = await db.prepare(`
+    SELECT permission FROM do_permissions 
+    WHERE do_id = ? AND actor_id = ? AND actor_type = 'delegate'
+  `).bind(doId, delegateId).first();
+  
+  if (!grant) return false;
+  
+  // Check permission hierarchy (system > write > read)
+  const hierarchy = { read: 1, write: 2, system: 3 };
+  return hierarchy[grant.permission] >= hierarchy[requiredPermission];
+}
+```
+
+**API Endpoints:**
+
+- `POST /api/delegates` - Create delegate (returns delegate_id, no secret yet)
+- `GET /api/delegates` - List user's delegates
+- `DELETE /api/delegates/:id` - Delete delegate (cascades to secrets)
+- `POST /api/delegates/:id/secrets` - Create secret (returns secret once)
+- `GET /api/delegates/:id/secrets` - List secrets (no secret values)
+- `DELETE /api/delegates/:id/secrets/:secretId` - Revoke secret
+- `POST /api/delegates/:id/grants` - Grant access to instance
+- `GET /api/delegates/:id/grants` - List grants
+- `DELETE /api/delegates/:id/grants/:instanceId` - Revoke access
 
 ---
 
@@ -389,8 +489,8 @@ Using **Clerk** for authentication (standard auth provider):
 |-----------|------------|---------|
 | **Web UI** | Vercel + Next.js | Dashboard, editor, chatbot |
 | **Auth (humans)** | Clerk | OAuth, sessions, user management |
-| **Auth (apps)** | API Keys | Hashed in D1, verified in Worker |
-| **Global Data** | Cloudflare D1 | Users, projects, shares, API keys |
+| **Auth (apps)** | Delegates | Multiple secrets per delegate, hashed in D1, verified in Worker |
+| **Global Data** | Cloudflare D1 | Users, projects, shares, delegates, delegate_secrets, do_ownership, do_permissions |
 | **Instance Data** | Durable Objects | Keys, values, WebSocket, real-time |
 | **Real-time** | DO WebSocket | Native, best-in-class |
 
@@ -469,17 +569,47 @@ group_members (
   PRIMARY KEY (group_id, user_id)
 )
 
--- API Keys
-api_keys (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  name TEXT,
-  key_hash TEXT, -- hashed API key
-  scope_type TEXT CHECK (scope_type IN ('account', 'project', 'instance')),
-  scope_id UUID, -- NULL for account scope
-  permissions TEXT[], -- ['read', 'write']
-  created_at TIMESTAMP,
-  last_used_at TIMESTAMP
+-- Delegates (API Keys) with key-level permissions
+delegates (
+  delegate_id TEXT PRIMARY KEY,
+  created_by_user_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  can_read INTEGER NOT NULL DEFAULT 1,
+  can_write INTEGER NOT NULL DEFAULT 0,
+  can_system INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  expires_at INTEGER
+)
+
+-- Delegate Secrets (multiple secrets per delegate)
+delegate_secrets (
+  secret_id TEXT PRIMARY KEY,
+  delegate_id TEXT NOT NULL REFERENCES delegates(delegate_id) ON DELETE CASCADE,
+  secret_hash TEXT NOT NULL,
+  name TEXT,  -- Optional name (e.g., "Production API", "Dev Environment")
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  last_used_at INTEGER,
+  revoked_at INTEGER,  -- NULL = active, timestamp = revoked
+  created_by_user_id TEXT NOT NULL REFERENCES users(id)
+)
+
+-- DO Ownership - tracks which user owns which Durable Object
+do_ownership (
+  do_id TEXT PRIMARY KEY,
+  owner_user_id TEXT NOT NULL REFERENCES users(id),
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+)
+
+-- DO Permissions - resource-level permissions for users and delegates
+do_permissions (
+  do_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'delegate')),
+  permission TEXT NOT NULL CHECK (permission IN ('read', 'write', 'system')),
+  granted_by_user_id TEXT NOT NULL REFERENCES users(id),
+  granted_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  expires_at INTEGER,
+  PRIMARY KEY (do_id, actor_id, permission)
 )
 
 -- Webhooks
@@ -512,12 +642,14 @@ usage_logs (
 ```
 1. Human user creates project "Tweet Monitor"
 2. User creates MindCache instance "tweets"
-3. User generates API key scoped to "tweets" instance
-4. User gives API key to scraper app
-5. Scraper app writes tweets to "tweets" instance
-6. User shares "tweets" instance with group (including agents)
-7. Agents subscribe to key updates
-8. When new tweet arrives, agents are notified and process it
+3. User creates delegate "Scraper Bot" with can_read=true, can_write=true
+4. User creates secret for delegate (shown once, then stored as hash)
+5. User grants delegate "read" and "write" access to "tweets" instance
+6. User gives delegate credentials (delegateId:secret) to scraper app
+7. Scraper app authenticates and writes tweets to "tweets" instance
+8. User shares "tweets" instance with group (including agents)
+9. Agents subscribe to key updates
+10. When new tweet arrives, agents are notified and process it
 ```
 
 ### Use Case 2: Link Bookmarking with Partial Sharing
@@ -550,7 +682,7 @@ usage_logs (
 | Are keys schema-defined? | **No** — instances can have any keys dynamically |
 | Who gets notified on updates? | **Instance subscribers only** |
 | Conflict resolution? | **Durable Objects** — single-threaded, no conflicts within instance |
-| API key scope? | **Account, Project, or Instance level** |
+| API key scope? | **Grant-based per-instance** (delegates with two-layer permissions) |
 | Key-level sharing? | **No** — create instance with subset of keys instead |
 | Workflows? | **Markdown format**, client + backend execution |
 | Offline support? | **Phase 2** — client-side queue, sync when connected |
@@ -911,10 +1043,57 @@ cloudMc.deserialize(data);
     - ~~Transform API~~ ✅ (`/api/transform`)
     - ~~Generate Image API~~ ✅ (`/api/generate-image`)
     - ~~Analyze Image API~~ ✅ (`/api/analyze-image`)
-13. **Future Phases**:
+13. ~~Phase 4: Delegate System~~ ✅:
+    - ~~Two-layer permission model~~ ✅ (key-level capabilities + resource-level grants)
+    - ~~Multiple secrets per delegate~~ ✅ (can revoke individual secrets)
+    - ~~Delegate management endpoints~~ ✅ (`/api/delegates`, `/api/delegates/:id/secrets`)
+    - ~~Grant management endpoints~~ ✅ (`/api/delegates/:id/grants`)
+    - ~~Permission checking logic~~ ✅ (`checkDelegatePermission`, `checkUserPermission`)
+    - ~~DO ownership tracking~~ ✅ (`do_ownership` table)
+    - ~~UI for delegate management~~ ✅ (create delegates, manage secrets, grant access)
+14. **Future Phases**:
     - Phase 4: Workflows + Webhooks
     - Phase 5: Offline queue
     - Deploy to production
+
+---
+
+## Deployment
+
+### Database Migrations
+
+Migrations are managed via `wrangler d1 migrations`:
+
+**Local Development:**
+```bash
+cd packages/server
+pnpm db:migrate:local
+```
+
+**Production:**
+```bash
+cd packages/server
+pnpm db:migrate  # Applies pending migrations to production
+```
+
+**Check Migration Status:**
+```bash
+pnpm db:migrations:list        # Production
+pnpm db:migrations:list:local  # Local
+```
+
+**Deploy Script:**
+```bash
+cd packages/server
+./deploy.sh  # Checks migrations, applies if needed, deploys worker
+```
+
+### Migration Files
+
+- `0001_initial.sql` - Initial schema (users, projects, instances)
+- `0002_ws_tokens.sql` - WebSocket token management
+- `0003_delegates_and_permissions.sql` - Delegates, do_ownership, do_permissions tables
+- `0004_delegate_secrets.sql` - Multiple secrets per delegate
 
 ---
 
@@ -922,6 +1101,7 @@ cloudMc.deserialize(data);
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-11 | 2.0.0 | **Delegate System Complete!** Two-layer permissions, multiple secrets per delegate, grant-based access control |
 | 2024-12-11 | 1.4.0-alpha | Two-tier tag system: `contentTags` (user) + `systemTags` (admin) with access level control |
 | 2024-12-08 | 1.3.1-alpha | Clarified examples/ are standalone (not part of pnpm workspace) - run `npm install` inside each |
 | 2024-12-06 | 1.3-alpha | Built-in cloud sync via `MindCache({ cloud: {...} })` constructor - same DX as local |

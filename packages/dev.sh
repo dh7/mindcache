@@ -114,13 +114,27 @@ apply_migrations() {
     cd "$SCRIPT_DIR/server"
     
     # Apply migrations (idempotent - safe to run multiple times)
-    # Suppress output unless there's an error
-    if pnpm db:migrate:local > /dev/null 2>&1; then
-        echo -e "  ${GREEN}✓${NC} Database migrations applied"
+    # Capture output to check for errors
+    local migration_output
+    migration_output=$(pnpm db:migrate:local 2>&1)
+    local migration_exit=$?
+    
+    if [ $migration_exit -eq 0 ]; then
+        # Check if there are migrations to apply
+        if echo "$migration_output" | grep -q "No migrations to apply"; then
+            echo -e "  ${GREEN}✓${NC} Database is up to date"
+        elif echo "$migration_output" | grep -q "migration"; then
+            echo -e "  ${GREEN}✓${NC} Database migrations applied"
+            echo "$migration_output" | grep -E "(Applying|migration)" | head -3 | sed 's/^/    /'
+        else
+            echo -e "  ${GREEN}✓${NC} Database migrations applied"
+        fi
     else
-        # If it fails, show what happened (might just be "already applied")
-        echo -e "  ${YELLOW}○${NC} Checking migration status..."
-        pnpm db:migrate:local 2>&1 | head -5 || true
+        echo -e "  ${RED}✗${NC} Migration failed!"
+        echo "$migration_output" | head -10 | sed 's/^/    /'
+        echo ""
+        echo -e "  ${YELLOW}Tip:${NC} Try running manually: ${YELLOW}cd packages/server && pnpm db:migrate:local${NC}"
+        return 1
     fi
 }
 
@@ -158,7 +172,11 @@ if [ "$server_ok" = false ]; then
 fi
 
 # Apply database migrations before starting server
-apply_migrations
+if ! apply_migrations; then
+    echo ""
+    echo -e "${RED}Failed to apply migrations. Please fix the issue and try again.${NC}"
+    exit 1
+fi
 
 # Start services
 start_server

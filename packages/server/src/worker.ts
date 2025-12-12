@@ -8,8 +8,15 @@
  */
 
 import { MindCacheInstanceDO } from './durable-objects/MindCacheInstance';
-import { extractAuth, verifyClerkJWT, verifyApiKey } from './auth/clerk';
+import { extractAuth, verifyClerkJWT, verifyApiKey, verifyDelegate } from './auth/clerk';
 import { handleClerkWebhook } from './webhooks/clerk';
+import {
+  checkDelegatePermission,
+  checkUserPermission,
+  grantDelegateAccess,
+  revokeAccess
+} from './auth/permissions';
+import { generateSecureSecret, hashSecret } from './auth/clerk';
 import {
   handleChatRequest,
   handleTransformRequest,
@@ -220,6 +227,8 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     const authData = extractAuth(request);
 
     let userId: string;
+    let actorType: 'user' | 'delegate' = 'user';
+    let delegateId: string | undefined;
 
     // Dev mode bypass - allow unauthenticated access in development
     if (env.ENVIRONMENT === 'development' && !authData) {
@@ -248,7 +257,21 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
           }
           userId = auth.userId!;
         }
+      } else if (authData.type === 'delegate') {
+        // Delegate authentication: ApiKey delegateId:secret
+        if (!authData.parts || authData.parts.length !== 2) {
+          return Response.json({ error: 'Invalid delegate format' }, { status: 401, headers: corsHeaders });
+        }
+        const [delId, secret] = authData.parts;
+        auth = await verifyDelegate(delId, secret, env.DB);
+        if (!auth.valid) {
+          return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+        }
+        userId = auth.parentUserId!;
+        actorType = 'delegate';
+        delegateId = delId;
       } else {
+        // Legacy API key
         auth = await verifyApiKey(authData.token, env.DB);
         if (!auth.valid) {
           return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
@@ -280,53 +303,59 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         return Response.json({ error: 'instanceId required' }, { status: 400, headers: corsHeaders });
       }
 
-      // Verify user has access to this instance
-      // Check both clerk_id (userId from JWT) and internal user id for owner matching
-      // This handles cases where owner_id was stored as either value
-      const instance = await env.DB.prepare(`
-      SELECT i.id, i.project_id,
-             CASE 
-               WHEN p.owner_id = ? OR p.owner_id = (SELECT id FROM users WHERE clerk_id = ?) THEN 'admin'
-               WHEN si.permission IS NOT NULL THEN si.permission
-               ELSE sp.permission 
-             END as permission
-      FROM instances i
-      JOIN projects p ON p.id = i.project_id
-      LEFT JOIN shares sp ON sp.resource_type = 'project' AND sp.resource_id = p.id 
-                         AND (sp.target_type = 'user' AND sp.target_id IN (?, (SELECT id FROM users WHERE clerk_id = ?)) OR sp.target_type = 'public')
-      LEFT JOIN shares si ON si.resource_type = 'instance' AND si.resource_id = i.id 
-                         AND (si.target_type = 'user' AND si.target_id IN (?, (SELECT id FROM users WHERE clerk_id = ?)) OR si.target_type = 'public')
-      WHERE i.id = ? AND (
-        p.owner_id = ? 
-        OR p.owner_id = (SELECT id FROM users WHERE clerk_id = ?)
-        OR sp.id IS NOT NULL 
-        OR si.id IS NOT NULL
-      )
-    `).bind(userId, userId, userId, userId, userId, userId, body.instanceId, userId, userId).first<{ id: string; permission: string }>();
+      // Verify user/delegate has access to this instance using new permission system
+      const doId = env.MINDCACHE_INSTANCE.idFromName(body.instanceId).toString();
 
-      if (!instance) {
+      let hasAccess = false;
+      let permission: 'read' | 'write' | 'system' = 'read';
+
+      if (actorType === 'delegate' && delegateId) {
+        // Check delegate permissions (two-layer)
+        hasAccess = await checkDelegatePermission(delegateId, doId, 'read', env.DB);
+        if (hasAccess) {
+          // Determine max permission level
+          if (await checkDelegatePermission(delegateId, doId, 'system', env.DB)) {
+            permission = 'system';
+          } else if (await checkDelegatePermission(delegateId, doId, 'write', env.DB)) {
+            permission = 'write';
+          }
+        }
+      } else {
+        // Check user permissions
+        hasAccess = await checkUserPermission(userId, doId, 'read', env.DB);
+        if (hasAccess) {
+          // Determine max permission level
+          if (await checkUserPermission(userId, doId, 'system', env.DB)) {
+            permission = 'system';
+          } else if (await checkUserPermission(userId, doId, 'write', env.DB)) {
+            permission = 'write';
+          }
+        }
+      }
+
+      if (!hasAccess) {
         return Response.json({
           error: 'Instance not found or access denied',
-          debug: { clerkUserId: userId, instanceId: body.instanceId }
-        }, { status: 404, headers: corsHeaders });
+          debug: { userId, actorType, instanceId: body.instanceId }
+        }, { status: 403, headers: corsHeaders });
       }
 
       // Generate token
       const token = crypto.randomUUID() + crypto.randomUUID();
       const tokenHash = await hashToken(token);
       const expiresAt = Math.floor(Date.now() / 1000) + 60; // 60 seconds
-      const permission = body.permission || (instance.permission === 'read' ? 'read' : 'write');
+      const requestedPermission = body.permission || permission;
 
       await env.DB.prepare(`
       INSERT INTO ws_tokens (token_hash, user_id, instance_id, permission, expires_at)
       VALUES (?, ?, ?, ?, ?)
-    `).bind(tokenHash, userId, body.instanceId, permission, expiresAt).run();
+    `).bind(tokenHash, userId, body.instanceId, requestedPermission, expiresAt).run();
 
       return Response.json({
         token,
         expiresAt,
         instanceId: body.instanceId,
-        permission
+        permission: requestedPermission
       }, { headers: corsHeaders });
     }
 
@@ -387,6 +416,19 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       INSERT INTO instances (id, project_id, owner_id, name, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(instanceId, id, userId, 'main', now, now).run();
+
+      // Create DO ownership and grant creator system permission
+      const doId = env.MINDCACHE_INSTANCE.idFromName(instanceId).toString();
+      await env.DB.prepare(`
+        INSERT INTO do_ownership (do_id, owner_user_id)
+        VALUES (?, ?)
+      `).bind(doId, userId).run();
+
+      await env.DB.prepare(`
+        INSERT INTO do_permissions 
+        (do_id, actor_id, actor_type, permission, granted_by_user_id)
+        VALUES (?, ?, 'user', 'system', ?)
+      `).bind(doId, userId, userId).run();
 
       return Response.json({
         id,
@@ -488,6 +530,19 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       INSERT INTO instances (id, project_id, owner_id, name, parent_instance_id)
       VALUES (?, ?, ?, ?, ?)
     `).bind(id, projectId, userId, body.name, body.cloneFrom || null).run();
+
+      // Create DO ownership and grant creator system permission
+      const doId = env.MINDCACHE_INSTANCE.idFromName(id).toString();
+      await env.DB.prepare(`
+        INSERT INTO do_ownership (do_id, owner_user_id)
+        VALUES (?, ?)
+      `).bind(doId, userId).run();
+
+      await env.DB.prepare(`
+        INSERT INTO do_permissions 
+        (do_id, actor_id, actor_type, permission, granted_by_user_id)
+        VALUES (?, ?, 'user', 'system', ?)
+      `).bind(doId, userId, userId).run();
 
       return Response.json({ id, name: body.name }, { status: 201, headers: corsHeaders });
     }
@@ -678,6 +733,378 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       DELETE FROM api_keys WHERE id = ? AND user_id = ?
     `).bind(keyId, userId).run();
       return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // ============= DELEGATES =============
+
+    // List delegates (only users can list their own delegates)
+    if (path === '/api/delegates' && request.method === 'GET') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot list delegates' }, { status: 403, headers: corsHeaders });
+      }
+      const { results } = await env.DB.prepare(`
+        SELECT delegate_id, name, can_read, can_write, can_system, created_at, expires_at
+        FROM delegates WHERE created_by_user_id = ?
+        ORDER BY created_at DESC
+      `).bind(userId).all();
+      return Response.json({ delegates: results }, { headers: corsHeaders });
+    }
+
+    // Create delegate (only users can create delegates)
+    if (path === '/api/delegates' && request.method === 'POST') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot create delegates' }, { status: 403, headers: corsHeaders });
+      }
+      const body = await request.json() as {
+        name: string;
+        keyPermissions: {
+          can_read: boolean;
+          can_write: boolean;
+          can_system: boolean;
+        };
+        expiresAt?: string;
+      };
+
+      if (!body.name?.trim()) {
+        return Response.json({ error: 'Name required' }, { status: 400, headers: corsHeaders });
+      }
+
+      try {
+        const delegateId = `del_${crypto.randomUUID().replace(/-/g, '')}`;
+
+        let expiresAt: number | null = null;
+        if (body.expiresAt) {
+          const date = new Date(body.expiresAt);
+          if (isNaN(date.getTime())) {
+            return Response.json({ error: 'Invalid expiration date format' }, { status: 400, headers: corsHeaders });
+          }
+          expiresAt = Math.floor(date.getTime() / 1000);
+        }
+
+        // Create delegate (no secret yet - secrets are created separately)
+        await env.DB.prepare(`
+          INSERT INTO delegates 
+          (delegate_id, created_by_user_id, name,
+           can_read, can_write, can_system, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          delegateId, userId, body.name.trim(),
+          body.keyPermissions.can_read ? 1 : 0,
+          body.keyPermissions.can_write ? 1 : 0,
+          body.keyPermissions.can_system ? 1 : 0,
+          expiresAt
+        ).run();
+
+        // Return delegate (no secret - user must create one separately)
+        return Response.json({
+          delegate_id: delegateId,
+          name: body.name,
+          keyPermissions: body.keyPermissions,
+          expiresAt: body.expiresAt || null,
+          can_read: body.keyPermissions.can_read,
+          can_write: body.keyPermissions.can_write,
+          can_system: body.keyPermissions.can_system,
+          created_at: Math.floor(Date.now() / 1000)
+        }, { status: 201, headers: corsHeaders });
+      } catch (dbError) {
+        console.error('Database error creating delegate:', dbError);
+        console.error('Error type:', typeof dbError);
+        console.error('Error keys:', dbError instanceof Error ? Object.keys(dbError) : 'not an Error');
+        const errorMessage = dbError instanceof Error ? dbError.message : String(dbError);
+        const errorStack = dbError instanceof Error ? dbError.stack : undefined;
+        console.error('Error message:', errorMessage);
+        console.error('Error stack:', errorStack);
+
+        // Check if table doesn't exist
+        if (errorMessage.includes('no such table')) {
+          return Response.json(
+            { error: 'Database migration not applied. Please run: pnpm db:migrate:local' },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+
+        // Check if column doesn't exist (migration not applied)
+        if (errorMessage.includes('no such column')) {
+          return Response.json(
+            { error: 'Database schema outdated. Please run: pnpm db:migrate:local', details: errorMessage },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+
+        return Response.json(
+          { error: 'Failed to create delegate', details: errorMessage, stack: errorStack },
+          { status: 500, headers: corsHeaders }
+        );
+      }
+    }
+
+    // Create a new secret for a delegate
+    const delegateSecretCreateMatch = path.match(/^\/api\/delegates\/([\w-]+)\/secrets$/);
+    if (delegateSecretCreateMatch && request.method === 'POST') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot create secrets' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateSecretCreateMatch[1];
+
+      // Verify delegate belongs to user
+      const delegate = await env.DB.prepare(`
+        SELECT delegate_id FROM delegates WHERE delegate_id = ? AND created_by_user_id = ?
+      `).bind(delId, userId).first();
+
+      if (!delegate) {
+        return Response.json({ error: 'Delegate not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      const body = await request.json() as { name?: string };
+
+      try {
+        const secretId = `sec_${crypto.randomUUID().replace(/-/g, '')}`;
+        const delegateSecret = `sec_${generateSecureSecret(32)}`;
+        const secretHash = await hashSecret(delegateSecret);
+
+        // Create secret in delegate_secrets table
+        await env.DB.prepare(`
+          INSERT INTO delegate_secrets 
+          (secret_id, delegate_id, secret_hash, name, created_by_user_id)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(secretId, delId, secretHash, body.name?.trim() || null, userId).run();
+
+        // Return secret ONCE - never stored/shown again
+        return Response.json({
+          secret_id: secretId,
+          delegate_id: delId,
+          delegateSecret, // ⚠️ Only shown once - copy it now!
+          name: body.name || null,
+          warning: 'This secret will never be displayed again. Copy it now.'
+        }, { status: 201, headers: corsHeaders });
+      } catch (dbError) {
+        console.error('Database error creating secret:', dbError);
+        const errorMessage = dbError instanceof Error ? dbError.message : String(dbError);
+        console.error('Error details:', errorMessage);
+
+        // Check if table doesn't exist
+        if (errorMessage.includes('no such table') || errorMessage.includes('delegate_secrets')) {
+          return Response.json(
+            { error: 'Database migration not applied. Please run: pnpm db:migrate:local', details: errorMessage },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+
+        // Check if column doesn't exist
+        if (errorMessage.includes('no such column')) {
+          return Response.json(
+            { error: 'Database schema outdated. Please run: pnpm db:migrate:local', details: errorMessage },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+
+        return Response.json(
+          { error: 'Failed to create secret', details: errorMessage },
+          { status: 500, headers: corsHeaders }
+        );
+      }
+    }
+
+    // List secrets for a delegate
+    if (delegateSecretCreateMatch && request.method === 'GET') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot list secrets' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateSecretCreateMatch[1];
+
+      // Verify delegate belongs to user
+      const delegate = await env.DB.prepare(`
+        SELECT delegate_id FROM delegates WHERE delegate_id = ? AND created_by_user_id = ?
+      `).bind(delId, userId).first();
+
+      if (!delegate) {
+        return Response.json({ error: 'Delegate not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      const secrets = await env.DB.prepare(`
+        SELECT secret_id, name, created_at, last_used_at, revoked_at
+        FROM delegate_secrets
+        WHERE delegate_id = ?
+        ORDER BY created_at DESC
+      `).bind(delId).all();
+
+      return Response.json({ secrets: secrets.results }, { headers: corsHeaders });
+    }
+
+    // Revoke a secret
+    const delegateSecretRevokeMatch = path.match(/^\/api\/delegates\/([\w-]+)\/secrets\/([\w-]+)$/);
+    if (delegateSecretRevokeMatch && request.method === 'DELETE') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot revoke secrets' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateSecretRevokeMatch[1];
+      const secretId = delegateSecretRevokeMatch[2];
+
+      // Verify delegate belongs to user and secret belongs to delegate
+      const secret = await env.DB.prepare(`
+        SELECT ds.secret_id
+        FROM delegate_secrets ds
+        JOIN delegates d ON d.delegate_id = ds.delegate_id
+        WHERE ds.secret_id = ? AND ds.delegate_id = ? AND d.created_by_user_id = ?
+      `).bind(secretId, delId, userId).first();
+
+      if (!secret) {
+        return Response.json({ error: 'Secret not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      // Revoke the secret (set revoked_at timestamp)
+      await env.DB.prepare(`
+        UPDATE delegate_secrets
+        SET revoked_at = unixepoch()
+        WHERE secret_id = ?
+      `).bind(secretId).run();
+
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // Delete delegate
+    const delegateDeleteMatch = path.match(/^\/api\/delegates\/([\w-]+)$/);
+    if (delegateDeleteMatch && request.method === 'DELETE') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot delete delegates' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateDeleteMatch[1];
+      await env.DB.prepare(`
+        DELETE FROM delegates WHERE delegate_id = ? AND created_by_user_id = ?
+      `).bind(delId, userId).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // Grant delegate access to instance
+    const delegateGrantMatch = path.match(/^\/api\/delegates\/([\w-]+)\/grants$/);
+    if (delegateGrantMatch && request.method === 'POST') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot grant access' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateGrantMatch[1];
+      const body = await request.json() as {
+        instanceId: string;
+        permission: 'read' | 'write' | 'system';
+      };
+
+      if (!body.instanceId || !body.permission) {
+        return Response.json({ error: 'instanceId and permission required' }, { status: 400, headers: corsHeaders });
+      }
+
+      // Map instanceId to DO ID
+      const doId = env.MINDCACHE_INSTANCE.idFromName(body.instanceId).toString();
+
+      // Check if user owns the instance (for legacy instances without do_ownership)
+      const instance = await env.DB.prepare(`
+        SELECT owner_id FROM instances WHERE id = ?
+      `).bind(body.instanceId).first<{ owner_id: string }>();
+
+      if (!instance) {
+        return Response.json({ error: 'Instance not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      // If user owns instance but DO ownership doesn't exist, create it
+      if (instance.owner_id === userId) {
+        // Ensure DO ownership exists (for legacy instances)
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO do_ownership (do_id, owner_user_id)
+          VALUES (?, ?)
+        `).bind(doId, userId).run();
+
+        // Ensure user has system permission (for legacy instances)
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO do_permissions 
+          (do_id, actor_id, actor_type, permission, granted_by_user_id)
+          VALUES (?, ?, 'user', 'system', ?)
+        `).bind(doId, userId, userId).run();
+      }
+
+      try {
+        await grantDelegateAccess(userId, delId, doId, body.permission, env.DB);
+        return Response.json({ success: true }, { headers: corsHeaders });
+      } catch (error) {
+        return Response.json(
+          { error: error instanceof Error ? error.message : 'Failed to grant access' },
+          { status: 403, headers: corsHeaders }
+        );
+      }
+    }
+
+    // Revoke delegate access
+    const delegateRevokeMatch = path.match(/^\/api\/delegates\/([\w-]+)\/grants\/([\w-]+)$/);
+    if (delegateRevokeMatch && request.method === 'DELETE') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot revoke access' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateRevokeMatch[1];
+      const instanceId = delegateRevokeMatch[2];
+
+      // Map instanceId to DO ID
+      const doId = env.MINDCACHE_INSTANCE.idFromName(instanceId).toString();
+
+      try {
+        await revokeAccess(userId, delId, 'delegate', doId, env.DB);
+        return Response.json({ success: true }, { headers: corsHeaders });
+      } catch (error) {
+        return Response.json(
+          { error: error instanceof Error ? error.message : 'Failed to revoke access' },
+          { status: 403, headers: corsHeaders }
+        );
+      }
+    }
+
+    // List grants for a delegate
+    const delegateGrantsMatch = path.match(/^\/api\/delegates\/([\w-]+)\/grants$/);
+    if (delegateGrantsMatch && request.method === 'GET') {
+      if (actorType === 'delegate') {
+        return Response.json({ error: 'Delegates cannot list grants' }, { status: 403, headers: corsHeaders });
+      }
+      const delId = delegateGrantsMatch[1];
+
+      // Verify delegate belongs to user
+      const delegate = await env.DB.prepare(`
+        SELECT delegate_id FROM delegates WHERE delegate_id = ? AND created_by_user_id = ?
+      `).bind(delId, userId).first();
+
+      if (!delegate) {
+        return Response.json({ error: 'Delegate not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      const { results } = await env.DB.prepare(`
+        SELECT do_id, permission, granted_at, expires_at
+        FROM do_permissions
+        WHERE actor_id = ? AND actor_type = 'delegate'
+        ORDER BY granted_at DESC
+      `).bind(delId).all<{
+        do_id: string;
+        permission: string;
+        granted_at: number;
+        expires_at: number | null;
+      }>();
+
+      // Map do_id back to instance_id by checking all instances
+      const grantsWithInstanceId = [];
+      const allInstances = await env.DB.prepare(`
+        SELECT id FROM instances
+      `).all<{ id: string }>();
+
+      for (const grant of results) {
+        // Find instance_id that maps to this do_id
+        let instanceId: string | null = null;
+        for (const instance of allInstances.results || []) {
+          const computedDoId = env.MINDCACHE_INSTANCE.idFromName(instance.id).toString();
+          if (computedDoId === grant.do_id) {
+            instanceId = instance.id;
+            break;
+          }
+        }
+        grantsWithInstanceId.push({
+          ...grant,
+          instance_id: instanceId || grant.do_id // Fallback to do_id if not found
+        });
+      }
+
+      return Response.json({ grants: grantsWithInstanceId }, { headers: corsHeaders });
     }
 
     return Response.json({ error: 'Not found' }, { status: 404, headers: corsHeaders });

@@ -316,8 +316,9 @@ export async function handleChatRequest(
       model: openai(model),
       system: systemPrompt,
       messages: modelMessages,
-      tools,
-      maxSteps: 10 // Allow multi-step tool calls
+      tools
+      // Note: maxSteps not available in this AI SDK version
+      // Multi-step tool calls are supported by default
     });
 
     // Return streaming response in UI message format for @ai-sdk/react

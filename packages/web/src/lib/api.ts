@@ -126,7 +126,117 @@ export async function deleteShare(token: string, shareId: string): Promise<void>
   await fetchApi(`/api/shares/${shareId}`, token, { method: 'DELETE' });
 }
 
-// ============= API KEYS =============
+// ============= DELEGATES =============
+
+interface Delegate {
+  delegate_id: string;
+  name: string;
+  can_read: boolean;
+  can_write: boolean;
+  can_system: boolean;
+  created_at: number;
+  expires_at?: number;
+}
+
+interface DelegateSecret {
+  secret_id: string;
+  name: string | null;
+  created_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
+  delegateSecret?: string; // Only returned when creating secret (one-time)
+}
+
+interface DelegateGrant {
+  do_id: string;
+  instance_id?: string; // Added by backend for easier mapping
+  permission: 'read' | 'write' | 'system';
+  granted_at: number;
+  expires_at?: number;
+}
+
+export async function listDelegates(token: string): Promise<Delegate[]> {
+  const data = await fetchApi<{ delegates: Delegate[] }>('/api/delegates', token);
+  return data.delegates;
+}
+
+export async function createDelegate(
+  token: string,
+  delegate: {
+    name: string;
+    keyPermissions: {
+      can_read: boolean;
+      can_write: boolean;
+      can_system: boolean;
+    };
+    expiresAt?: string;
+  }
+): Promise<Delegate> {
+  return fetchApi<Delegate>('/api/delegates', token, {
+    method: 'POST',
+    body: JSON.stringify(delegate)
+  });
+}
+
+export async function deleteDelegate(token: string, delegateId: string): Promise<void> {
+  await fetchApi(`/api/delegates/${delegateId}`, token, { method: 'DELETE' });
+}
+
+export async function createDelegateSecret(
+  token: string,
+  delegateId: string,
+  name?: string
+): Promise<{ secret_id: string; delegate_id: string; delegateSecret: string; name: string | null; warning: string }> {
+  return fetchApi<{ secret_id: string; delegate_id: string; delegateSecret: string; name: string | null; warning: string }>(
+    `/api/delegates/${delegateId}/secrets`,
+    token,
+    { method: 'POST', body: JSON.stringify({ name }) }
+  );
+}
+
+export async function listDelegateSecrets(token: string, delegateId: string): Promise<DelegateSecret[]> {
+  const data = await fetchApi<{ secrets: DelegateSecret[] }>(
+    `/api/delegates/${delegateId}/secrets`,
+    token
+  );
+  return data.secrets;
+}
+
+export async function revokeDelegateSecret(token: string, delegateId: string, secretId: string): Promise<void> {
+  await fetchApi(`/api/delegates/${delegateId}/secrets/${secretId}`, token, { method: 'DELETE' });
+}
+
+export async function listDelegateGrants(token: string, delegateId: string): Promise<DelegateGrant[]> {
+  const data = await fetchApi<{ grants: DelegateGrant[] }>(
+    `/api/delegates/${delegateId}/grants`,
+    token
+  );
+  return data.grants;
+}
+
+export async function grantDelegateAccess(
+  token: string,
+  delegateId: string,
+  instanceId: string,
+  permission: 'read' | 'write' | 'system'
+): Promise<void> {
+  await fetchApi(`/api/delegates/${delegateId}/grants`, token, {
+    method: 'POST',
+    body: JSON.stringify({ instanceId, permission })
+  });
+}
+
+export async function revokeDelegateAccess(
+  token: string,
+  delegateId: string,
+  instanceId: string
+): Promise<void> {
+  await fetchApi(`/api/delegates/${delegateId}/grants/${instanceId}`, token, {
+    method: 'DELETE'
+  });
+}
+
+// ============= API KEYS (Legacy - kept for backward compatibility) =============
 
 interface ApiKey {
   id: string;
@@ -159,5 +269,5 @@ export async function deleteApiKey(token: string, keyId: string): Promise<void> 
   await fetchApi(`/api/keys/${keyId}`, token, { method: 'DELETE' });
 }
 
-export type { Project, Instance, Share, ApiKey };
+export type { Project, Instance, Share, ApiKey, Delegate, DelegateSecret, DelegateGrant };
 
