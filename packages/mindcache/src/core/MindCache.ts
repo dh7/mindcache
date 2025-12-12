@@ -1449,6 +1449,7 @@ export class MindCache {
       lines.push(`- **Readonly**: \`${entry.attributes.readonly}\``);
       lines.push(`- **Visible**: \`${entry.attributes.visible}\``);
       lines.push(`- **Template**: \`${entry.attributes.template}\``);
+      lines.push(`- **Z-Index**: \`${entry.attributes.zIndex ?? 0}\``);
 
       if (entry.attributes.tags && entry.attributes.tags.length > 0) {
         lines.push(`- **Tags**: \`${entry.attributes.tags.join('`, `')}\``);
@@ -1605,6 +1606,14 @@ export class MindCache {
           const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
           if (currentEntry) {
             currentEntry.attributes!.template = value;
+          }
+        } else if (trimmed.startsWith('- **Z-Index**: `')) {
+          const zIndexStr = trimmed.match(/`([^`]+)`/)?.[1];
+          if (currentEntry && zIndexStr) {
+            const zIndex = parseInt(zIndexStr, 10);
+            if (!isNaN(zIndex)) {
+              currentEntry.attributes!.zIndex = zIndex;
+            }
           }
         } else if (trimmed.startsWith('- **Tags**: `')) {
           const tagsStr = trimmed.substring(13, trimmed.length - 1);
