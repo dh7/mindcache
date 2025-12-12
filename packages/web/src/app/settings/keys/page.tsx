@@ -553,7 +553,7 @@ function GrantAccessModal({
   onGrant: (delegateId: string, instanceId: string, permission: 'read' | 'write' | 'system') => Promise<void>;
   getToken: () => Promise<string | null>;
 }) {
-  // getToken is kept for potential future use
+  // getToken parameter kept for API consistency but not currently used
   void getToken;
   const [selectedInstanceId, setSelectedInstanceId] = useState('');
   // Set initial permission based on delegate capabilities (prefer highest available)
