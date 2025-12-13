@@ -304,6 +304,7 @@ export class MindCache {
         type: 'text',
         contentTags: [],
         systemTags: ['prompt', 'readonly', 'protected'],
+        zIndex: 999999, // System keys appear last
         // Legacy attributes
         readonly: true,
         visible: true,
@@ -330,13 +331,15 @@ export class MindCache {
         ...existingEntry.attributes,
         contentTags: [...(existingEntry.attributes.contentTags || [])],
         systemTags: [...(existingEntry.attributes.systemTags || [])] as SystemTag[],
-        tags: [...(existingEntry.attributes.tags || [])]
+        tags: [...(existingEntry.attributes.tags || [])],
+        zIndex: existingEntry.attributes.zIndex ?? 0
       }
       : {
         ...DEFAULT_KEY_ATTRIBUTES,
         contentTags: [],  // Fresh array
         systemTags: ['prompt'] as SystemTag[],  // Fresh array with default
-        tags: []  // Fresh array
+        tags: [],  // Fresh array
+        zIndex: 0
       };
 
     const finalAttributes = attributes ? { ...baseAttributes, ...attributes } : baseAttributes;
@@ -444,6 +447,7 @@ export class MindCache {
         ...attributes,
         contentTags,
         systemTags,
+        zIndex: attributes.zIndex ?? 0,
         tags: contentTags,
         readonly: systemTags.includes('readonly'),
         visible: systemTags.includes('prompt'),
@@ -652,13 +656,30 @@ export class MindCache {
     this.notifyGlobalListeners();
   }
 
+  /**
+   * Get keys sorted by zIndex (ascending), then by key name
+   */
+  private getSortedKeys(): string[] {
+    return Object.entries(this.stm)
+      .sort(([keyA, entryA], [keyB, entryB]) => {
+        const zIndexA = entryA.attributes.zIndex ?? 0;
+        const zIndexB = entryB.attributes.zIndex ?? 0;
+        if (zIndexA !== zIndexB) {
+          return zIndexA - zIndexB;
+        }
+        return keyA.localeCompare(keyB);
+      })
+      .map(([key]) => key);
+  }
+
   keys(): string[] {
-    return [...Object.keys(this.stm), '$date', '$time'];
+    return [...this.getSortedKeys(), '$date', '$time'];
   }
 
   values(): any[] {
     const now = new Date();
-    const stmValues = Object.values(this.stm).map(entry => entry.value);
+    const sortedKeys = this.getSortedKeys();
+    const stmValues = sortedKeys.map(key => this.stm[key].value);
     return [
       ...stmValues,
       now.toISOString().split('T')[0],
@@ -668,8 +689,9 @@ export class MindCache {
 
   entries(): [string, any][] {
     const now = new Date();
-    const stmEntries = Object.entries(this.stm).map(([key, entry]) =>
-      [key, entry.value] as [string, any]
+    const sortedKeys = this.getSortedKeys();
+    const stmEntries = sortedKeys.map(key =>
+      [key, this.stm[key].value] as [string, any]
     );
     return [
       ...stmEntries,
@@ -686,8 +708,9 @@ export class MindCache {
     const now = new Date();
     const result: Record<string, any> = {};
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
-      result[key] = entry.value;
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      result[key] = this.stm[key].value;
     });
 
     result['$date'] = now.toISOString().split('T')[0];
@@ -792,7 +815,9 @@ export class MindCache {
     const now = new Date();
     const entries: Array<[string, any]> = [];
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (entry.attributes.visible) {
         entries.push([key, this.get_value(key)]);
       }
@@ -814,7 +839,9 @@ export class MindCache {
     const now = new Date();
     const apiData: Array<{key: string, value: any, type: string, contentType?: string}> = [];
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (entry.attributes.visible) {
         const processedValue = entry.attributes.template ? this.get_value(key) : entry.value;
 
@@ -845,7 +872,9 @@ export class MindCache {
   getVisibleImages(): Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> {
     const imageParts: Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> = [];
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (entry.attributes.visible && entry.attributes.type === 'image' && entry.attributes.contentType) {
         const dataUrl = this.createDataUrl(entry.value as string, entry.attributes.contentType);
         imageParts.push({
@@ -876,7 +905,9 @@ export class MindCache {
   serialize(): Record<string, STMEntry> {
     const result: Record<string, STMEntry> = {};
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (!entry.attributes.hardcoded) {
         result[key] = {
           value: entry.value,
@@ -923,6 +954,7 @@ export class MindCache {
               ...attrs,
               contentTags,
               systemTags,
+              zIndex: attrs.zIndex ?? 0,
               // Sync legacy attributes
               tags: contentTags,
               readonly: systemTags.includes('readonly'),
@@ -942,7 +974,9 @@ export class MindCache {
     const now = new Date();
     const promptLines: string[] = [];
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (entry.attributes.visible) {
         if (entry.attributes.type === 'image') {
           promptLines.push(`image ${key} available`);
@@ -988,8 +1022,8 @@ export class MindCache {
     }
 
     const sanitizedKey = toolName.replace('write_', '');
-    const allKeys = Object.keys(this.stm);
-    return allKeys.find(k =>
+    const sortedKeys = this.getSortedKeys();
+    return sortedKeys.find(k =>
       k.replace(/[^a-zA-Z0-9_-]/g, '_') === sanitizedKey
     );
   }
@@ -997,9 +1031,11 @@ export class MindCache {
   get_aisdk_tools(): Record<string, any> {
     const tools: Record<string, any> = {};
 
-    const writableKeys = Object.entries(this.stm)
-      .filter(([, entry]) => !entry.attributes.readonly)
-      .map(([key]) => key);
+    const sortedKeys = this.getSortedKeys();
+    const writableKeys = sortedKeys.filter(key => {
+      const entry = this.stm[key];
+      return !entry.attributes.readonly;
+    });
 
     writableKeys.forEach(key => {
       const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1201,7 +1237,9 @@ export class MindCache {
   getTagged(tag: string): string {
     const entries: Array<[string, any]> = [];
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (entry.attributes.contentTags?.includes(tag)) {
         entries.push([key, this.get_value(key)]);
       }
@@ -1216,9 +1254,11 @@ export class MindCache {
    * Get all keys with a specific content tag
    */
   getKeysByTag(tag: string): string[] {
-    return Object.entries(this.stm)
-      .filter(([, entry]) => entry.attributes.contentTags?.includes(tag))
-      .map(([key]) => key);
+    const sortedKeys = this.getSortedKeys();
+    return sortedKeys.filter(key => {
+      const entry = this.stm[key];
+      return entry.attributes.contentTags?.includes(tag);
+    });
   }
 
   // ============================================
@@ -1357,9 +1397,11 @@ export class MindCache {
       return [];
     }
 
-    return Object.entries(this.stm)
-      .filter(([, entry]) => entry.attributes.systemTags?.includes(tag))
-      .map(([key]) => key);
+    const sortedKeys = this.getSortedKeys();
+    return sortedKeys.filter(key => {
+      const entry = this.stm[key];
+      return entry.attributes.systemTags?.includes(tag);
+    });
   }
 
   /**
@@ -1394,7 +1436,9 @@ export class MindCache {
     lines.push('## STM Entries');
     lines.push('');
 
-    Object.entries(this.stm).forEach(([key, entry]) => {
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entry = this.stm[key];
       if (entry.attributes.hardcoded) {
         return;
       }
@@ -1405,6 +1449,7 @@ export class MindCache {
       lines.push(`- **Readonly**: \`${entry.attributes.readonly}\``);
       lines.push(`- **Visible**: \`${entry.attributes.visible}\``);
       lines.push(`- **Template**: \`${entry.attributes.template}\``);
+      lines.push(`- **Z-Index**: \`${entry.attributes.zIndex ?? 0}\``);
 
       if (entry.attributes.tags && entry.attributes.tags.length > 0) {
         lines.push(`- **Tags**: \`${entry.attributes.tags.join('`, `')}\``);
@@ -1536,14 +1581,9 @@ export class MindCache {
           currentEntry = {
             value: undefined,
             attributes: {
-              type: 'text',
+              ...DEFAULT_KEY_ATTRIBUTES,
               contentTags: [],
-              systemTags: ['prompt'], // visible by default
-              // Legacy attributes
-              readonly: false,
-              visible: true,
-              hardcoded: false,
-              template: false,
+              systemTags: ['prompt'] as SystemTag[],
               tags: []
             }
           };
@@ -1566,6 +1606,14 @@ export class MindCache {
           const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
           if (currentEntry) {
             currentEntry.attributes!.template = value;
+          }
+        } else if (trimmed.startsWith('- **Z-Index**: `')) {
+          const zIndexStr = trimmed.match(/`([^`]+)`/)?.[1];
+          if (currentEntry && zIndexStr) {
+            const zIndex = parseInt(zIndexStr, 10);
+            if (!isNaN(zIndex)) {
+              currentEntry.attributes!.zIndex = zIndex;
+            }
           }
         } else if (trimmed.startsWith('- **Tags**: `')) {
           const tagsStr = trimmed.substring(13, trimmed.length - 1);

@@ -53,9 +53,17 @@ export class MindCacheInstanceDO implements DurableObject {
         hardcoded INTEGER NOT NULL DEFAULT 0,
         template INTEGER NOT NULL DEFAULT 0,
         tags TEXT,
+        z_index INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       )
     `);
+
+    // Add z_index column if it doesn't exist (migration for existing databases)
+    try {
+      this.sql.exec('ALTER TABLE keys ADD COLUMN z_index INTEGER NOT NULL DEFAULT 0');
+    } catch {
+      // Column already exists, ignore
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -85,8 +93,8 @@ export class MindCacheInstanceDO implements DurableObject {
 
       const now = Date.now();
       this.sql.exec(`
-        INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, z_index, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       body.key,
       JSON.stringify(body.value),
@@ -97,6 +105,7 @@ export class MindCacheInstanceDO implements DurableObject {
       body.attributes.hardcoded ? 1 : 0,
       body.attributes.template ? 1 : 0,
       body.attributes.tags ? JSON.stringify(body.attributes.tags) : null,
+      body.attributes.zIndex ?? 0,
       now
       );
 
@@ -280,8 +289,8 @@ export class MindCacheInstanceDO implements DurableObject {
 
     // Store in SQLite
     this.sql.exec(`
-      INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, z_index, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     key,
     JSON.stringify(value),
@@ -292,6 +301,7 @@ export class MindCacheInstanceDO implements DurableObject {
     attributes.hardcoded ? 1 : 0,
     attributes.template ? 1 : 0,
     attributes.tags ? JSON.stringify(attributes.tags) : null,
+    attributes.zIndex ?? 0,
     now
     );
 
@@ -352,7 +362,7 @@ export class MindCacheInstanceDO implements DurableObject {
   private getAllKeys(): Record<string, KeyEntry> {
     const result: Record<string, KeyEntry> = {};
 
-    const cursor = this.sql.exec('SELECT * FROM keys');
+    const cursor = this.sql.exec('SELECT * FROM keys ORDER BY z_index ASC, name ASC');
 
     for (const row of cursor) {
       const name = row.name as string;
@@ -365,7 +375,8 @@ export class MindCacheInstanceDO implements DurableObject {
           visible: Boolean(row.visible),
           hardcoded: Boolean(row.hardcoded),
           template: Boolean(row.template),
-          tags: row.tags ? JSON.parse(row.tags as string) : []
+          tags: row.tags ? JSON.parse(row.tags as string) : [],
+          zIndex: row.z_index !== undefined ? (row.z_index as number) : 0
         },
         updatedAt: row.updated_at as number
       };

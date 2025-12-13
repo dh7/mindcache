@@ -507,7 +507,8 @@ describe('MindCache Tag System', () => {
             visible: true,
             hardcoded: false,
             template: false,
-            tags: ['person', 'admin']
+            tags: ['person', 'admin'],
+            zIndex: 0
           }
         }
       };

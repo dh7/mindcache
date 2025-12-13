@@ -26,6 +26,8 @@ export interface KeyAttributes {
   contentTags: string[];
   /** System tags that control key behavior (requires system access) */
   systemTags: SystemTag[];
+  /** Z-index for ordering keys (lower values appear first) */
+  zIndex: number;
 
   // Legacy attributes - kept for backward compatibility, derived from systemTags
   /** @deprecated Use systemTags.includes('readonly') instead */
@@ -74,6 +76,7 @@ export const DEFAULT_KEY_ATTRIBUTES: KeyAttributes = {
   type: 'text',
   contentTags: [],
   systemTags: ['prompt'], // visible by default
+  zIndex: 0,
   // Legacy - derived from systemTags
   readonly: false,
   visible: true,
