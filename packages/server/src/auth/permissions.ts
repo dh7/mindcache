@@ -85,7 +85,7 @@ export async function checkUserPermission(
   requiredPermission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<boolean> {
-  // Check ownership (owners have system permission)
+  // Check ownership (owners have admin permission)
   const ownership = await db.prepare(`
     SELECT owner_user_id FROM do_ownership WHERE do_id = ?
   `).bind(doId).first<{ owner_user_id: string }>();
@@ -111,7 +111,7 @@ export async function checkUserPermission(
     }
 
     // Permission hierarchy
-    const hierarchy = { read: 1, write: 2, system: 3 };
+    const hierarchy = { read: 1, write: 2, admin: 3 };
     const grantedLevel = hierarchy[grant.permission as keyof typeof hierarchy] || 0;
     const requiredLevel = hierarchy[requiredPermission];
 
@@ -145,7 +145,7 @@ export async function grantDelegateAccess(
   permission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<void> {
-  // Verify granting user has system permission on DO
+  // Verify granting user has admin permission on DO
   const canGrant = await checkUserPermission(grantingUserId, doId, 'admin', db);
   if (!canGrant) {
     throw new Error('Insufficient permissions to grant access');
@@ -160,9 +160,9 @@ export async function grantDelegateAccess(
     throw new Error('Delegate not found');
   }
 
-  // Permission hierarchy: read < write < system
+  // Permission hierarchy: read < write < admin
   // Remove conflicting lower permissions when granting higher ones
-  const hierarchy = { read: 1, write: 2, system: 3 };
+  const hierarchy = { read: 1, write: 2, admin: 3 };
   const newLevel = hierarchy[permission];
 
   // Get existing grants for this delegate on this DO
@@ -206,7 +206,7 @@ export async function grantUserAccess(
   permission: 'read' | 'write' | 'admin',
   db: D1Database
 ): Promise<void> {
-  // Verify granting user has system permission on DO
+  // Verify granting user has admin permission on DO
   const canGrant = await checkUserPermission(grantingUserId, doId, 'admin', db);
   if (!canGrant) {
     throw new Error('Insufficient permissions to grant access');
@@ -232,8 +232,8 @@ export async function revokeAccess(
   doId: string,
   db: D1Database
 ): Promise<void> {
-  // Verify revoking user has system permission on DO
-  const canRevoke = await checkUserPermission(revokingUserId, doId, 'system', db);
+  // Verify revoking user has admin permission on DO
+  const canRevoke = await checkUserPermission(revokingUserId, doId, 'admin', db);
   if (!canRevoke) {
     throw new Error('Insufficient permissions to revoke access');
   }
