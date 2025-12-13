@@ -162,6 +162,57 @@ describe('MindCache Key Properties', () => {
       const updatedAttributes = cache.get_attributes('hardcoded_key');
       expect(updatedAttributes?.template).toBe(false); // Should remain false
     });
+
+    test('hardcoded keys always remain hardcoded via set_value', () => {
+      cache.set_value('hardcoded_key', 'value1', { hardcoded: true });
+      
+      // Try to make it non-hardcoded
+      cache.set_value('hardcoded_key', 'value2', { hardcoded: false });
+      
+      const attrs = cache.get_attributes('hardcoded_key');
+      expect(attrs?.hardcoded).toBe(true); // Should remain hardcoded
+      expect(attrs?.systemTags).toContain('protected'); // Should have protected tag
+      expect(cache.get_value('hardcoded_key')).toBe('value2'); // Value should update
+    });
+
+    test('hardcoded keys always remain hardcoded via set_attributes', () => {
+      cache.set_value('hardcoded_key', 'value', { hardcoded: true });
+      
+      // Try various ways to remove hardcoded status
+      cache.set_attributes('hardcoded_key', { hardcoded: false });
+      let attrs = cache.get_attributes('hardcoded_key');
+      expect(attrs?.hardcoded).toBe(true);
+      expect(attrs?.systemTags).toContain('protected');
+      
+      // Try removing protected tag via systemRemoveTag (requires system access)
+      const systemCache = new MindCache({ accessLevel: 'system' });
+      systemCache.set_value('hardcoded_key', 'value', { hardcoded: true });
+      const removed = systemCache.systemRemoveTag('hardcoded_key', 'protected');
+      expect(removed).toBe(false); // Should fail - cannot remove protected from hardcoded keys
+      attrs = systemCache.get_attributes('hardcoded_key');
+      expect(attrs?.hardcoded).toBe(true);
+      expect(attrs?.systemTags).toContain('protected');
+    });
+
+    test('hardcoded keys preserve protected tag after attribute changes', () => {
+      cache.set_value('hardcoded_key', 'value', { hardcoded: true });
+      
+      // Change various attributes
+      cache.set_attributes('hardcoded_key', { visible: false });
+      let attrs = cache.get_attributes('hardcoded_key');
+      expect(attrs?.hardcoded).toBe(true);
+      expect(attrs?.systemTags).toContain('protected');
+      
+      cache.set_attributes('hardcoded_key', { contentTags: ['test'] });
+      attrs = cache.get_attributes('hardcoded_key');
+      expect(attrs?.hardcoded).toBe(true);
+      expect(attrs?.systemTags).toContain('protected');
+      
+      cache.set_attributes('hardcoded_key', { zIndex: 100 });
+      attrs = cache.get_attributes('hardcoded_key');
+      expect(attrs?.hardcoded).toBe(true);
+      expect(attrs?.systemTags).toContain('protected');
+    });
   });
 
   describe('Readonly Property', () => {

@@ -51,6 +51,64 @@ describe('MindCache Complete Serialization', () => {
       expect(serialized).not.toHaveProperty('$time');
     });
 
+    test('should exclude hardcoded keys from deserialization', () => {
+      const testData = {
+        normal_key: {
+          value: 'normal_value',
+          attributes: {
+            readonly: false,
+            visible: true,
+            hardcoded: false,
+            template: false,
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['prompt'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: [],
+            zIndex: 0
+          }
+        },
+        hardcoded_key: {
+          value: 'hardcoded_value',
+          attributes: {
+            readonly: true,
+            visible: false,
+            hardcoded: true,
+            template: false,
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['protected'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: [],
+            zIndex: 0
+          }
+        },
+        protected_key: {
+          value: 'protected_value',
+          attributes: {
+            readonly: true,
+            visible: false,
+            hardcoded: false,
+            template: false,
+            type: 'text' as const,
+            contentTags: [],
+            systemTags: ['protected'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            tags: [],
+            zIndex: 0
+          }
+        }
+      };
+
+      cache.deserialize(testData);
+
+      // Normal key should be imported
+      expect(cache.get_value('normal_key')).toBe('normal_value');
+      
+      // Hardcoded keys should NOT be imported (checked via hardcoded flag)
+      expect(cache.has('hardcoded_key')).toBe(false);
+      
+      // Protected keys should NOT be imported (checked via systemTags)
+      expect(cache.has('protected_key')).toBe(false);
+    });
+
     test('should deserialize complete state correctly', () => {
       const testData = {
         user: {
@@ -280,6 +338,60 @@ describe('MindCache Complete Serialization', () => {
       expect(newCache.get_value('greeting')).toBe('Hi important!');
       expect(newCache.get_attributes('data')?.readonly).toBe(true);
       expect(newCache.get_attributes('greeting')?.template).toBe(true);
+    });
+
+    test('should exclude hardcoded keys from JSON deserialization', () => {
+      const jsonData = {
+        normal_key: {
+          value: 'normal_value',
+          attributes: {
+            readonly: false,
+            visible: true,
+            hardcoded: false,
+            template: false,
+            type: 'text',
+            contentTags: [],
+            systemTags: ['prompt'],
+            tags: []
+          }
+        },
+        hardcoded_key: {
+          value: 'hardcoded_value',
+          attributes: {
+            readonly: true,
+            visible: false,
+            hardcoded: true,
+            template: false,
+            type: 'text',
+            contentTags: [],
+            systemTags: ['protected'],
+            tags: []
+          }
+        },
+        protected_key: {
+          value: 'protected_value',
+          attributes: {
+            readonly: true,
+            visible: false,
+            hardcoded: false,
+            template: false,
+            type: 'text',
+            contentTags: [],
+            systemTags: ['protected'],
+            tags: []
+          }
+        }
+      };
+
+      const jsonString = JSON.stringify(jsonData);
+      cache.fromJSON(jsonString);
+
+      // Normal key should be imported
+      expect(cache.get_value('normal_key')).toBe('normal_value');
+      
+      // Hardcoded keys should NOT be imported
+      expect(cache.has('hardcoded_key')).toBe(false);
+      expect(cache.has('protected_key')).toBe(false);
     });
   });
 
