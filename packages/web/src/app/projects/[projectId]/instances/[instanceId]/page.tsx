@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Instance, KeyEntry, SyncData, Permission, API_URL, WS_URL } from './types';
-import { InstanceHeader, ActionButtons, TagFilter } from './components';
+import { InstanceHeader, ActionButtons, TagFilter, KeyPropertiesPanel, EditableKeyName } from './components';
 
 export default function InstanceEditorPage() {
   const params = useParams();
@@ -24,27 +24,19 @@ export default function InstanceEditorPage() {
   const [showAddKey, setShowAddKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
-  const [newKeyType, setNewKeyType] = useState<'text' | 'json'>('text');
+  const [newKeyType, setNewKeyType] = useState<'text' | 'json' | 'image' | 'file'>('text');
 
   // Track which keys have unsaved changes
   const [keyValues, setKeyValues] = useState<Record<string, string>>({});
+  // Track which key is currently being edited (has focus)
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  // Track keys with pending saves (debounced)
+  const [pendingSaves, setPendingSaves] = useState<Set<string>>(new Set());
+  // Track keys that were recently saved (for visual feedback)
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
 
-  // Attributes editor popup
-  const [editingAttributes, setEditingAttributes] = useState<string | null>(null);
-  const [editingKeyName, setEditingKeyName] = useState('');
-  const [attributesForm, setAttributesForm] = useState({
-    readonly: false,
-    visible: true,
-    hardcoded: false,
-    template: false,
-    type: 'text' as 'text' | 'image' | 'file' | 'json',
-    contentType: '',
-    tags: [] as string[],
-    zIndex: 0
-  });
-  const [newTagInput, setNewTagInput] = useState('');
-  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
-  const [zIndexInput, setZIndexInput] = useState<string>('0');
+  // Track which key's properties panel is expanded (inline, not popup)
+  const [expandedPropertiesKey, setExpandedPropertiesKey] = useState<string | null>(null);
 
   // Tag filtering
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -234,23 +226,28 @@ export default function InstanceEditorPage() {
     setShowAddKey(false);
   };
 
-  // Initialize keyValues when keys change from server
+  // Sync keyValues when keys change from server
+  // Only update values for keys that are NOT currently being edited
   useEffect(() => {
-    const newKeyValues: Record<string, string> = {};
-    for (const [key, entry] of Object.entries(keys)) {
-      if (!(key in keyValues)) {
+    setKeyValues(prev => {
+      const updated = { ...prev };
+      for (const [key, entry] of Object.entries(keys)) {
         if (entry.attributes.type === 'image' || entry.attributes.type === 'file') {
           // For images/files, don't set a text value
           continue;
         }
-        newKeyValues[key] = entry.attributes.type === 'json'
+        const serverValue = entry.attributes.type === 'json'
           ? JSON.stringify(entry.value, null, 2)
           : String(entry.value ?? '');
+
+        // Only update if this key is not currently being edited
+        // OR if it's a new key we don't have yet
+        if (key !== editingKey || !(key in prev)) {
+          updated[key] = serverValue;
+        }
       }
-    }
-    if (Object.keys(newKeyValues).length > 0) {
-      setKeyValues(prev => ({ ...prev, ...newKeyValues }));
-    }
+      return updated;
+    });
 
     // Update available tags
     const allTags = new Set<string>();
@@ -258,7 +255,7 @@ export default function InstanceEditorPage() {
       entry.attributes.tags?.forEach(tag => allTags.add(tag));
     });
     setAvailableTags(Array.from(allTags).sort());
-  }, [keys]);
+  }, [keys, editingKey]);
 
   const handleKeyValueChange = (key: string, newValue: string) => {
     setKeyValues(prev => ({ ...prev, [key]: newValue }));
@@ -268,10 +265,19 @@ export default function InstanceEditorPage() {
       clearTimeout(saveTimeoutRef.current[key]);
     }
 
-    // Debounce save - auto-save after 500ms of no typing
+    // Mark as pending save
+    setPendingSaves(prev => new Set(prev).add(key));
+    // Remove from saved keys
+    setSavedKeys(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+
+    // Debounce save - auto-save after 1000ms of no typing
     saveTimeoutRef.current[key] = setTimeout(() => {
       saveKeyValue(key, newValue);
-    }, 500);
+    }, 1000);
   };
 
   const saveKeyValue = (key: string, valueStr: string) => {
@@ -297,6 +303,32 @@ export default function InstanceEditorPage() {
       attributes: entry.attributes,
       timestamp: Date.now()
     });
+
+    // Remove from pending and mark as saved
+    setPendingSaves(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setSavedKeys(prev => new Set(prev).add(key));
+
+    // Clear the saved indicator after 2 seconds
+    setTimeout(() => {
+      setSavedKeys(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }, 2000);
+  };
+
+  // Manual save function
+  const handleManualSave = (key: string) => {
+    // Clear any pending debounce
+    if (saveTimeoutRef.current[key]) {
+      clearTimeout(saveTimeoutRef.current[key]);
+    }
+    saveKeyValue(key, keyValues[key] ?? '');
   };
 
   const handleDeleteKey = (key: string) => {
@@ -316,160 +348,73 @@ export default function InstanceEditorPage() {
     });
   };
 
-  const startEditingAttributes = (key: string) => {
+  // Clear a key's value
+  const handleClearValue = (key: string) => {
     const entry = keys[key];
     if (!entry) {
       return;
     }
 
-    const zIndex = entry.attributes.zIndex ?? 0;
-    setAttributesForm({
-      readonly: entry.attributes.readonly,
-      visible: entry.attributes.visible,
-      hardcoded: entry.attributes.hardcoded,
-      template: entry.attributes.template,
-      type: entry.attributes.type,
-      contentType: entry.attributes.contentType || '',
-      tags: entry.attributes.tags || [],
-      zIndex: zIndex
+    // Update local state
+    setKeyValues(prev => ({ ...prev, [key]: '' }));
+
+    // Send to server
+    sendMessage({
+      type: 'set',
+      key,
+      value: '',
+      attributes: entry.attributes,
+      timestamp: Date.now()
     });
-    setZIndexInput(String(zIndex));
-    setEditingAttributes(key);
-    setEditingKeyName(key);
-    setNewTagInput('');
   };
 
-  const saveAttributes = () => {
-    if (!editingAttributes) {
+  // Toggle the properties panel for a key
+  const togglePropertiesPanel = (key: string) => {
+    setExpandedPropertiesKey(prev => prev === key ? null : key);
+  };
+
+  // Save attributes from the inline KeyPropertiesPanel component
+  const handleSaveAttributes = (oldKey: string, newKeyName: string, attributes: KeyEntry['attributes']) => {
+    const currentEntry = keys[oldKey];
+    if (!currentEntry) {
       return;
     }
 
-    const oldKey = editingAttributes;
-    const newKey = editingKeyName.trim();
-
-    // Parse z-index from input string (must be integer)
-    const zIndexValue = parseInt(zIndexInput, 10);
-    const finalZIndex = isNaN(zIndexValue) ? 0 : zIndexValue;
-
-    const finalTags = [...attributesForm.tags];
-    const pendingTag = newTagInput.trim();
-    if (pendingTag && !finalTags.includes(pendingTag)) {
-      finalTags.push(pendingTag);
-    }
-
-    if (newKey && newKey !== oldKey) {
-      if (keys[newKey] || newKey.startsWith('$')) {
-        alert(`Key "${newKey}" already exists or is a system key`);
+    if (newKeyName && newKeyName !== oldKey) {
+      // Key is being renamed
+      if (keys[newKeyName] || newKeyName.startsWith('$')) {
+        alert(`Key "${newKeyName}" already exists or is a system key`);
         return;
       }
 
-      const currentEntry = keys[oldKey];
-      if (!currentEntry) {
-        return;
-      }
-
+      // Create new key with updated attributes
       sendMessage({
         type: 'set',
-        key: newKey,
+        key: newKeyName,
         value: currentEntry.value,
-        attributes: {
-          ...attributesForm,
-          tags: finalTags,
-          zIndex: finalZIndex
-        },
+        attributes,
         timestamp: Date.now()
       });
 
+      // Delete old key
       sendMessage({
         type: 'delete',
         key: oldKey,
         timestamp: Date.now()
       });
-    } else {
-      const currentEntry = keys[oldKey];
-      if (!currentEntry) {
-        return;
-      }
 
+      // Update expanded key to new name
+      setExpandedPropertiesKey(newKeyName);
+    } else {
+      // Just update attributes
       sendMessage({
         type: 'set',
         key: oldKey,
         value: currentEntry.value,
-        attributes: {
-          ...attributesForm,
-          tags: finalTags,
-          zIndex: finalZIndex
-        },
+        attributes,
         timestamp: Date.now()
       });
     }
-
-    setEditingAttributes(null);
-    setEditingKeyName('');
-    setNewTagInput('');
-    setTagSuggestions([]);
-    setZIndexInput('0');
-  };
-
-  const cancelAttributes = () => {
-    setEditingAttributes(null);
-    setEditingKeyName('');
-    setNewTagInput('');
-    setTagSuggestions([]);
-    setZIndexInput('0');
-  };
-
-  const addTag = (tag: string) => {
-    const trimmedTag = tag.trim();
-    if (trimmedTag && !attributesForm.tags.includes(trimmedTag)) {
-      setAttributesForm({
-        ...attributesForm,
-        tags: [...attributesForm.tags, trimmedTag]
-      });
-    }
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    setAttributesForm({
-      ...attributesForm,
-      tags: attributesForm.tags.filter(tag => tag !== tagToRemove)
-    });
-  };
-
-  const handleTagInputChange = (value: string) => {
-    setNewTagInput(value);
-
-    if (value.trim()) {
-      const filtered = availableTags.filter(tag =>
-        tag.toLowerCase().includes(value.toLowerCase()) &&
-        !attributesForm.tags.includes(tag)
-      );
-      setTagSuggestions(filtered);
-    } else {
-      setTagSuggestions([]);
-    }
-  };
-
-  const handleTagInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      if (newTagInput.trim()) {
-        addTag(newTagInput);
-        setNewTagInput('');
-        setTagSuggestions([]);
-      }
-    } else if (e.key === 'Backspace' && newTagInput === '' && attributesForm.tags.length > 0) {
-      const lastTag = attributesForm.tags[attributesForm.tags.length - 1];
-      removeTag(lastTag);
-    } else if (e.key === 'Escape') {
-      setTagSuggestions([]);
-    }
-  };
-
-  const addTagFromSuggestion = (tag: string) => {
-    addTag(tag);
-    setNewTagInput('');
-    setTagSuggestions([]);
   };
 
   const handleFileUpload = async (key: string, file: File) => {
@@ -1024,47 +969,90 @@ export default function InstanceEditorPage() {
                   key={key}
                   className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4"
                 >
-                  <div className="flex justify-between items-start mb-2">
+                  <div
+                    className="flex justify-between items-start cursor-pointer"
+                    onClick={(e) => {
+                      // Toggle expand/collapse if click is not on an interactive element
+                      if (canEdit) {
+                        const target = e.target as HTMLElement;
+                        // Don't toggle if clicking on buttons or inputs
+                        if (!target.closest('button') && !target.closest('input') && !target.closest('textarea')) {
+                          togglePropertiesPanel(key);
+                        }
+                      }
+                    }}
+                  >
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-blue-400">{key}</span>
-                      {indicators.length > 0 && (
-                        <span className="text-xs text-yellow-400">
-                          [{indicators.join('')}]
-                        </span>
+                      {/* Key name - when expanded: text + pen icon, click to edit with underline */}
+                      {expandedPropertiesKey === key && canEdit ? (
+                        <EditableKeyName
+                          keyName={key}
+                          onSave={(newName) => {
+                            if (newName && newName !== key) {
+                              handleSaveAttributes(key, newName, entry.attributes);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="font-mono text-blue-400">{key}</span>
                       )}
-                      {entry.attributes.tags && entry.attributes.tags.length > 0 && (
-                        <div className="flex gap-1 flex-wrap">
-                          {entry.attributes.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-0.5 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 rounded font-mono border border-cyan-600"
-                            >
-                              {tag}
+                      {/* Only show indicators and tags when NOT expanded */}
+                      {expandedPropertiesKey !== key && (
+                        <>
+                          {indicators.length > 0 && (
+                            <span className="text-xs text-yellow-400">
+                              [{indicators.join('')}]
                             </span>
-                          ))}
-                        </div>
-                      )}
-                      {entry.attributes.zIndex !== undefined && entry.attributes.zIndex !== 0 && (
-                        <span className="text-xs text-zinc-500">
-                          z:{entry.attributes.zIndex}
-                        </span>
+                          )}
+                          {entry.attributes.tags && entry.attributes.tags.length > 0 && (
+                            <div className="flex gap-1 flex-wrap">
+                              {entry.attributes.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="px-2 py-0.5 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 rounded font-mono border border-cyan-600"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {entry.attributes.zIndex !== undefined && entry.attributes.zIndex !== 0 && (
+                            <span className="text-xs text-zinc-500">
+                              z:{entry.attributes.zIndex}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                     <div className="flex gap-1">
                       {canEdit && (
                         <button
-                          onClick={() => startEditingAttributes(key)}
-                          className="text-cyan-600 hover:text-yellow-400 text-sm leading-none px-1"
-                          title="Edit Properties"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePropertiesPanel(key);
+                          }}
+                          className={`text-sm leading-none px-1 transition-colors ${expandedPropertiesKey === key
+                            ? 'text-cyan-400'
+                            : 'text-cyan-600 hover:text-yellow-400'
+                          }`}
+                          title={expandedPropertiesKey === key ? 'Collapse Properties' : 'Edit Properties'}
                         >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          <svg
+                            className={`w-4 h-4 transition-transform ${expandedPropertiesKey === key ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
                         </button>
                       )}
                       {canEdit && !entry.attributes.readonly && (
                         <button
-                          onClick={() => handleDeleteKey(key)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteKey(key);
+                          }}
                           className="p-2 text-zinc-600 hover:text-red-400 hover:bg-zinc-800 rounded-md transition"
                           title="Delete"
                         >
@@ -1075,72 +1063,130 @@ export default function InstanceEditorPage() {
                       )}
                     </div>
                   </div>
-
-                  {contentType === 'image' && dataUrl ? (
-                    <div className="mt-2">
-                      <img
-                        src={dataUrl}
-                        alt={`Preview of ${key}`}
-                        className="max-w-full h-auto border border-zinc-700 rounded"
-                        style={{ maxHeight: '300px' }}
-                      />
-                      {canEdit && (
-                        <button
-                          onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.accept = 'image/*';
-                            input.onchange = (e) => {
-                              const file = (e.target as HTMLInputElement).files?.[0];
-                              if (file) {
-                                handleFileUpload(key, file);
-                              }
-                            };
-                            input.click();
-                          }}
-                          className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
-                        >
-                          Replace Image
-                        </button>
+                  {/* Only show value display when NOT expanded (value is in panel when expanded) */}
+                  {expandedPropertiesKey !== key && (
+                    <>
+                      {contentType === 'image' && dataUrl ? (
+                        <div className="mt-2">
+                          <img
+                            src={dataUrl}
+                            alt={`Preview of ${key}`}
+                            className="max-w-full h-auto border border-zinc-700 rounded"
+                            style={{ maxHeight: '300px' }}
+                          />
+                          {canEdit && (
+                            <button
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement).files?.[0];
+                                  if (file) {
+                                    handleFileUpload(key, file);
+                                  }
+                                };
+                                input.click();
+                              }}
+                              className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
+                            >
+                              Replace Image
+                            </button>
+                          )}
+                        </div>
+                      ) : contentType === 'file' ? (
+                        <div className="mt-2">
+                          <div className="text-xs text-zinc-400">
+                            {entry.attributes.contentType || 'File'}
+                          </div>
+                          {canEdit && (
+                            <button
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement).files?.[0];
+                                  if (file) {
+                                    handleFileUpload(key, file);
+                                  }
+                                };
+                                input.click();
+                              }}
+                              className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
+                            >
+                              Replace File
+                            </button>
+                          )}
+                        </div>
+                      ) : canEdit && !entry.attributes.readonly ? (
+                        <>
+                          <textarea
+                            className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-cyan-600 outline-none resize-y transition-colors"
+                            rows={contentType === 'json' ? 6 : 2}
+                            value={keyValues[key] ?? ''}
+                            onChange={(e) => handleKeyValueChange(key, e.target.value)}
+                            onFocus={() => setEditingKey(key)}
+                            onBlur={() => {
+                              // Delay clearing to allow real-time sync to respect our edit
+                              setTimeout(() => setEditingKey(null), 100);
+                            }}
+                            placeholder="Enter value..."
+                          />
+                          {(pendingSaves.has(key) || savedKeys.has(key) || editingKey === key) && (
+                            <div className="flex items-center justify-end gap-2 text-xs mt-1">
+                              {pendingSaves.has(key) && (
+                                <span className="text-amber-400 flex items-center gap-1">
+                                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  Saving...
+                                </span>
+                              )}
+                              {savedKeys.has(key) && !pendingSaves.has(key) && (
+                                <span className="text-green-400 flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  Saved
+                                </span>
+                              )}
+                              {!savedKeys.has(key) && !pendingSaves.has(key) && editingKey === key && (
+                                <button
+                                  onClick={() => handleManualSave(key)}
+                                  className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs transition-colors"
+                                >
+                                  Save
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
+                          {displayValue}
+                        </pre>
                       )}
-                    </div>
-                  ) : contentType === 'file' ? (
-                    <div className="mt-2">
-                      <div className="text-xs text-zinc-400">
-                        {entry.attributes.contentType || 'File'}
-                      </div>
-                      {canEdit && (
-                        <button
-                          onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.onchange = (e) => {
-                              const file = (e.target as HTMLInputElement).files?.[0];
-                              if (file) {
-                                handleFileUpload(key, file);
-                              }
-                            };
-                            input.click();
-                          }}
-                          className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
-                        >
-                          Replace File
-                        </button>
-                      )}
-                    </div>
-                  ) : canEdit && !entry.attributes.readonly ? (
-                    <textarea
-                      className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-zinc-500 outline-none resize-y"
-                      rows={contentType === 'json' ? 6 : 2}
-                      value={keyValues[key] ?? ''}
-                      onChange={(e) => handleKeyValueChange(key, e.target.value)}
-                      placeholder="Enter value..."
-                    />
-                  ) : (
-                    <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
-                      {displayValue}
-                    </pre>
+                    </>
                   )}
+
+                  {/* Inline Properties Panel */}
+                  <KeyPropertiesPanel
+                    keyName={key}
+                    entry={entry}
+                    availableTags={availableTags}
+                    isExpanded={expandedPropertiesKey === key}
+                    onToggle={() => togglePropertiesPanel(key)}
+                    onSave={(newKeyName, attributes) => handleSaveAttributes(key, newKeyName, attributes)}
+                    onFileUpload={handleFileUpload}
+                    onValueChange={handleKeyValueChange}
+                    onClearValue={handleClearValue}
+                    currentValue={
+                      entry.attributes.type === 'image' || entry.attributes.type === 'file'
+                        ? String(entry.value ?? '')
+                        : keyValues[key] ?? ''
+                    }
+                    canEdit={canEdit}
+                  />
                 </div>
               );
             })
@@ -1235,255 +1281,7 @@ export default function InstanceEditorPage() {
             </div>
           </div>
         )}
-
-        {/* Attributes Editor Popup */}
-        {editingAttributes && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div
-              className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  cancelAttributes();
-                } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  saveAttributes();
-                }
-              }}
-              tabIndex={0}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-cyan-300 text-sm">Key Properties</h3>
-                <button onClick={cancelAttributes} className="text-cyan-600 hover:text-red-400 text-sm leading-none">×</button>
-              </div>
-
-              <div className="space-y-2">
-                {/* Key Name */}
-                <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 text-xs">key name:</label>
-                  <input
-                    type="text"
-                    value={editingKeyName}
-                    onChange={(e) => setEditingKeyName(e.target.value)}
-                    className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-2 focus:outline-none focus:border-zinc-500"
-                    placeholder="Key name..."
-                  />
-                </div>
-
-                {/* Type Selection */}
-                <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 text-xs">type:</label>
-                  <select
-                    value={attributesForm.type}
-                    onChange={(e) => setAttributesForm({
-                      ...attributesForm,
-                      type: e.target.value as 'text' | 'image' | 'file' | 'json',
-                      contentType: (e.target.value === 'text' || e.target.value === 'json') ? '' : attributesForm.contentType
-                    })}
-                    className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-2 focus:outline-none focus:border-zinc-500"
-                  >
-                    <option value="text">text</option>
-                    <option value="json">json</option>
-                    <option value="image">image</option>
-                    <option value="file">file</option>
-                  </select>
-                </div>
-
-                {/* Upload Button */}
-                {(attributesForm.type === 'image' || attributesForm.type === 'file') && (
-                  <div className="flex flex-col space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = attributesForm.type === 'image' ? 'image/*' : '*/*';
-                        input.onchange = async (e) => {
-                          const file = (e.target as HTMLInputElement).files?.[0];
-                          if (file && editingKeyName) {
-                            try {
-                              setAttributesForm({
-                                ...attributesForm,
-                                contentType: file.type,
-                                type: file.type.startsWith('image/') ? 'image' : 'file'
-                              });
-                              await handleFileUpload(editingKeyName, file);
-                            } catch (error) {
-                              console.error('Failed to upload file from popup:', error);
-                              alert('Failed to upload file. Please try again.');
-                            }
-                          }
-                        };
-                        input.click();
-                      }}
-                      className="border border-cyan-400 text-cyan-400 text-xs px-3 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20 transition-colors"
-                    >
-                      Upload {attributesForm.type === 'image' ? 'Image' : 'File'}
-                    </button>
-                  </div>
-                )}
-
-                {/* Z-Index */}
-                <div className="flex flex-col space-y-2">
-                  <label className="text-gray-400 text-xs">z-index:</label>
-                  <input
-                    type="text"
-                    value={zIndexInput}
-                    onChange={(e) => {
-                      // Allow typing freely - validate on blur/save
-                      setZIndexInput(e.target.value);
-                    }}
-                    onBlur={(e) => {
-                      // Validate and update on blur (must be integer)
-                      const value = parseInt(e.target.value, 10);
-                      const finalValue = isNaN(value) ? 0 : value;
-                      setZIndexInput(String(finalValue));
-                      setAttributesForm({ ...attributesForm, zIndex: finalValue });
-                    }}
-                    className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-2 focus:outline-none focus:border-zinc-500"
-                    placeholder="0"
-                  />
-                  <div className="text-xs text-gray-500">Lower values appear first (integer only)</div>
-                </div>
-
-                {/* Readonly */}
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-400 text-xs">
-                    <span className="text-yellow-400">[R]</span> readonly:
-                    <div className="text-xs text-gray-500 mt-1">If true, won&apos;t appear in AI tools</div>
-                  </div>
-                  {attributesForm.hardcoded ? (
-                    <span className="text-gray-500 font-mono px-2 py-1 text-xs">{attributesForm.readonly ? 'true' : 'false'}</span>
-                  ) : (
-                    <button
-                      onClick={() => setAttributesForm({ ...attributesForm, readonly: !attributesForm.readonly })}
-                      className="text-cyan-400 font-mono text-xs hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                    >
-                      {attributesForm.readonly ? 'true' : 'false'}
-                    </button>
-                  )}
-                </div>
-
-                {/* Visible */}
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-400 text-xs">
-                    <span className="text-yellow-400">[V]</span> visible:
-                    <div className="text-xs text-gray-500 mt-1">If false, hidden from injectSTM/getSTM</div>
-                  </div>
-                  <button
-                    onClick={() => setAttributesForm({ ...attributesForm, visible: !attributesForm.visible })}
-                    className="text-cyan-400 font-mono text-xs hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                  >
-                    {attributesForm.visible ? 'true' : 'false'}
-                  </button>
-                </div>
-
-                {/* Template */}
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-400 text-xs">
-                    <span className="text-yellow-400">[T]</span> template:
-                    <div className="text-xs text-gray-500 mt-1">Process with injectSTM on get</div>
-                  </div>
-                  {attributesForm.hardcoded ? (
-                    <span className="text-gray-500 font-mono px-2 py-1 text-xs">{attributesForm.template ? 'true' : 'false'}</span>
-                  ) : (
-                    <button
-                      onClick={() => setAttributesForm({ ...attributesForm, template: !attributesForm.template })}
-                      className="text-cyan-400 font-mono text-xs hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                    >
-                      {attributesForm.template ? 'true' : 'false'}
-                    </button>
-                  )}
-                </div>
-
-                {/* Hardcoded */}
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-400 text-xs">
-                    <span className="text-yellow-400">[H]</span> hardcoded:
-                  </div>
-                  <span className="text-gray-500 font-mono px-2 py-1 text-xs">{attributesForm.hardcoded ? 'true' : 'false'}</span>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-col space-y-2">
-                  <div className="text-gray-400 text-xs">tags:</div>
-
-                  <div className="relative">
-                    <div className="bg-black border border-zinc-700 rounded px-2 py-2 focus-within:border-zinc-500">
-                      <div className="flex flex-wrap gap-1 items-center">
-                        {attributesForm.tags.map((tag, index) => (
-                          <span
-                            key={index}
-                            className="inline-flex items-center gap-1 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 px-2 py-1 rounded font-mono border border-cyan-600 group hover:bg-cyan-800 hover:bg-opacity-50 transition-colors"
-                          >
-                            {tag}
-                            <button
-                              onClick={() => removeTag(tag)}
-                              className="text-cyan-400 hover:text-red-400 ml-1 leading-none"
-                              title="Remove tag"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-
-                        <input
-                          type="text"
-                          value={newTagInput}
-                          onChange={(e) => handleTagInputChange(e.target.value)}
-                          onKeyDown={handleTagInput}
-                          className="bg-transparent text-cyan-400 font-mono text-xs focus:outline-none flex-1 min-w-0"
-                          placeholder={attributesForm.tags.length === 0 ? 'Add tags...' : ''}
-                          style={{ minWidth: '80px' }}
-                        />
-                      </div>
-                    </div>
-
-                    {tagSuggestions.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-black border border-zinc-700 rounded shadow-lg max-h-40 overflow-y-auto">
-                        {tagSuggestions.map((tag, index) => (
-                          <button
-                            key={index}
-                            onClick={() => addTagFromSuggestion(tag)}
-                            className="w-full text-left px-3 py-2 text-xs font-mono text-cyan-400 hover:bg-cyan-900 hover:bg-opacity-30 transition-colors"
-                          >
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {attributesForm.tags.length > 0 && (
-                    <div className="text-xs text-gray-500">
-                      Use getTagged(&quot;{attributesForm.tags[0]}&quot;)
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 mt-6">
-                <button
-                  onClick={saveAttributes}
-                  className="flex-1 bg-cyan-400 text-black text-sm px-4 py-2 rounded hover:bg-cyan-300"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={cancelAttributes}
-                  className="flex-1 border border-cyan-400 text-cyan-400 text-sm px-4 py-2 rounded hover:bg-cyan-900 hover:bg-opacity-20"
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <div className="mt-3 text-xs text-gray-500 text-center">
-                Ctrl+Enter to save &bull; Esc to cancel
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
 }
-
