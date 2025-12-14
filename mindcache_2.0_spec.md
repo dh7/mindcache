@@ -915,9 +915,12 @@ Cloud sync is built directly into the `MindCache` constructor - no hooks or adap
 interface MindCacheCloudOptions {
   instanceId: string;        // Instance to connect to
   projectId?: string;        // Project ID (defaults to 'default')
-  tokenEndpoint?: string;    // API endpoint to fetch WS token (recommended for browser)
-  apiKey?: string;           // Direct API key (server-only, never expose in browser!)
-  baseUrl?: string;          // WebSocket URL (defaults to production)
+  baseUrl: string;           // API URL (REQUIRED, e.g., 'https://api.mindcache.dev')
+  
+  // Authentication (choose ONE):
+  tokenEndpoint?: string;    // Your backend route for secure token fetching (production)
+  apiKey?: string;           // Direct API key - SDK auto-fetches token (demos)
+  tokenProvider?: () => Promise<string>;  // Custom token logic (advanced)
 }
 
 interface MindCacheOptions {
@@ -933,20 +936,82 @@ mc.set_value('name', 'Alice');
 mc.subscribeToAll(() => console.log('changed!'));
 ```
 
-#### Cloud Mode (same API!)
+#### Cloud Mode - Pattern 1: Secure (Production)
+
+**Recommended for production apps.** API key stays on your server.
+
+```typescript
+// Client-side
+const mc = new MindCache({
+  cloud: {
+    instanceId: 'my-instance-id',
+    baseUrl: process.env.NEXT_PUBLIC_MINDCACHE_API_URL,
+    tokenEndpoint: '/api/ws-token'  // Your backend route
+  }
+});
+
+await mc.waitForSync(); // Wait for initial data
+mc.set_value('name', 'Alice');
+```
+
+```typescript
+// Server-side: app/api/ws-token/route.ts
+export async function GET(request: NextRequest) {
+  const apiKey = process.env.MINDCACHE_API_KEY; // Secret!
+  const instanceId = request.nextUrl.searchParams.get('instanceId');
+  
+  const response = await fetch(`https://api.mindcache.dev/api/ws-token`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ instanceId, permission: 'write' })
+  });
+  
+  return NextResponse.json(await response.json());
+}
+```
+
+#### Cloud Mode - Pattern 2: Simple (Demos)
+
+**For quick demos.** SDK automatically fetches tokens. API key visible in browser.
 
 ```typescript
 const mc = new MindCache({
   cloud: {
     instanceId: 'my-instance-id',
-    tokenEndpoint: '/api/ws-token',
+    apiKey: 'del_xxx:sec_xxx',  // Or mc_live_xxx
+    baseUrl: 'https://api.mindcache.dev'
   }
 });
 
-// Same API as local!
-mc.subscribeToAll(() => console.log('synced!'));
+await mc.waitForSync();
+mc.set_value('counter', 1); // Syncs instantly!
+```
 
-// Additional properties for cloud
+**The SDK automatically:**
+1. Calls `POST {baseUrl}/api/ws-token` with your API key
+2. Gets a short-lived token (60 seconds expiry)
+3. Connects to WebSocket with the token
+4. Handles reconnection with fresh tokens
+
+**Supported API key formats:**
+- Regular API keys: `mc_live_xxx` or `mc_test_xxx` → Bearer token
+- Delegate keys: `del_xxx:sec_xxx` → ApiKey format
+
+#### waitForSync() - Awaiting Initial Data
+
+Always call `waitForSync()` before reading data:
+
+```typescript
+await mc.waitForSync(); // Resolves when initial sync complete
+const data = mc.get_value('important'); // Now has cloud data
+```
+
+#### Additional Cloud Properties
+
+```typescript
 console.log(mc.connectionState); // 'disconnected' | 'connecting' | 'connected' | 'error'
 console.log(mc.isLoaded);        // true when initial sync complete
 console.log(mc.isCloud);         // true
@@ -954,7 +1019,7 @@ console.log(mc.isCloud);         // true
 
 The MindCache instance handles:
 - CloudAdapter lifecycle automatically
-- Token fetching via endpoint
+- Token fetching via endpoint or API key
 - Connection state management
 - Reconnection with exponential backoff
 - Cleanup via `mc.disconnect()`
@@ -1101,6 +1166,7 @@ cd packages/server
 
 | Date | Version | Notes |
 |------|---------|-------|
+| 2024-12-14 | 2.1.0 | **SDK Auth Improvements!** Two auth patterns: `tokenEndpoint` (production) + `apiKey` (demos). SDK auto-fetches tokens, supports delegate keys (`del_xxx:sec_xxx`). Required `baseUrl`, `waitForSync()` best practice. |
 | 2024-12-11 | 2.0.0 | **Delegate System Complete!** Two-layer permissions, multiple secrets per delegate, grant-based access control |
 | 2024-12-11 | 1.4.0-alpha | Two-tier tag system: `contentTags` (user) + `systemTags` (admin) with access level control |
 | 2024-12-08 | 1.3.1-alpha | Clarified examples/ are standalone (not part of pnpm workspace) - run `npm install` inside each |
