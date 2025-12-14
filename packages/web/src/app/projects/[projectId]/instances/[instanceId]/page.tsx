@@ -24,10 +24,16 @@ export default function InstanceEditorPage() {
   const [showAddKey, setShowAddKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
-  const [newKeyType, setNewKeyType] = useState<'text' | 'json'>('text');
+  const [newKeyType, setNewKeyType] = useState<'text' | 'json' | 'image' | 'file'>('text');
 
   // Track which keys have unsaved changes
   const [keyValues, setKeyValues] = useState<Record<string, string>>({});
+  // Track which key is currently being edited (has focus)
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  // Track keys with pending saves (debounced)
+  const [pendingSaves, setPendingSaves] = useState<Set<string>>(new Set());
+  // Track keys that were recently saved (for visual feedback)
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
 
   // Attributes editor popup
   const [editingAttributes, setEditingAttributes] = useState<string | null>(null);
@@ -234,23 +240,28 @@ export default function InstanceEditorPage() {
     setShowAddKey(false);
   };
 
-  // Initialize keyValues when keys change from server
+  // Sync keyValues when keys change from server
+  // Only update values for keys that are NOT currently being edited
   useEffect(() => {
-    const newKeyValues: Record<string, string> = {};
-    for (const [key, entry] of Object.entries(keys)) {
-      if (!(key in keyValues)) {
+    setKeyValues(prev => {
+      const updated = { ...prev };
+      for (const [key, entry] of Object.entries(keys)) {
         if (entry.attributes.type === 'image' || entry.attributes.type === 'file') {
           // For images/files, don't set a text value
           continue;
         }
-        newKeyValues[key] = entry.attributes.type === 'json'
+        const serverValue = entry.attributes.type === 'json'
           ? JSON.stringify(entry.value, null, 2)
           : String(entry.value ?? '');
+
+        // Only update if this key is not currently being edited
+        // OR if it's a new key we don't have yet
+        if (key !== editingKey || !(key in prev)) {
+          updated[key] = serverValue;
+        }
       }
-    }
-    if (Object.keys(newKeyValues).length > 0) {
-      setKeyValues(prev => ({ ...prev, ...newKeyValues }));
-    }
+      return updated;
+    });
 
     // Update available tags
     const allTags = new Set<string>();
@@ -258,7 +269,7 @@ export default function InstanceEditorPage() {
       entry.attributes.tags?.forEach(tag => allTags.add(tag));
     });
     setAvailableTags(Array.from(allTags).sort());
-  }, [keys]);
+  }, [keys, editingKey]);
 
   const handleKeyValueChange = (key: string, newValue: string) => {
     setKeyValues(prev => ({ ...prev, [key]: newValue }));
@@ -268,10 +279,19 @@ export default function InstanceEditorPage() {
       clearTimeout(saveTimeoutRef.current[key]);
     }
 
-    // Debounce save - auto-save after 500ms of no typing
+    // Mark as pending save
+    setPendingSaves(prev => new Set(prev).add(key));
+    // Remove from saved keys
+    setSavedKeys(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+
+    // Debounce save - auto-save after 1000ms of no typing
     saveTimeoutRef.current[key] = setTimeout(() => {
       saveKeyValue(key, newValue);
-    }, 500);
+    }, 1000);
   };
 
   const saveKeyValue = (key: string, valueStr: string) => {
@@ -297,6 +317,32 @@ export default function InstanceEditorPage() {
       attributes: entry.attributes,
       timestamp: Date.now()
     });
+
+    // Remove from pending and mark as saved
+    setPendingSaves(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setSavedKeys(prev => new Set(prev).add(key));
+
+    // Clear the saved indicator after 2 seconds
+    setTimeout(() => {
+      setSavedKeys(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }, 2000);
+  };
+
+  // Manual save function
+  const handleManualSave = (key: string) => {
+    // Clear any pending debounce
+    if (saveTimeoutRef.current[key]) {
+      clearTimeout(saveTimeoutRef.current[key]);
+    }
+    saveKeyValue(key, keyValues[key] ?? '');
   };
 
   const handleDeleteKey = (key: string) => {
@@ -1129,13 +1175,46 @@ export default function InstanceEditorPage() {
                       )}
                     </div>
                   ) : canEdit && !entry.attributes.readonly ? (
-                    <textarea
-                      className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-zinc-500 outline-none resize-y"
-                      rows={contentType === 'json' ? 6 : 2}
-                      value={keyValues[key] ?? ''}
-                      onChange={(e) => handleKeyValueChange(key, e.target.value)}
-                      placeholder="Enter value..."
-                    />
+                    <div className="space-y-2">
+                      <textarea
+                        className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-cyan-600 outline-none resize-y transition-colors"
+                        rows={contentType === 'json' ? 6 : 2}
+                        value={keyValues[key] ?? ''}
+                        onChange={(e) => handleKeyValueChange(key, e.target.value)}
+                        onFocus={() => setEditingKey(key)}
+                        onBlur={() => {
+                          // Delay clearing to allow real-time sync to respect our edit
+                          setTimeout(() => setEditingKey(null), 100);
+                        }}
+                        placeholder="Enter value..."
+                      />
+                      <div className="flex items-center justify-end gap-2 text-xs">
+                        {pendingSaves.has(key) && (
+                          <span className="text-amber-400 flex items-center gap-1">
+                            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Saving...
+                          </span>
+                        )}
+                        {savedKeys.has(key) && !pendingSaves.has(key) && (
+                          <span className="text-green-400 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Saved
+                          </span>
+                        )}
+                        {!savedKeys.has(key) && !pendingSaves.has(key) && editingKey === key && (
+                          <button
+                            onClick={() => handleManualSave(key)}
+                            className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs transition-colors"
+                          >
+                            Save
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
                       {displayValue}
