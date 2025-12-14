@@ -53,6 +53,7 @@ interface ICloudAdapter {
   disconnect(): void;
   setTokenProvider(provider: () => Promise<string>): void;
   on(event: string, listener: (...args: any[]) => void): void;
+  off(event: string, listener: (...args: any[]) => void): void;
   state: ConnectionState;
 }
 
@@ -73,6 +74,8 @@ export class MindCache {
   // Access level for system operations
   private _accessLevel: AccessLevel = 'user';
 
+  private _initPromise: Promise<void> | null = null;
+
   constructor(options?: MindCacheOptions) {
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
@@ -82,9 +85,11 @@ export class MindCache {
       this._isLoaded = false; // Wait for sync
       this._connectionState = 'disconnected';
       // Initialize cloud connection asynchronously
-      this._initCloud();
+      this._initPromise = this._initCloud();
     }
   }
+
+
 
   /**
    * Get the current access level
@@ -106,12 +111,17 @@ export class MindCache {
     }
 
     try {
-      // Dynamic import to avoid circular dependency
-      const { CloudAdapter } = await import('../cloud/CloudAdapter');
 
-      // Convert HTTP URL to WebSocket URL, default to production
-      const configUrl = this._cloudConfig.baseUrl || 'https://api.mindcache.io';
-      const baseUrl = configUrl
+      // Load adapter class (extracted for testing)
+      const CloudAdapter = await this._getCloudAdapterClass();
+
+      // Require baseUrl for cloud mode
+      if (!this._cloudConfig.baseUrl) {
+        throw new Error('MindCache Cloud: baseUrl is required. Please provide the cloud API URL in your configuration.');
+      }
+
+      // Convert HTTP URL to WebSocket URL
+      const baseUrl = this._cloudConfig.baseUrl
         .replace('https://', 'wss://')
         .replace('http://', 'ws://');
 
@@ -204,10 +214,57 @@ export class MindCache {
   }
 
   /**
+   * Protected method to load CloudAdapter class.
+   * Can be overridden/mocked for testing.
+   */
+  protected async _getCloudAdapterClass(): Promise<any> {
+    const { CloudAdapter } = await import('../cloud/CloudAdapter');
+    return CloudAdapter;
+  }
+
+  /**
    * Check if this instance is connected to cloud
    */
   get isCloud(): boolean {
     return this._cloudConfig !== null;
+  }
+
+  /**
+   * Wait for initial sync to complete (or resolve immediately if already synced/local).
+   * Useful for scripts or linear execution flows.
+   */
+
+  async waitForSync(): Promise<void> {
+
+    if (this._isLoaded) {
+      return;
+    }
+
+    // If initialization is in progress, wait for it first
+    if (this._initPromise) {
+      await this._initPromise;
+    }
+
+    // Check again after initialization
+    if (this._isLoaded) {
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      // If we are here, we must have a cloud adapter (otherwise isLoaded would be true)
+      // but double check to be safe
+      if (!this._cloudAdapter) {
+        resolve();
+        return;
+      }
+
+      const handler = () => {
+        this._cloudAdapter?.off('synced', handler);
+        resolve();
+      };
+
+      this._cloudAdapter.on('synced', handler);
+    });
   }
 
   /**
@@ -891,9 +948,9 @@ export class MindCache {
     return this.getAll();
   }
 
-  getSTMForAPI(): Array<{key: string, value: any, type: string, contentType?: string}> {
+  getSTMForAPI(): Array<{ key: string, value: any, type: string, contentType?: string }> {
     const now = new Date();
-    const apiData: Array<{key: string, value: any, type: string, contentType?: string}> = [];
+    const apiData: Array<{ key: string, value: any, type: string, contentType?: string }> = [];
 
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {

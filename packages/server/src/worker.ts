@@ -151,13 +151,25 @@ export default {
           await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
             .bind(await hashToken(token)).run();
         } else {
-          // Fallback: Check API key in Authorization header (for server-to-server)
-          const authData = extractAuth(request);
-          if (!authData) {
+          // Fallback: Check API key (browsers can't send headers with WebSocket)
+          // First try query string, then Authorization header
+          const apiKeyFromQuery = url.searchParams.get('apiKey');
+          let authToken: string | null = null;
+
+          if (apiKeyFromQuery) {
+            authToken = apiKeyFromQuery;
+          } else {
+            const authData = extractAuth(request);
+            if (authData) {
+              authToken = authData.token;
+            }
+          }
+
+          if (!authToken) {
             return Response.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders });
           }
 
-          const auth = await verifyApiKey(authData.token, env.DB);
+          const auth = await verifyApiKey(authToken, env.DB);
           if (!auth.valid) {
             return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
           }
@@ -662,7 +674,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         await stub.fetch(new Request('http://do/destroy', { method: 'DELETE' }));
       } catch (e) {
         console.error('Failed to destroy DO:', e);
-      // Continue with DB deletion even if DO cleanup fails
+        // Continue with DB deletion even if DO cleanup fails
       }
 
       // Delete DB record
@@ -709,11 +721,11 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     if (sharesMatch && request.method === 'POST') {
       const [, resourceType, resourceId] = sharesMatch;
       const body = await request.json() as {
-      targetType: 'user' | 'public';
-      targetId?: string;
-      targetEmail?: string;
-      permission: 'read' | 'write' | 'admin'  // Standardized to 'admin' everywhere
-    };
+        targetType: 'user' | 'public';
+        targetId?: string;
+        targetEmail?: string;
+        permission: 'read' | 'write' | 'admin'  // Standardized to 'admin' everywhere
+      };
 
       // If sharing by email, look up user
       let targetId = body.targetId;
@@ -783,11 +795,11 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     // Create API key
     if (path === '/api/keys' && request.method === 'POST') {
       const body = await request.json() as {
-      name: string;
-      scopeType: 'account' | 'project' | 'instance';
-      scopeId?: string;
-      permissions: string[];
-    };
+        name: string;
+        scopeType: 'account' | 'project' | 'instance';
+        scopeId?: string;
+        permissions: string[];
+      };
 
       // Generate API key: mc_live_<random>
       const keyRandom = crypto.randomUUID().replace(/-/g, '');
