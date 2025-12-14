@@ -38,7 +38,7 @@ async function fetchApi<T>(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));
-    const errorMessage = error.details 
+    const errorMessage = error.details
       ? `${error.error || 'Request failed'}: ${error.details}`
       : (error.error || 'Request failed');
     throw new Error(errorMessage);

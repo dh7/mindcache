@@ -65,7 +65,7 @@ export default function Home() {
       log(`Initial counter value: ${current}`);
       setCount(Number(current) || 0);
 
-      mc.subscribe('counter', (val: any) => {
+      mc.subscribe('counter', (val: unknown) => {
         log(`Counter updated: ${val}`);
         setCount(Number(val) || 0);
       });
