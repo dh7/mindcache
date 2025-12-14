@@ -53,6 +53,7 @@ interface ICloudAdapter {
   disconnect(): void;
   setTokenProvider(provider: () => Promise<string>): void;
   on(event: string, listener: (...args: any[]) => void): void;
+  off(event: string, listener: (...args: any[]) => void): void;
   state: ConnectionState;
 }
 
@@ -73,6 +74,8 @@ export class MindCache {
   // Access level for system operations
   private _accessLevel: AccessLevel = 'user';
 
+  private _initPromise: Promise<void> | null = null;
+
   constructor(options?: MindCacheOptions) {
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
@@ -82,9 +85,11 @@ export class MindCache {
       this._isLoaded = false; // Wait for sync
       this._connectionState = 'disconnected';
       // Initialize cloud connection asynchronously
-      this._initCloud();
+      this._initPromise = this._initCloud();
     }
   }
+
+
 
   /**
    * Get the current access level
@@ -106,12 +111,17 @@ export class MindCache {
     }
 
     try {
-      // Dynamic import to avoid circular dependency
-      const { CloudAdapter } = await import('../cloud/CloudAdapter');
 
-      // Convert HTTP URL to WebSocket URL, default to production
-      const configUrl = this._cloudConfig.baseUrl || 'https://api.mindcache.io';
-      const baseUrl = configUrl
+      // Load adapter class (extracted for testing)
+      const CloudAdapter = await this._getCloudAdapterClass();
+
+      // Require baseUrl for cloud mode
+      if (!this._cloudConfig.baseUrl) {
+        throw new Error('MindCache Cloud: baseUrl is required. Please provide the cloud API URL in your configuration.');
+      }
+
+      // Convert HTTP URL to WebSocket URL
+      const baseUrl = this._cloudConfig.baseUrl
         .replace('https://', 'wss://')
         .replace('http://', 'ws://');
 
@@ -204,10 +214,57 @@ export class MindCache {
   }
 
   /**
+   * Protected method to load CloudAdapter class.
+   * Can be overridden/mocked for testing.
+   */
+  protected async _getCloudAdapterClass(): Promise<any> {
+    const { CloudAdapter } = await import('../cloud/CloudAdapter');
+    return CloudAdapter;
+  }
+
+  /**
    * Check if this instance is connected to cloud
    */
   get isCloud(): boolean {
     return this._cloudConfig !== null;
+  }
+
+  /**
+   * Wait for initial sync to complete (or resolve immediately if already synced/local).
+   * Useful for scripts or linear execution flows.
+   */
+
+  async waitForSync(): Promise<void> {
+
+    if (this._isLoaded) {
+      return;
+    }
+
+    // If initialization is in progress, wait for it first
+    if (this._initPromise) {
+      await this._initPromise;
+    }
+
+    // Check again after initialization
+    if (this._isLoaded) {
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      // If we are here, we must have a cloud adapter (otherwise isLoaded would be true)
+      // but double check to be safe
+      if (!this._cloudAdapter) {
+        resolve();
+        return;
+      }
+
+      const handler = () => {
+        this._cloudAdapter?.off('synced', handler);
+        resolve();
+      };
+
+      this._cloudAdapter.on('synced', handler);
+    });
   }
 
   /**
@@ -325,6 +382,9 @@ export class MindCache {
     }
 
     const existingEntry = this.stm[key];
+    // Preserve hardcoded status - if entry is hardcoded, it must remain hardcoded
+    const wasHardcoded = existingEntry?.attributes.hardcoded || existingEntry?.attributes.systemTags?.includes('protected');
+
     // Deep copy arrays to avoid shared references
     const baseAttributes: KeyAttributes = existingEntry
       ? {
@@ -351,7 +411,8 @@ export class MindCache {
       if ('readonly' in attributes) {
         if (attributes.readonly && !systemTags.includes('readonly')) {
           systemTags.push('readonly');
-        } else if (!attributes.readonly) {
+        } else if (!attributes.readonly && !wasHardcoded) {
+          // Can't remove readonly if hardcoded
           systemTags = systemTags.filter(t => t !== 'readonly') as SystemTag[];
         }
       }
@@ -365,22 +426,48 @@ export class MindCache {
       if ('hardcoded' in attributes) {
         if (attributes.hardcoded && !systemTags.includes('protected')) {
           systemTags.push('protected');
-        } else if (!attributes.hardcoded) {
+        } else if (!attributes.hardcoded && !wasHardcoded) {
+          // Can't remove protected if entry was already hardcoded
           systemTags = systemTags.filter(t => t !== 'protected') as SystemTag[];
+        }
+        // If wasHardcoded, always keep protected
+        if (wasHardcoded && !systemTags.includes('protected')) {
+          systemTags.push('protected');
+        }
+      } else if (wasHardcoded) {
+        // If no hardcoded attribute provided but entry was hardcoded, preserve it
+        if (!systemTags.includes('protected')) {
+          systemTags.push('protected');
         }
       }
       if ('template' in attributes) {
-        if (attributes.template && !systemTags.includes('template')) {
+        if (attributes.template && !wasHardcoded && !systemTags.includes('template')) {
           systemTags.push('template');
-        } else if (!attributes.template) {
+        } else if (!attributes.template || wasHardcoded) {
+          // Can't set template if hardcoded
           systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
         }
       }
+      finalAttributes.systemTags = systemTags;
+    } else if (wasHardcoded) {
+      // If no attributes provided but entry was hardcoded, preserve protected tag
+      let systemTags = [...(finalAttributes.systemTags || [])] as SystemTag[];
+      if (!systemTags.includes('protected')) {
+        systemTags.push('protected');
+      }
+      if (!systemTags.includes('readonly')) {
+        systemTags.push('readonly');
+      }
+      systemTags = systemTags.filter(t => t !== 'template');
       finalAttributes.systemTags = systemTags;
     }
 
     // Enforce: protected (hardcoded) implies readonly and NOT template
     let systemTags = finalAttributes.systemTags || [];
+    // Always preserve hardcoded status if entry was hardcoded
+    if (wasHardcoded && !systemTags.includes('protected')) {
+      systemTags = [...systemTags, 'protected'] as SystemTag[];
+    }
     if (systemTags.includes('protected')) {
       if (!systemTags.includes('readonly')) {
         systemTags = [...systemTags, 'readonly'] as SystemTag[];
@@ -392,7 +479,8 @@ export class MindCache {
     // Sync legacy attributes FROM systemTags (canonical source)
     finalAttributes.readonly = systemTags.includes('readonly');
     finalAttributes.visible = systemTags.includes('prompt');
-    finalAttributes.hardcoded = systemTags.includes('protected');
+    // Always preserve hardcoded status if entry was hardcoded
+    finalAttributes.hardcoded = wasHardcoded || systemTags.includes('protected');
     finalAttributes.template = systemTags.includes('template');
 
     // Sync tags <-> contentTags bidirectionally
@@ -509,11 +597,14 @@ export class MindCache {
       return false;
     }
 
+    // Preserve hardcoded status - if entry is hardcoded, it must remain hardcoded
+    const wasHardcoded = entry.attributes.hardcoded || entry.attributes.systemTags?.includes('protected');
+
     // Don't allow direct modification of hardcoded or systemTags without system access
     const { hardcoded: _hardcoded, systemTags: _systemTags, ...allowedAttributes } = attributes;
 
     // If entry is hardcoded (protected), don't allow changing readonly to false or template to true
-    if (entry.attributes.hardcoded) {
+    if (wasHardcoded) {
       if ('readonly' in allowedAttributes) {
         delete (allowedAttributes as any).readonly; // Can't change readonly on hardcoded
       }
@@ -536,7 +627,8 @@ export class MindCache {
       if (entry.attributes.template) {
         newSystemTags.push('template');
       }
-      if (entry.attributes.hardcoded) {
+      // Always preserve hardcoded status if it was hardcoded
+      if (wasHardcoded || entry.attributes.hardcoded) {
         newSystemTags.push('protected');
       }
 
@@ -551,6 +643,27 @@ export class MindCache {
       }
 
       entry.attributes.systemTags = newSystemTags;
+    } else if (wasHardcoded) {
+      // If no legacy props were set but entry was hardcoded, ensure protected tag is preserved
+      let systemTags = [...(entry.attributes.systemTags || [])];
+      if (!systemTags.includes('protected')) {
+        systemTags.push('protected');
+      }
+      if (!systemTags.includes('readonly')) {
+        systemTags.push('readonly');
+      }
+      systemTags = systemTags.filter(t => t !== 'template');
+      entry.attributes.systemTags = systemTags;
+    }
+
+    // Always ensure hardcoded status is preserved and synced
+    if (wasHardcoded) {
+      entry.attributes.hardcoded = true;
+      if (!entry.attributes.systemTags?.includes('protected')) {
+        entry.attributes.systemTags = [...(entry.attributes.systemTags || []), 'protected'] as SystemTag[];
+      }
+      entry.attributes.readonly = true;
+      entry.attributes.template = false;
     }
 
     // Sync contentTags to legacy tags
@@ -835,9 +948,9 @@ export class MindCache {
     return this.getAll();
   }
 
-  getSTMForAPI(): Array<{key: string, value: any, type: string, contentType?: string}> {
+  getSTMForAPI(): Array<{ key: string, value: any, type: string, contentType?: string }> {
     const now = new Date();
-    const apiData: Array<{key: string, value: any, type: string, contentType?: string}> = [];
+    const apiData: Array<{ key: string, value: any, type: string, contentType?: string }> = [];
 
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
@@ -926,6 +1039,11 @@ export class MindCache {
       Object.entries(data).forEach(([key, entry]) => {
         if (entry && typeof entry === 'object' && 'value' in entry && 'attributes' in entry) {
           const attrs = entry.attributes;
+
+          // Skip hardcoded keys during deserialization
+          if (attrs.hardcoded === true || attrs.systemTags?.includes('protected')) {
+            return;
+          }
 
           // Migrate from legacy format: derive systemTags from boolean flags if missing
           let systemTags: SystemTag[] = attrs.systemTags || [];
@@ -1317,11 +1435,26 @@ export class MindCache {
       return false;
     }
 
+    // Prevent removing 'protected' tag from hardcoded keys
+    const isHardcoded = entry.attributes.hardcoded || entry.attributes.systemTags.includes('protected');
+    if (tag === 'protected' && isHardcoded) {
+      return false; // Cannot remove protected tag from hardcoded keys
+    }
+
     const tagIndex = entry.attributes.systemTags.indexOf(tag);
     if (tagIndex > -1) {
       entry.attributes.systemTags.splice(tagIndex, 1);
       // Sync legacy boolean attributes
       this.syncLegacyFromSystemTags(entry);
+      // Ensure hardcoded status is preserved
+      if (isHardcoded) {
+        if (!entry.attributes.systemTags.includes('protected')) {
+          entry.attributes.systemTags.push('protected');
+        }
+        entry.attributes.hardcoded = true;
+        entry.attributes.readonly = true;
+        entry.attributes.template = false;
+      }
       this.notifyGlobalListeners();
       return true;
     }

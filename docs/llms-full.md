@@ -21,6 +21,9 @@
 15. [Common Use Cases](#common-use-cases)
 16. [Error Handling](#error-handling)
 17. [TypeScript Types](#typescript-types)
+18. [Quick Reference](#quick-reference)
+19. [Complete App Examples](#complete-app-examples)
+20. [Best Practices Summary](#best-practices-summary)
 
 ---
 
@@ -807,73 +810,263 @@ mindcache.add_image('screenshot', screenshotBase64, 'image/png');
 
 ## Cloud Sync
 
-MindCache 2.0+ supports cloud persistence and real-time sync.
+MindCache 2.0+ supports cloud persistence and real-time sync via WebSockets.
 
-### Connecting to Cloud
+### Authentication Patterns
+
+MindCache supports two authentication patterns for cloud connections:
+
+| Pattern | Security | Use Case | API Key Location |
+|---------|----------|----------|------------------|
+| `tokenEndpoint` | **Highest** | Production apps | Backend only |
+| `apiKey` | Moderate | Quick demos/testing | Browser (exposed) |
+
+### Pattern 1: Secure Token Endpoint (Production)
+
+**Recommended for production apps.** API key stays on your server, never exposed to browser.
 
 ```typescript
+// Client-side: page.tsx or component.tsx
 import { MindCache } from 'mindcache';
 
-// Create cloud-connected instance
 const mc = new MindCache({
   cloud: {
-    instanceId: 'my-instance-id',      // Get from app.mindcache.dev
-    tokenEndpoint: '/api/ws-token',    // Your API endpoint for auth
+    instanceId: 'your-instance-id',
+    baseUrl: process.env.NEXT_PUBLIC_MINDCACHE_API_URL, // e.g., 'https://api.mindcache.dev'
+    tokenEndpoint: '/api/ws-token'  // Your backend route
   }
 });
 
-// Same API as local!
-mc.set_value('userName', 'Alice');
+// Wait for initial sync before using data
+await mc.waitForSync();
+mc.set_value('userName', 'Alice'); // Syncs to cloud!
+```
+
+```typescript
+// Server-side: app/api/ws-token/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(request: NextRequest) {
+  const apiKey = process.env.MINDCACHE_API_KEY; // Secret, never exposed!
+  const apiUrl = process.env.MINDCACHE_API_URL || 'https://api.mindcache.dev';
+  const instanceId = request.nextUrl.searchParams.get('instanceId');
+
+  if (!apiKey || !instanceId) {
+    return NextResponse.json({ error: 'Missing configuration' }, { status: 500 });
+  }
+
+  // Forward token request to MindCache API
+  const response = await fetch(`${apiUrl}/api/ws-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({ instanceId, permission: 'write' })
+  });
+
+  const tokenData = await response.json();
+  return NextResponse.json(tokenData);
+}
+```
+
+### Pattern 2: Direct API Key (Quick Demos)
+
+**Simpler setup for demos.** SDK automatically fetches tokens. API key visible in browser.
+
+```typescript
+// Client-side: No backend route needed!
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache({
+  cloud: {
+    instanceId: 'your-instance-id',
+    apiKey: 'del_xxx:sec_xxx', // Or 'mc_live_xxx' format
+    baseUrl: 'https://api.mindcache.dev'
+  }
+});
+
+await mc.waitForSync();
+mc.set_value('counter', 1); // Syncs instantly!
+```
+
+The SDK automatically:
+1. Calls `POST {baseUrl}/api/ws-token` with your API key
+2. Gets a short-lived token (60 seconds)
+3. Connects to WebSocket with the token
+
+**Supported API key formats:**
+- Regular API keys: `mc_live_xxx` or `mc_test_xxx`
+- Delegate keys: `del_xxx:sec_xxx`
+
+### waitForSync() - Awaiting Initial Data
+
+Always call `waitForSync()` before reading data to ensure cloud data is loaded:
+
+```typescript
+const mc = new MindCache({
+  cloud: { instanceId: 'xxx', apiKey: 'xxx', baseUrl: 'https://api.mindcache.dev' }
+});
+
+// IMPORTANT: Wait for initial sync before reading!
+await mc.waitForSync();
+
+// Now safe to read data
+const userName = mc.get_value('userName'); // Has cloud data
 ```
 
 ### Connection States
 
 ```typescript
-// Check connection state
 console.log(mc.connectionState);
 // 'disconnected' | 'connecting' | 'connected' | 'error'
 
-// Check if initial sync is complete
 console.log(mc.isLoaded);
-// true when all cloud data is loaded
+// true when initial cloud data is loaded
 
-// Check if instance is cloud-connected
 console.log(mc.isCloud);
-// true
+// true when connected to cloud
 ```
 
 ### Real-Time Sync
 
+Changes sync automatically to all connected clients:
+
 ```typescript
-// Subscribe to sync events
-mc.subscribeToAll(() => {
-  console.log('Data synced from cloud!');
+// Client A: Sets a value
+mc.set_value('counter', 42);
+
+// Client B: Subscribes to changes
+mc.subscribe('counter', (value) => {
+  console.log('Counter updated by another user:', value);
+  // Outputs: 'Counter updated by another user: 42'
 });
 
-// Changes from other clients appear automatically
-// No polling needed - WebSocket-based real-time updates
+// Or subscribe to all changes
+mc.subscribeToAll(() => {
+  console.log('Something changed!');
+  updateUI(mc.getAll());
+});
+```
+
+### React Integration Pattern
+
+```typescript
+'use client';
+import { useRef, useEffect, useState } from 'react';
+import { MindCache } from 'mindcache';
+
+export default function CloudComponent({ instanceId }: { instanceId: string }) {
+  const mcRef = useRef<MindCache | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [data, setData] = useState<Record<string, any>>({});
+
+  // Initialize MindCache once
+  if (!mcRef.current && instanceId) {
+    mcRef.current = new MindCache({
+      cloud: {
+        instanceId,
+        baseUrl: process.env.NEXT_PUBLIC_MINDCACHE_API_URL,
+        tokenEndpoint: '/api/ws-token' // For production
+        // OR: apiKey: 'del_xxx:sec_xxx' // For demos
+      }
+    });
+  }
+
+  useEffect(() => {
+    const mc = mcRef.current;
+    if (!mc) return;
+
+    const handleChange = () => {
+      setIsLoaded(mc.isLoaded);
+      if (mc.isLoaded) {
+        setData({
+          name: mc.get_value('name') || '',
+          email: mc.get_value('email') || ''
+        });
+      }
+    };
+
+    handleChange(); // Initial check
+    mc.subscribeToAll(handleChange);
+
+    return () => {
+      mc.unsubscribeFromAll(handleChange);
+      mc.disconnect();
+    };
+  }, [instanceId]);
+
+  if (!isLoaded) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <input
+        value={data.name}
+        onChange={(e) => {
+          mcRef.current?.set_value('name', e.target.value);
+        }}
+      />
+    </div>
+  );
+}
+```
+
+### Server-Side Usage (API Routes)
+
+```typescript
+// app/api/chat/route.ts
+import { MindCache } from 'mindcache';
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+export async function POST(req: Request) {
+  const { messages, instanceId } = await req.json();
+
+  // Connect with API key (server-side only!)
+  const mc = new MindCache({
+    cloud: {
+      instanceId,
+      apiKey: process.env.MINDCACHE_API_KEY,
+      baseUrl: 'https://api.mindcache.dev'
+    }
+  });
+
+  await mc.waitForSync(); // Wait for cloud data
+
+  const result = await streamText({
+    model: openai('gpt-4'),
+    tools: mc.get_aisdk_tools(),
+    system: mc.get_system_prompt(),
+    messages
+  });
+
+  mc.disconnect(); // Clean up
+
+  return result.toDataStreamResponse();
+}
+```
+
+### Environment Variables
+
+```bash
+# .env.local (for Next.js apps)
+
+# Server-side only (never exposed to browser)
+MINDCACHE_API_KEY=mc_live_xxx
+# OR for delegate keys:
+MINDCACHE_API_KEY=del_xxx:sec_xxx
+
+# Client-side (exposed to browser, safe)
+NEXT_PUBLIC_MINDCACHE_API_URL=https://api.mindcache.dev
+
+# Instance IDs (exposed, just identifiers)
+NEXT_PUBLIC_INSTANCE_ID=your-instance-id
 ```
 
 ### Disconnecting
 
 ```typescript
-// Clean disconnect when done
-mc.disconnect();
-```
-
-### Server-Side Usage
-
-```typescript
-// On server, use API key directly (never expose in browser!)
-const mc = new MindCache({
-  cloud: {
-    instanceId: 'my-instance-id',
-    apiKey: process.env.MINDCACHE_API_KEY, // Server-only!
-  }
-});
-
-await mc.waitForSync(); // Wait for initial data load
-const data = mc.get_value('important');
+// Clean disconnect when component unmounts
 mc.disconnect();
 ```
 
@@ -1258,17 +1451,25 @@ mindcache.fromJSON(json);
 ```typescript
 import { MindCache } from 'mindcache';
 
-// Browser
+// Pattern 1: Secure (Production) - tokenEndpoint
 const mc = new MindCache({
-  cloud: { instanceId: 'xxx', tokenEndpoint: '/api/ws-token' }
+  cloud: {
+    instanceId: 'xxx',
+    baseUrl: 'https://api.mindcache.dev',
+    tokenEndpoint: '/api/ws-token'  // Your backend handles API key
+  }
 });
 
-// Server
+// Pattern 2: Simple (Demos) - apiKey directly
 const mc = new MindCache({
-  cloud: { instanceId: 'xxx', apiKey: process.env.MINDCACHE_API_KEY }
+  cloud: {
+    instanceId: 'xxx',
+    apiKey: 'del_xxx:sec_xxx',  // Or mc_live_xxx
+    baseUrl: 'https://api.mindcache.dev'
+  }
 });
 
-// Wait for sync
+// Wait for sync (IMPORTANT!)
 await mc.waitForSync();
 
 // Check state
@@ -1282,4 +1483,219 @@ mc.disconnect();
 
 ---
 
+## Complete App Examples
+
+### Example 1: Simple Cloud Counter (Demo Pattern)
+
+A minimal Next.js app with real-time counter sync. Uses Pattern 2 (apiKey in browser).
+
+**File: `src/app/page.tsx`**
+```typescript
+"use client";
+import { useState, useEffect, useRef } from 'react';
+import { MindCache } from 'mindcache';
+
+export default function Home() {
+  const [instanceId, setInstanceId] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [count, setCount] = useState<number | null>(null);
+  const mindCacheRef = useRef<MindCache | null>(null);
+
+  const handleConnect = async () => {
+    if (!instanceId || !apiKey) return;
+
+    const baseUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL;
+    if (!baseUrl) throw new Error('NEXT_PUBLIC_MINDCACHE_API_URL not set');
+
+    // SDK automatically fetches token using apiKey
+    const mc = new MindCache({
+      cloud: {
+        instanceId,
+        apiKey,
+        baseUrl
+      }
+    });
+
+    await mc.waitForSync();
+    
+    const current = mc.get_value('counter');
+    setCount(Number(current) || 0);
+
+    mc.subscribe('counter', (val: any) => {
+      setCount(Number(val) || 0);
+    });
+
+    mindCacheRef.current = mc;
+    setConnected(true);
+  };
+
+  // Auto-increment every second
+  useEffect(() => {
+    if (!connected || !mindCacheRef.current) return;
+    const interval = setInterval(() => {
+      const mc = mindCacheRef.current!;
+      const next = (Number(mc.get_value('counter')) || 0) + 1;
+      mc.set_value('counter', next);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [connected]);
+
+  return (
+    <div>
+      {!connected ? (
+        <div>
+          <input value={instanceId} onChange={e => setInstanceId(e.target.value)} placeholder="Instance ID" />
+          <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="API Key" />
+          <button onClick={handleConnect}>Connect</button>
+        </div>
+      ) : (
+        <div>Counter: {count}</div>
+      )}
+    </div>
+  );
+}
+```
+
+**File: `.env.local`**
+```bash
+NEXT_PUBLIC_MINDCACHE_API_URL=https://api.mindcache.dev
+```
+
+---
+
+### Example 2: Production Cloud Form (Secure Pattern)
+
+A production-ready Next.js app with AI chat. Uses Pattern 1 (tokenEndpoint).
+
+**File: `src/app/api/ws-token/route.ts`**
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(request: NextRequest) {
+  const apiKey = process.env.MINDCACHE_API_KEY; // Server-side secret!
+  const apiUrl = process.env.MINDCACHE_API_URL || 'https://api.mindcache.dev';
+  const instanceId = request.nextUrl.searchParams.get('instanceId');
+
+  if (!apiKey || !instanceId) {
+    return NextResponse.json({ error: 'Missing config' }, { status: 500 });
+  }
+
+  // Determine auth header format based on key type
+  const isDelegate = apiKey.startsWith('del_') && apiKey.includes(':');
+  const authHeader = isDelegate ? `ApiKey ${apiKey}` : `Bearer ${apiKey}`;
+
+  const response = await fetch(`${apiUrl}/api/ws-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': authHeader
+    },
+    body: JSON.stringify({ instanceId, permission: 'write' })
+  });
+
+  const tokenData = await response.json();
+  return NextResponse.json(tokenData);
+}
+```
+
+**File: `src/components/CloudForm.tsx`**
+```typescript
+'use client';
+import { useRef, useEffect, useState } from 'react';
+import { MindCache } from 'mindcache';
+
+interface Props {
+  instanceId: string;
+}
+
+export default function CloudForm({ instanceId }: Props) {
+  const mcRef = useRef<MindCache | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [formData, setFormData] = useState({ name: '', email: '' });
+
+  // Initialize MindCache once
+  if (!mcRef.current && instanceId) {
+    mcRef.current = new MindCache({
+      cloud: {
+        instanceId,
+        baseUrl: process.env.NEXT_PUBLIC_MINDCACHE_API_URL,
+        tokenEndpoint: '/api/ws-token' // Uses our backend route
+      }
+    });
+  }
+
+  useEffect(() => {
+    const mc = mcRef.current;
+    if (!mc) return;
+
+    const handleChange = () => {
+      setIsLoaded(mc.isLoaded);
+      if (mc.isLoaded) {
+        setFormData({
+          name: mc.get_value('name') || '',
+          email: mc.get_value('email') || ''
+        });
+      }
+    };
+
+    handleChange();
+    mc.subscribeToAll(handleChange);
+
+    return () => {
+      mc.unsubscribeFromAll(handleChange);
+      mc.disconnect();
+    };
+  }, [instanceId]);
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    mcRef.current?.set_value(field, value);
+  };
+
+  if (!isLoaded) return <div>Loading...</div>;
+
+  return (
+    <form>
+      <input
+        value={formData.name}
+        onChange={e => handleInputChange('name', e.target.value)}
+        placeholder="Name"
+      />
+      <input
+        value={formData.email}
+        onChange={e => handleInputChange('email', e.target.value)}
+        placeholder="Email"
+      />
+    </form>
+  );
+}
+```
+
+**File: `.env.local`**
+```bash
+# Server-side only (never exposed)
+MINDCACHE_API_KEY=del_xxx:sec_xxx
+
+# Client-side (safe to expose)
+NEXT_PUBLIC_MINDCACHE_API_URL=https://api.mindcache.dev
+NEXT_PUBLIC_INSTANCE_ID=your-instance-id
+```
+
+---
+
+## Best Practices Summary
+
+1. **Always call `waitForSync()`** before reading cloud data
+2. **Use `tokenEndpoint` for production** - keeps API key server-side
+3. **Use `apiKey` for demos** - simpler but exposes key to browser
+4. **Subscribe to changes** for real-time updates: `mc.subscribeToAll()`
+5. **Disconnect on cleanup** in React useEffect return
+6. **Check `isLoaded` before rendering** dependent UI
+7. **Use `baseUrl`** - required, no default fallback
+8. **Instance IDs are safe to expose** - they're just identifiers
+
+---
+
 *This documentation is optimized for LLM consumption. For human-readable documentation with interactive examples, visit [mindcache.dev](https://mindcache.dev).*
+

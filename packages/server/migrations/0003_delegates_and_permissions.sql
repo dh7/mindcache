@@ -3,7 +3,6 @@
 
 CREATE TABLE IF NOT EXISTS delegates (
   delegate_id TEXT PRIMARY KEY,
-  delegate_secret_hash TEXT,  -- Legacy: kept for backward compatibility
   created_by_user_id TEXT NOT NULL REFERENCES users(id),
   name TEXT NOT NULL,
   can_read INTEGER NOT NULL DEFAULT 1,

@@ -8,7 +8,6 @@ import type {
   CloudAdapterEvents
 } from './types';
 
-const DEFAULT_BASE_URL = 'wss://api.mindcache.io';
 const RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 
@@ -16,9 +15,15 @@ const MAX_RECONNECT_DELAY = 30000;
  * CloudAdapter connects a MindCache instance to the cloud service
  * for real-time sync and persistence.
  *
- * Auth modes:
- * 1. Token (recommended): Pass a short-lived token from /api/ws-token
- * 2. API Key (server-to-server): Pass apiKey for direct connections
+ * Auth flow:
+ * 1. SDK calls POST /api/ws-token with apiKey to get short-lived token
+ * 2. SDK connects to WebSocket with token in query string
+ * 3. Server validates token and upgrades to WebSocket
+ *
+ * Usage patterns:
+ * - apiKey: SDK fetches tokens automatically (simple, good for demos)
+ * - tokenEndpoint: Your backend fetches tokens (secure, apiKey stays server-side)
+ * - tokenProvider: Custom token logic (advanced)
  */
 export class CloudAdapter {
   private ws: WebSocket | null = null;
@@ -32,7 +37,9 @@ export class CloudAdapter {
   private token: string | null = null;
 
   constructor(private config: CloudConfig) {
-    this.config.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
+    if (!config.baseUrl) {
+      throw new Error('MindCache Cloud: baseUrl is required. Please provide the cloud API URL in your configuration.');
+    }
   }
 
   /**
@@ -100,6 +107,54 @@ export class CloudAdapter {
   }
 
   /**
+   * Fetch a short-lived WebSocket token from the API using the API key.
+   * This keeps the API key secure by only using it for a single HTTPS request,
+   * then using the short-lived token for the WebSocket connection.
+   *
+   * Supports two key formats:
+   * - API keys: mc_live_xxx or mc_test_xxx → Bearer token
+   * - Delegate keys: del_xxx:sec_xxx → ApiKey format
+   */
+  private async fetchTokenWithApiKey(): Promise<string> {
+    if (!this.config.apiKey) {
+      throw new Error('API key is required to fetch token');
+    }
+
+    // Convert WebSocket URL to HTTP for the token endpoint
+    const httpBaseUrl = this.config.baseUrl!
+      .replace('wss://', 'https://')
+      .replace('ws://', 'http://');
+
+    // Detect key format and use appropriate auth header
+    // Delegate keys: del_xxx:sec_xxx format
+    // API keys: mc_live_xxx or mc_test_xxx format
+    const isDelegate = this.config.apiKey.startsWith('del_') && this.config.apiKey.includes(':');
+    const authHeader = isDelegate
+      ? `ApiKey ${this.config.apiKey}`
+      : `Bearer ${this.config.apiKey}`;
+
+    const response = await fetch(`${httpBaseUrl}/api/ws-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader
+      },
+      body: JSON.stringify({
+        instanceId: this.config.instanceId,
+        permission: 'write'
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to get token' }));
+      throw new Error(error.error || `Failed to get WebSocket token: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.token;
+  }
+
+  /**
    * Connect to the cloud service
    */
   async connect(): Promise<void> {
@@ -110,17 +165,28 @@ export class CloudAdapter {
     this._state = 'connecting';
 
     try {
-      // Get token if we have a provider and no current token
-      if (this.config.tokenProvider && !this.token) {
-        this.token = await this.config.tokenProvider();
+      // Get token using one of these methods (in priority order):
+      // 1. tokenProvider function (for apps with custom token logic)
+      // 2. apiKey (SDK fetches token automatically from API)
+      // 3. pre-set token (rare, for manual token management)
+
+      if (!this.token) {
+        if (this.config.tokenProvider) {
+          this.token = await this.config.tokenProvider();
+        } else if (this.config.apiKey) {
+          // Automatically fetch a short-lived token using the API key
+          this.token = await this.fetchTokenWithApiKey();
+        }
       }
 
-      // Build URL with token if available
+      // Build WebSocket URL with token
       let url = `${this.config.baseUrl}/sync/${this.config.instanceId}`;
       if (this.token) {
         url += `?token=${encodeURIComponent(this.token)}`;
         // Token is single-use, clear it after connecting
         this.token = null;
+      } else {
+        throw new Error('MindCache Cloud: No authentication method available. Provide apiKey or tokenProvider.');
       }
 
       this.ws = new WebSocket(url);
@@ -193,16 +259,8 @@ export class CloudAdapter {
     }
 
     this.ws.onopen = () => {
-      // If using API key (server-to-server), send auth message
-      // If using token, auth was already verified by Worker
-      if (this.config.apiKey) {
-        this.ws!.send(JSON.stringify({
-          type: 'auth',
-          apiKey: this.config.apiKey
-        }));
-      }
-      // If using token auth, Worker already authenticated us
-      // and will send sync message directly
+      // Token auth was already verified by Worker before WebSocket upgrade
+      // Server will send sync message directly
     };
 
     this.ws.onmessage = (event) => {
@@ -211,6 +269,7 @@ export class CloudAdapter {
         this.handleMessage(msg);
       } catch (error) {
         console.error('MindCache Cloud: Failed to parse message:', error);
+        console.error('Raw message:', typeof event.data === 'string' ? event.data.slice(0, 200) : event.data);
       }
     };
 
@@ -220,10 +279,12 @@ export class CloudAdapter {
       this.scheduleReconnect();
     };
 
-    this.ws.onerror = (error) => {
+    this.ws.onerror = () => {
       this._state = 'error';
-      this.emit('error', new Error('WebSocket error'));
-      console.error('MindCache Cloud: WebSocket error:', error);
+      const url = `${this.config.baseUrl}/sync/${this.config.instanceId}`;
+      console.error(`MindCache Cloud: WebSocket error connecting to ${url}`);
+      console.error('Check that the instance ID and API key are correct, and that the server is reachable.');
+      this.emit('error', new Error(`WebSocket connection failed to ${url}`));
     };
   }
 
@@ -321,17 +382,7 @@ export class CloudAdapter {
       this.reconnectTimeout = null;
       this.reconnectAttempts++;
 
-      // Get fresh token before reconnecting (if using token auth)
-      if (this.config.tokenProvider) {
-        try {
-          this.token = await this.config.tokenProvider();
-        } catch (error) {
-          console.error('MindCache Cloud: Failed to get token for reconnect:', error);
-          this.emit('error', error as Error);
-          return;
-        }
-      }
-
+      // connect() handles token fetching automatically
       this.connect();
     }, delay);
   }

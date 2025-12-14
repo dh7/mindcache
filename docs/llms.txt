@@ -88,20 +88,40 @@ const { text } = await generateText({
 
 ## Cloud Sync (MindCache 2.0)
 
-```typescript
-import { MindCache } from 'mindcache';
+Two authentication patterns:
 
+### Pattern 1: Secure (Production) - API key stays on server
+```typescript
+// Client
 const mc = new MindCache({
   cloud: {
-    instanceId: 'my-instance-id',
-    tokenEndpoint: '/api/ws-token',
+    instanceId: 'xxx',
+    baseUrl: 'https://api.mindcache.dev',
+    tokenEndpoint: '/api/ws-token'  // Your backend route
   }
 });
-
-// Same API as local - now with cloud persistence!
-mc.set_value('userName', 'Alice');
-mc.subscribeToAll(() => console.log('Synced!'));
+await mc.waitForSync();
 ```
+
+### Pattern 2: Simple (Demos) - API key in browser
+```typescript
+// No backend needed!
+const mc = new MindCache({
+  cloud: {
+    instanceId: 'xxx',
+    apiKey: 'del_xxx:sec_xxx',  // Or mc_live_xxx
+    baseUrl: 'https://api.mindcache.dev'
+  }
+});
+await mc.waitForSync();
+mc.set_value('counter', 1);
+```
+
+### Key Methods
+- `await mc.waitForSync()` - Wait for initial data load
+- `mc.connectionState` - 'disconnected' | 'connecting' | 'connected' | 'error'
+- `mc.isLoaded` - true when cloud data loaded
+- `mc.disconnect()` - Clean disconnect
 
 ## For Full Documentation
 

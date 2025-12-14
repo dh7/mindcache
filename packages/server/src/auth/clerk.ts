@@ -274,7 +274,6 @@ export async function verifyDelegate(
     const secretHash = await hashSecret(delegateSecret);
 
     // Look up the delegate via delegate_secrets table
-    // Fallback to legacy delegate_secret_hash for backward compatibility
     const result = await db.prepare(`
       SELECT 
         d.delegate_id,
@@ -287,18 +286,14 @@ export async function verifyDelegate(
       FROM delegates d
       JOIN users u ON u.id = d.created_by_user_id
       WHERE d.delegate_id = ?
-        AND (
-          EXISTS (
-            SELECT 1 FROM delegate_secrets ds
-            WHERE ds.delegate_id = d.delegate_id
-              AND ds.secret_hash = ?
-              AND ds.revoked_at IS NULL
-          )
-          OR
-          (d.delegate_secret_hash = ? AND d.delegate_secret_hash IS NOT NULL)
+        AND EXISTS (
+          SELECT 1 FROM delegate_secrets ds
+          WHERE ds.delegate_id = d.delegate_id
+            AND ds.secret_hash = ?
+            AND ds.revoked_at IS NULL
         )
         AND (d.expires_at IS NULL OR d.expires_at > unixepoch())
-    `).bind(delegateId, secretHash, secretHash).first<{
+    `).bind(delegateId, secretHash).first<{
       delegate_id: string;
       created_by_user_id: string;
       can_read: number;
