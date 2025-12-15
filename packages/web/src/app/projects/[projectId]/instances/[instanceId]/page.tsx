@@ -951,17 +951,21 @@ export default function InstanceEditorPage() {
               if (contentType !== 'text') {
                 indicators.push(contentType.toUpperCase().charAt(0));
               }
-              if (entry.attributes.readonly) {
-                indicators.push('R');
+              // Show system tags: SystemPrompt, LLMWrite, ApplyTemplate
+              const systemTags = entry.attributes.systemTags || [];
+              if (systemTags.includes('SystemPrompt') || systemTags.includes('prompt') || entry.attributes.visible) {
+                indicators.push('SP'); // SystemPrompt
               }
-              if (!entry.attributes.visible) {
-                indicators.push('V');
+              if (systemTags.includes('LLMWrite') && !systemTags.includes('readonly')) {
+                indicators.push('LW'); // LLMWrite
+              } else if (systemTags.includes('readonly') || !systemTags.includes('LLMWrite')) {
+                indicators.push('RO'); // Readonly (no LLMWrite)
               }
-              if (entry.attributes.template) {
-                indicators.push('T');
+              if (systemTags.includes('ApplyTemplate') || systemTags.includes('template') || entry.attributes.template) {
+                indicators.push('AT'); // ApplyTemplate
               }
-              if (entry.attributes.hardcoded || isSystemKey) {
-                indicators.push('H');
+              if (systemTags.includes('protected') || entry.attributes.hardcoded || isSystemKey) {
+                indicators.push('P'); // Protected
               }
 
               return (
@@ -1047,7 +1051,7 @@ export default function InstanceEditorPage() {
                           </svg>
                         </button>
                       )}
-                      {canEdit && !entry.attributes.readonly && (
+                      {canEdit && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1118,7 +1122,7 @@ export default function InstanceEditorPage() {
                             </button>
                           )}
                         </div>
-                      ) : canEdit && !entry.attributes.readonly ? (
+                      ) : canEdit ? (
                         <>
                           <textarea
                             className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-cyan-600 outline-none resize-y transition-colors"

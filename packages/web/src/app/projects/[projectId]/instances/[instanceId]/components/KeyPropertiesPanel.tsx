@@ -216,7 +216,7 @@ export function KeyPropertiesPanel({
 
       {/* 2. Value - based on type */}
       {/* Text/JSON value editor */}
-      {isTextType && canEdit && !entry.attributes.readonly && (
+      {isTextType && canEdit && (
         <div className="flex flex-col space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-gray-400 text-xs">value:</span>
@@ -240,7 +240,7 @@ export function KeyPropertiesPanel({
       )}
 
       {/* Text/JSON readonly display */}
-      {isTextType && (!canEdit || entry.attributes.readonly) && currentValue && (
+      {isTextType && !canEdit && currentValue && (
         <div className="flex flex-col space-y-1">
           <span className="text-gray-400 text-xs">value:</span>
           <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
@@ -345,39 +345,41 @@ export function KeyPropertiesPanel({
         </select>
       </div>
 
-      {/* 4. System tags (R, V, T) and z-index - at the end */}
+      {/* 4. System tags (SystemPrompt, LLMWrite, ApplyTemplate) and z-index - at the end */}
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        {/* Readonly */}
+        {/* SystemPrompt */}
         <div className="flex items-center gap-1">
-          <span className="text-yellow-400">[R]</span>
-          {attributesForm.hardcoded ? (
-            <span className="text-gray-500 font-mono">{attributesForm.readonly ? 'true' : 'false'}</span>
-          ) : (
-            <button
-              onClick={() => handleChange('readonly', !attributesForm.readonly)}
-              disabled={!canEdit}
-              className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
-            >
-              {attributesForm.readonly ? 'true' : 'false'}
-            </button>
-          )}
-        </div>
-
-        {/* Visible */}
-        <div className="flex items-center gap-1">
-          <span className="text-yellow-400">[V]</span>
+          <span className="text-yellow-400">[SP]</span>
           <button
             onClick={() => handleChange('visible', !attributesForm.visible)}
             disabled={!canEdit}
             className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+            title="SystemPrompt: Include in system prompt"
           >
             {attributesForm.visible ? 'true' : 'false'}
           </button>
         </div>
 
-        {/* Template */}
+        {/* LLMWrite */}
         <div className="flex items-center gap-1">
-          <span className="text-yellow-400">[T]</span>
+          <span className="text-yellow-400">[LW]</span>
+          {attributesForm.hardcoded ? (
+            <span className="text-gray-500 font-mono">{!attributesForm.readonly ? 'true' : 'false'}</span>
+          ) : (
+            <button
+              onClick={() => handleChange('readonly', !attributesForm.readonly)}
+              disabled={!canEdit}
+              className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+              title="LLMWrite: LLM can write via tools"
+            >
+              {!attributesForm.readonly ? 'true' : 'false'}
+            </button>
+          )}
+        </div>
+
+        {/* ApplyTemplate */}
+        <div className="flex items-center gap-1">
+          <span className="text-yellow-400">[AT]</span>
           {attributesForm.hardcoded ? (
             <span className="text-gray-500 font-mono">{attributesForm.template ? 'true' : 'false'}</span>
           ) : (
@@ -385,16 +387,17 @@ export function KeyPropertiesPanel({
               onClick={() => handleChange('template', !attributesForm.template)}
               disabled={!canEdit}
               className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+              title="ApplyTemplate: Process template injection"
             >
               {attributesForm.template ? 'true' : 'false'}
             </button>
           )}
         </div>
 
-        {/* Hardcoded - just display if true */}
+        {/* Protected - just display if true */}
         {attributesForm.hardcoded && (
           <div className="flex items-center gap-1">
-            <span className="text-yellow-400">[H]</span>
+            <span className="text-yellow-400">[P]</span>
             <span className="text-gray-500 font-mono">true</span>
           </div>
         )}
