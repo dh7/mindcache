@@ -65,6 +65,67 @@ export class MindCache {
   // Internal flag to prevent sync loops when receiving remote updates
   private _isRemoteUpdate = false;
 
+  /**
+   * Normalize system tags: migrate old tags to new ones
+   * - 'prompt' → 'SystemPrompt'
+   * - 'readonly' → remove 'LLMWrite' (or add if not readonly)
+   */
+  private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
+    const normalized: SystemTag[] = [];
+    let hasSystemPrompt = false;
+    let hasLLMWrite = false;
+    let hasReadonly = false;
+
+    // First pass: identify what we have
+    for (const tag of tags) {
+      if (tag === 'SystemPrompt' || tag === 'prompt') {
+        hasSystemPrompt = true;
+      } else if (tag === 'LLMWrite') {
+        hasLLMWrite = true;
+      } else if (tag === 'readonly') {
+        hasReadonly = true;
+      } else if (tag === 'protected') {
+        normalized.push(tag);
+      } else if (tag === 'ApplyTemplate' || tag === 'template') {
+        normalized.push('ApplyTemplate');
+      }
+    }
+
+    // Add normalized tags
+    if (hasSystemPrompt) {
+      normalized.push('SystemPrompt');
+    }
+
+    // LLMWrite logic: if readonly exists, NO LLMWrite; otherwise, add LLMWrite
+    // But if LLMWrite already exists, keep it (unless readonly also exists)
+    if (hasReadonly) {
+      // Keep readonly tag for backward compatibility with web package
+      normalized.push('readonly');
+      // Don't add LLMWrite (readonly = not writable)
+    } else if (hasLLMWrite) {
+      normalized.push('LLMWrite');
+    } else {
+      // Default: if neither readonly nor LLMWrite specified, default to LLMWrite (writable)
+      normalized.push('LLMWrite');
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Check if key should be visible in system prompt
+   */
+  private hasSystemPrompt(tags: SystemTag[]): boolean {
+    return tags.includes('SystemPrompt') || tags.includes('prompt');
+  }
+
+  /**
+   * Check if key can be written by LLM (has LLMWrite and not readonly)
+   */
+  private hasLLMWrite(tags: SystemTag[]): boolean {
+    return tags.includes('LLMWrite') && !tags.includes('readonly');
+  }
+
   // Cloud sync state
   private _cloudAdapter: ICloudAdapter | null = null;
   private _connectionState: ConnectionState = 'disconnected';
@@ -340,7 +401,7 @@ export class MindCache {
       return undefined;
     }
 
-    if (entry.attributes.template) {
+    if (entry.attributes.systemTags?.includes('ApplyTemplate') || entry.attributes.systemTags?.includes('template') || entry.attributes.template) {
       const processingStack = _processingStack || new Set<string>();
       if (processingStack.has(key)) {
         return entry.value;
@@ -397,31 +458,51 @@ export class MindCache {
       : {
         ...DEFAULT_KEY_ATTRIBUTES,
         contentTags: [],  // Fresh array
-        systemTags: ['prompt'] as SystemTag[],  // Fresh array with default
+        systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[],  // Fresh array with default
         tags: [],  // Fresh array
         zIndex: 0
       };
 
     const finalAttributes = attributes ? { ...baseAttributes, ...attributes } : baseAttributes;
 
-    // If legacy boolean attributes were explicitly provided, sync them TO systemTags first
-    if (attributes) {
-      let systemTags = [...(finalAttributes.systemTags || [])] as SystemTag[];
+    // Normalize system tags first (migrate old tags to new ones)
+    let systemTags = this.normalizeSystemTags(finalAttributes.systemTags || []);
 
+    // If legacy boolean attributes were explicitly provided, sync them TO systemTags
+    if (attributes) {
+      // Handle readonly → LLMWrite mapping
       if ('readonly' in attributes) {
-        if (attributes.readonly && !systemTags.includes('readonly')) {
-          systemTags.push('readonly');
-        } else if (!attributes.readonly && !wasHardcoded) {
-          // Can't remove readonly if hardcoded
+        if (attributes.readonly) {
+          // readonly=true means remove LLMWrite and add readonly tag (for backward compat)
+          systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
+          if (!systemTags.includes('readonly')) {
+            systemTags.push('readonly');
+          }
+        } else if (!wasHardcoded) {
+          // readonly=false means add LLMWrite and remove readonly tag
+          if (!systemTags.includes('LLMWrite')) {
+            systemTags.push('LLMWrite');
+          }
           systemTags = systemTags.filter(t => t !== 'readonly') as SystemTag[];
         }
       }
+
+      // Handle visible → SystemPrompt mapping
       if ('visible' in attributes) {
-        if (attributes.visible && !systemTags.includes('prompt')) {
-          systemTags.push('prompt');
-        } else if (!attributes.visible) {
+        if (attributes.visible) {
+          if (!systemTags.includes('SystemPrompt')) {
+            systemTags.push('SystemPrompt');
+          }
+          // Remove old 'prompt' tag if present
           systemTags = systemTags.filter(t => t !== 'prompt') as SystemTag[];
+        } else {
+          systemTags = systemTags.filter(t => t !== 'SystemPrompt' && t !== 'prompt') as SystemTag[];
         }
+      }
+
+      // Handle systemTags array directly (new API)
+      if ('systemTags' in attributes && Array.isArray(attributes.systemTags)) {
+        systemTags = this.normalizeSystemTags(attributes.systemTags);
       }
       if ('hardcoded' in attributes) {
         if (attributes.hardcoded && !systemTags.includes('protected')) {
@@ -441,47 +522,51 @@ export class MindCache {
         }
       }
       if ('template' in attributes) {
-        if (attributes.template && !wasHardcoded && !systemTags.includes('template')) {
-          systemTags.push('template');
+        if (attributes.template && !wasHardcoded && !systemTags.includes('ApplyTemplate') && !systemTags.includes('template')) {
+          systemTags.push('ApplyTemplate');
         } else if (!attributes.template || wasHardcoded) {
           // Can't set template if hardcoded
-          systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
+          systemTags = systemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template') as SystemTag[];
         }
       }
-      finalAttributes.systemTags = systemTags;
     } else if (wasHardcoded) {
       // If no attributes provided but entry was hardcoded, preserve protected tag
-      let systemTags = [...(finalAttributes.systemTags || [])] as SystemTag[];
       if (!systemTags.includes('protected')) {
         systemTags.push('protected');
       }
+      // Protected means readonly (remove LLMWrite, add readonly for backward compat)
+      systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
       if (!systemTags.includes('readonly')) {
         systemTags.push('readonly');
       }
-      systemTags = systemTags.filter(t => t !== 'template');
-      finalAttributes.systemTags = systemTags;
+      systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
     }
 
-    // Enforce: protected (hardcoded) implies readonly and NOT template
-    let systemTags = finalAttributes.systemTags || [];
+    // Enforce: protected (hardcoded) implies readonly (no LLMWrite) and NOT template
     // Always preserve hardcoded status if entry was hardcoded
     if (wasHardcoded && !systemTags.includes('protected')) {
-      systemTags = [...systemTags, 'protected'] as SystemTag[];
+      systemTags.push('protected');
     }
     if (systemTags.includes('protected')) {
+      // Protected means readonly (remove LLMWrite, add readonly for backward compat)
+      systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
       if (!systemTags.includes('readonly')) {
-        systemTags = [...systemTags, 'readonly'] as SystemTag[];
+        systemTags.push('readonly');
       }
       systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
-      finalAttributes.systemTags = systemTags;
     }
 
+    // Store normalized tags
+    finalAttributes.systemTags = systemTags;
+
     // Sync legacy attributes FROM systemTags (canonical source)
-    finalAttributes.readonly = systemTags.includes('readonly');
-    finalAttributes.visible = systemTags.includes('prompt');
+    // readonly = NOT LLMWrite (if LLMWrite not present, or if readonly tag present)
+    finalAttributes.readonly = systemTags.includes('readonly') || !systemTags.includes('LLMWrite');
+    // visible = SystemPrompt (or prompt for backward compat)
+    finalAttributes.visible = this.hasSystemPrompt(systemTags);
     // Always preserve hardcoded status if entry was hardcoded
     finalAttributes.hardcoded = wasHardcoded || systemTags.includes('protected');
-    finalAttributes.template = systemTags.includes('template');
+    finalAttributes.template = systemTags.includes('ApplyTemplate') || systemTags.includes('template');
 
     // Sync tags <-> contentTags bidirectionally
     // If tags was explicitly provided, use it as source for contentTags
@@ -512,21 +597,28 @@ export class MindCache {
     this._isRemoteUpdate = true;
 
     // Ensure new tag arrays exist and sync legacy attributes
-    const systemTags: SystemTag[] = attributes.systemTags || [];
-    if (!attributes.systemTags) {
+    let systemTags: SystemTag[] = attributes.systemTags || [];
+    if (!attributes.systemTags || systemTags.length === 0) {
+      systemTags = [];
       if (attributes.visible !== false) {
-        systemTags.push('prompt');
+        systemTags.push('prompt'); // Will be normalized to SystemPrompt
       }
       if (attributes.readonly) {
-        systemTags.push('readonly');
+        systemTags.push('readonly'); // Will be normalized (removes LLMWrite)
+      } else {
+        systemTags.push('LLMWrite'); // Default: writable
       }
       if (attributes.hardcoded) {
         systemTags.push('protected');
       }
       if (attributes.template) {
-        systemTags.push('template');
+        systemTags.push('ApplyTemplate');
       }
     }
+
+    // Normalize tags (migrate old tags to new ones)
+    systemTags = this.normalizeSystemTags(systemTags);
+
     const contentTags = attributes.contentTags || attributes.tags || [];
 
     this.stm[key] = {
@@ -537,10 +629,11 @@ export class MindCache {
         systemTags,
         zIndex: attributes.zIndex ?? 0,
         tags: contentTags,
-        readonly: systemTags.includes('readonly'),
-        visible: systemTags.includes('prompt'),
+        // Sync legacy attributes FROM normalized systemTags
+        readonly: systemTags.includes('readonly') || !systemTags.includes('LLMWrite'),
+        visible: this.hasSystemPrompt(systemTags),
         hardcoded: systemTags.includes('protected'),
-        template: systemTags.includes('template')
+        template: systemTags.includes('ApplyTemplate') || systemTags.includes('template')
       }
     };
 
@@ -609,51 +702,76 @@ export class MindCache {
         delete (allowedAttributes as any).readonly; // Can't change readonly on hardcoded
       }
       if ('template' in allowedAttributes) {
-        delete (allowedAttributes as any).template; // Can't change template on hardcoded
+        delete (allowedAttributes as any).template; // Can't change ApplyTemplate on hardcoded
       }
     }
 
     entry.attributes = { ...entry.attributes, ...allowedAttributes };
 
     // Sync legacy boolean to systemTags if legacy props are set
-    if ('readonly' in attributes || 'visible' in attributes || 'template' in attributes) {
-      let newSystemTags: SystemTag[] = [];
-      if (entry.attributes.readonly) {
-        newSystemTags.push('readonly');
-      }
-      if (entry.attributes.visible) {
-        newSystemTags.push('prompt');
-      }
-      if (entry.attributes.template) {
-        newSystemTags.push('template');
-      }
-      // Always preserve hardcoded status if it was hardcoded
-      if (wasHardcoded || entry.attributes.hardcoded) {
-        newSystemTags.push('protected');
+    if ('readonly' in attributes || 'visible' in attributes || 'template' in attributes || 'systemTags' in attributes) {
+      // Start with existing tags or derive from legacy attributes
+      let newSystemTags: SystemTag[] = entry.attributes.systemTags || [];
+
+      // If systemTags was explicitly provided, use it and normalize
+      if ('systemTags' in attributes && Array.isArray(attributes.systemTags)) {
+        newSystemTags = this.normalizeSystemTags(attributes.systemTags);
+      } else {
+        // Otherwise, derive from legacy attributes
+        newSystemTags = [];
+        if (!entry.attributes.readonly) {
+          newSystemTags.push('LLMWrite');
+        } else {
+          newSystemTags.push('readonly');
+        }
+        if (entry.attributes.visible) {
+          newSystemTags.push('SystemPrompt');
+        }
+        if (entry.attributes.template) {
+          newSystemTags.push('ApplyTemplate');
+        }
+        // Always preserve hardcoded status if it was hardcoded
+        if (wasHardcoded || entry.attributes.hardcoded) {
+          newSystemTags.push('protected');
+        }
+        newSystemTags = this.normalizeSystemTags(newSystemTags);
       }
 
-      // Enforce: protected implies readonly and NOT template
+      // Enforce: protected implies readonly (no LLMWrite) and NOT ApplyTemplate
       if (newSystemTags.includes('protected')) {
+        newSystemTags = newSystemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
         if (!newSystemTags.includes('readonly')) {
           newSystemTags.push('readonly');
         }
-        newSystemTags = newSystemTags.filter(t => t !== 'template');
+        newSystemTags = newSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template') as SystemTag[];
         entry.attributes.readonly = true;
         entry.attributes.template = false;
       }
 
       entry.attributes.systemTags = newSystemTags;
+
+      // Sync legacy attributes FROM normalized systemTags
+      entry.attributes.readonly = newSystemTags.includes('readonly') || !newSystemTags.includes('LLMWrite');
+      entry.attributes.visible = this.hasSystemPrompt(newSystemTags);
+      entry.attributes.template = newSystemTags.includes('ApplyTemplate') || newSystemTags.includes('template');
     } else if (wasHardcoded) {
       // If no legacy props were set but entry was hardcoded, ensure protected tag is preserved
-      let systemTags = [...(entry.attributes.systemTags || [])];
+      let systemTags = this.normalizeSystemTags(entry.attributes.systemTags || []);
       if (!systemTags.includes('protected')) {
         systemTags.push('protected');
       }
+      // Protected means readonly (remove LLMWrite, add readonly for backward compat)
+      systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
       if (!systemTags.includes('readonly')) {
         systemTags.push('readonly');
       }
-      systemTags = systemTags.filter(t => t !== 'template');
+      systemTags = systemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template') as SystemTag[];
       entry.attributes.systemTags = systemTags;
+
+      // Sync legacy attributes
+      entry.attributes.readonly = true;
+      entry.attributes.visible = this.hasSystemPrompt(systemTags);
+      entry.attributes.template = false;
     }
 
     // Always ensure hardcoded status is preserved and synced
@@ -955,8 +1073,10 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
       const entry = this.stm[key];
-      if (entry.attributes.visible) {
-        const processedValue = entry.attributes.template ? this.get_value(key) : entry.value;
+      // Check for SystemPrompt tag (or visible for backward compat)
+      if (this.hasSystemPrompt(entry.attributes.systemTags) || entry.attributes.visible) {
+        const hasTemplate = entry.attributes.systemTags?.includes('ApplyTemplate') || entry.attributes.systemTags?.includes('template') || entry.attributes.template;
+        const processedValue = hasTemplate ? this.get_value(key) : entry.value;
 
         apiData.push({
           key,
@@ -988,7 +1108,8 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
       const entry = this.stm[key];
-      if (entry.attributes.visible && entry.attributes.type === 'image' && entry.attributes.contentType) {
+      // Check for SystemPrompt tag (or visible for backward compat)
+      if ((this.hasSystemPrompt(entry.attributes.systemTags) || entry.attributes.visible) && entry.attributes.type === 'image' && entry.attributes.contentType) {
         const dataUrl = this.createDataUrl(entry.value as string, entry.attributes.contentType);
         imageParts.push({
           type: 'file' as const,
@@ -1047,21 +1168,26 @@ export class MindCache {
 
           // Migrate from legacy format: derive systemTags from boolean flags if missing
           let systemTags: SystemTag[] = attrs.systemTags || [];
-          if (!attrs.systemTags) {
+          if (!attrs.systemTags || systemTags.length === 0) {
             systemTags = [];
             if (attrs.visible !== false) {
-              systemTags.push('prompt');
+              systemTags.push('prompt'); // Will be normalized to SystemPrompt
             } // visible true by default
             if (attrs.readonly) {
-              systemTags.push('readonly');
+              systemTags.push('readonly'); // Will be normalized (removes LLMWrite)
+            } else {
+              systemTags.push('LLMWrite'); // Default: writable
             }
             if (attrs.hardcoded) {
               systemTags.push('protected');
             }
             if (attrs.template) {
-              systemTags.push('template');
+              systemTags.push('ApplyTemplate');
             }
           }
+
+          // Normalize tags (migrate old tags to new ones)
+          systemTags = this.normalizeSystemTags(systemTags);
 
           // Migrate contentTags from legacy tags if missing
           const contentTags = attrs.contentTags || attrs.tags || [];
@@ -1073,12 +1199,12 @@ export class MindCache {
               contentTags,
               systemTags,
               zIndex: attrs.zIndex ?? 0,
-              // Sync legacy attributes
+              // Sync legacy attributes FROM normalized systemTags
               tags: contentTags,
-              readonly: systemTags.includes('readonly'),
-              visible: systemTags.includes('prompt'),
+              readonly: systemTags.includes('readonly') || !systemTags.includes('LLMWrite'),
+              visible: this.hasSystemPrompt(systemTags),
               hardcoded: systemTags.includes('protected'),
-              template: systemTags.includes('template')
+              template: systemTags.includes('ApplyTemplate') || systemTags.includes('template')
             }
           };
         }
@@ -1095,13 +1221,16 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
       const entry = this.stm[key];
-      if (entry.attributes.visible) {
+      // Check for SystemPrompt tag (or visible for backward compat)
+      if (this.hasSystemPrompt(entry.attributes.systemTags) || entry.attributes.visible) {
         if (entry.attributes.type === 'image') {
           promptLines.push(`image ${key} available`);
           return;
         }
         if (entry.attributes.type === 'file') {
-          if (entry.attributes.readonly) {
+          // Check if LLM can write (has LLMWrite tag and not readonly)
+          const canWrite = this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly'));
+          if (!canWrite) {
             promptLines.push(`${key}: [${entry.attributes.type.toUpperCase()}] - ${entry.attributes.contentType || 'unknown format'}`);
           } else {
             const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1115,7 +1244,9 @@ export class MindCache {
           ? JSON.stringify(value)
           : String(value);
 
-        if (entry.attributes.readonly) {
+        // Check if LLM can write (has LLMWrite tag and not readonly)
+        const canWrite = this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly'));
+        if (!canWrite) {
           promptLines.push(`${key}: ${formattedValue}`);
         } else {
           const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1152,7 +1283,8 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     const writableKeys = sortedKeys.filter(key => {
       const entry = this.stm[key];
-      return !entry.attributes.readonly;
+      // Include if has LLMWrite tag (and not readonly), or if legacy readonly is false
+      return this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly'));
     });
 
     writableKeys.forEach(key => {
@@ -1241,7 +1373,9 @@ export class MindCache {
     }
 
     const entry = this.stm[originalKey];
-    if (entry && entry.attributes.readonly) {
+    // Check if LLM can write (has LLMWrite tag and not readonly)
+    const canWrite = entry && (this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly')));
+    if (!canWrite) {
       return null;
     }
 
@@ -1545,7 +1679,7 @@ export class MindCache {
     entry.attributes.readonly = tags.includes('readonly');
     entry.attributes.visible = tags.includes('prompt');
     entry.attributes.hardcoded = tags.includes('protected');
-    entry.attributes.template = tags.includes('template');
+    entry.attributes.template = tags.includes('ApplyTemplate') || tags.includes('template');
   }
 
   toMarkdown(): string {
@@ -1823,10 +1957,12 @@ export class MindCache {
         if (!attrs.systemTags || attrs.systemTags.length === 0) {
           const systemTags: SystemTag[] = [];
           if (attrs.visible !== false) {
-            systemTags.push('prompt');
+            systemTags.push('prompt'); // Will be normalized to SystemPrompt
           }
           if (attrs.readonly) {
-            systemTags.push('readonly');
+            systemTags.push('readonly'); // Will be normalized (removes LLMWrite)
+          } else {
+            systemTags.push('LLMWrite'); // Default: writable
           }
           if (attrs.hardcoded) {
             systemTags.push('protected');
@@ -1834,7 +1970,11 @@ export class MindCache {
           if (attrs.template) {
             systemTags.push('template');
           }
-          attrs.systemTags = systemTags;
+          // Normalize tags (migrate old tags to new ones)
+          attrs.systemTags = this.normalizeSystemTags(systemTags);
+        } else {
+          // Normalize existing tags
+          attrs.systemTags = this.normalizeSystemTags(attrs.systemTags);
         }
 
         // Ensure all required fields exist
@@ -1844,6 +1984,13 @@ export class MindCache {
         if (!attrs.tags) {
           attrs.tags = [...attrs.contentTags];
         }
+
+        // Sync legacy attributes FROM normalized systemTags
+        const normalizedTags = attrs.systemTags || [];
+        attrs.readonly = normalizedTags.includes('readonly') || !normalizedTags.includes('LLMWrite');
+        attrs.visible = this.hasSystemPrompt(normalizedTags);
+        attrs.hardcoded = normalizedTags.includes('protected');
+        attrs.template = normalizedTags.includes('ApplyTemplate') || normalizedTags.includes('template');
 
         this.stm[key] = {
           value: entry.value,
