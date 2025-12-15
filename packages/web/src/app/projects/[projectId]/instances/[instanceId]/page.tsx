@@ -41,6 +41,7 @@ export default function InstanceEditorPage() {
 
   // Tag filtering
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedSystemTags, setSelectedSystemTags] = useState<Array<'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate'>>([]);
   const [showUntagged, setShowUntagged] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
@@ -872,24 +873,58 @@ export default function InstanceEditorPage() {
   // Filter by selected tags - untagged is non-exclusive and can be combined with tag filters
   const filteredKeys = (() => {
     // Default: show all keys when nothing is selected
-    if (!showUntagged && selectedTags.length === 0) {
+    if (!showUntagged && selectedTags.length === 0 && selectedSystemTags.length === 0) {
       return sortedKeys;
     }
 
-    // Show keys that match: either have no tags (if untagged selected) OR have at least one selected tag
     return sortedKeys.filter(([_key, entry]) => {
       const keyTags = entry.attributes.tags || [];
+      const keySystemTags = entry.attributes.systemTags || [];
+
+      // System tag filter: must have ALL selected system tags
+      if (selectedSystemTags.length > 0) {
+        const hasAllSystemTags = selectedSystemTags.every(st => {
+          // Check new systemTags array first
+          if (keySystemTags.includes(st)) {
+            return true;
+          }
+
+          // Strict matching: only check for exact systemTags
+          if (st === 'SystemPrompt') {
+            return keySystemTags.includes('SystemPrompt') || keySystemTags.includes('prompt');
+          }
+          if (st === 'LLMRead') {
+            return keySystemTags.includes('LLMRead');
+          }
+          if (st === 'LLMWrite') {
+            return keySystemTags.includes('LLMWrite');
+          }
+          if (st === 'protected') {
+            return _key === '$Date' || _key === '$TIME';
+          }
+          if (st === 'ApplyTemplate') {
+            return keySystemTags.includes('ApplyTemplate') || keySystemTags.includes('template');
+          }
+          return false;
+        });
+        if (!hasAllSystemTags) {
+          return false;
+        }
+      }
+
+      // Content tag filter
+      if (!showUntagged && selectedTags.length === 0) {
+        return true; // No content tag filter active
+      }
+
       const hasNoTags = keyTags.length === 0;
-      const hasSelectedTag = selectedTags.length > 0 && selectedTags.some(selectedTag => keyTags.includes(selectedTag));
+      const hasSelectedTag = selectedTags.length > 0 && selectedTags.some(st => keyTags.includes(st));
 
       if (showUntagged && selectedTags.length > 0) {
-        // Both untagged and tags selected: show keys with no tags OR with selected tags
         return hasNoTags || hasSelectedTag;
       } else if (showUntagged) {
-        // Only untagged selected
         return hasNoTags;
       } else {
-        // Only tags selected
         return hasSelectedTag;
       }
     });
@@ -941,6 +976,7 @@ export default function InstanceEditorPage() {
           <TagFilter
             availableTags={availableTags}
             selectedTags={selectedTags}
+            selectedSystemTags={selectedSystemTags}
             showUntagged={showUntagged}
             onToggleTag={(tag) => {
               setSelectedTags(prev =>
@@ -949,9 +985,17 @@ export default function InstanceEditorPage() {
                   : [...prev, tag]
               );
             }}
+            onToggleSystemTag={(tag) => {
+              setSelectedSystemTags(prev =>
+                prev.includes(tag)
+                  ? prev.filter(t => t !== tag)
+                  : [...prev, tag]
+              );
+            }}
             onToggleUntagged={() => setShowUntagged(!showUntagged)}
             onClearFilters={() => {
               setSelectedTags([]);
+              setSelectedSystemTags([]);
               setShowUntagged(false);
             }}
           />
@@ -962,14 +1006,13 @@ export default function InstanceEditorPage() {
               <div className="text-zinc-500 text-center py-8 border border-zinc-800 rounded-lg">
                 {Object.keys(keys).length === 0
                   ? `No keys yet. ${canEdit ? 'Add one to get started.' : ''}`
-                  : selectedTags.length > 0
-                    ? 'No keys match the selected tags.'
+                  : (selectedTags.length > 0 || selectedSystemTags.length > 0)
+                    ? 'No keys match the selected filters.'
                     : 'No keys to display.'}
               </div>
             ) : (
               filteredKeys.map(([key, entry]) => {
                 const isEmpty = !entry.value || (typeof entry.value === 'string' && entry.value.trim() === '');
-                const isSystemKey = key.startsWith('$');
                 const contentType = entry.attributes.type || 'text';
                 const dataUrl = getDataUrl(key);
 
@@ -998,21 +1041,32 @@ export default function InstanceEditorPage() {
                 if (contentType !== 'text') {
                   indicators.push(contentType.toUpperCase().charAt(0));
                 }
-                // Show system tags: SystemPrompt, LLMWrite, ApplyTemplate
+                // Show system tags: SystemPrompt, LLMRead, LLMWrite, ApplyTemplate, Protected
                 const systemTags = entry.attributes.systemTags || [];
-                if (systemTags.includes('SystemPrompt') || systemTags.includes('prompt') || entry.attributes.visible) {
-                  indicators.push('SP'); // SystemPrompt
+
+                // SP: Only SystemPrompt tag
+                if (systemTags.includes('SystemPrompt') || systemTags.includes('prompt')) {
+                  indicators.push('SP');
                 }
-                if (systemTags.includes('LLMWrite') && !systemTags.includes('readonly')) {
-                  indicators.push('LW'); // LLMWrite
-                } else if (systemTags.includes('readonly') || !systemTags.includes('LLMWrite')) {
-                  indicators.push('RO'); // Readonly (no LLMWrite)
+
+                // LR: Only LLMRead tag
+                if (systemTags.includes('LLMRead')) {
+                  indicators.push('LR');
                 }
-                if (systemTags.includes('ApplyTemplate') || systemTags.includes('template') || entry.attributes.template) {
-                  indicators.push('AT'); // ApplyTemplate
+
+                // LW: Only LLMWrite tag
+                if (systemTags.includes('LLMWrite')) {
+                  indicators.push('LW');
                 }
-                if (systemTags.includes('protected') || entry.attributes.hardcoded || isSystemKey) {
-                  indicators.push('P'); // Protected
+
+                // AT: ApplyTemplate
+                if (systemTags.includes('ApplyTemplate') || systemTags.includes('template')) {
+                  indicators.push('AT');
+                }
+
+                // P: Only $Date and $TIME
+                if (key === '$Date' || key === '$TIME') {
+                  indicators.push('P');
                 }
 
                 return (

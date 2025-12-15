@@ -111,9 +111,15 @@ function buildSystemPrompt(data: InstanceData): string {
     ''
   ];
 
-  // Add system prompt keys
+  // Add system prompt keys (SystemPrompt or LLMRead)
   for (const [key, entry] of Object.entries(data)) {
-    if (entry.attributes.tags?.includes('SystemPrompt')) {
+    const systemTags = entry.attributes.systemTags || [];
+    const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt');
+    const hasLLMRead = systemTags.includes('LLMRead');
+    // Backward compat: check visible attribute if systemTags is empty
+    const hasReadAccess = hasSystemPrompt || hasLLMRead || (systemTags.length === 0 && entry.attributes.visible !== false);
+
+    if (hasReadAccess) {
       const value = typeof entry.value === 'string'
         ? entry.value
         : JSON.stringify(entry.value, null, 2);

@@ -7,7 +7,8 @@ export type AccessLevel = 'user' | 'system';
 
 /**
  * Known system tags that control key behavior
- * - 'SystemPrompt': Include in system prompt (visible to LLMs)
+ * - 'SystemPrompt': Include in system prompt
+ * - 'LLMRead': LLM can read this key (visible to LLMs)
  * - 'LLMWrite': LLM can write to this key via tools
  * - 'protected': Cannot be deleted (replaces hardcoded)
  * - 'ApplyTemplate': Process value through template injection
@@ -16,7 +17,7 @@ export type AccessLevel = 'user' | 'system';
  * @deprecated 'readonly' - Use absence of 'LLMWrite' instead (if LLMWrite not present, readonly=true)
  * @deprecated 'template' - Use 'ApplyTemplate' instead
  */
-export type SystemTag = 'SystemPrompt' | 'LLMWrite' | 'protected' | 'ApplyTemplate' | 'prompt' | 'readonly' | 'template';
+export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate' | 'prompt' | 'readonly' | 'template';
 
 /**
  * Attributes that can be set on a MindCache key

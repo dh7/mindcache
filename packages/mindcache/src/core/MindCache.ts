@@ -73,6 +73,7 @@ export class MindCache {
   private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
     let hasSystemPrompt = false;
+    let hasLLMRead = false;
     let hasLLMWrite = false;
     let hasReadonly = false;
 
@@ -80,6 +81,8 @@ export class MindCache {
     for (const tag of tags) {
       if (tag === 'SystemPrompt' || tag === 'prompt') {
         hasSystemPrompt = true;
+      } else if (tag === 'LLMRead') {
+        hasLLMRead = true;
       } else if (tag === 'LLMWrite') {
         hasLLMWrite = true;
       } else if (tag === 'readonly') {
@@ -94,6 +97,9 @@ export class MindCache {
     // Add normalized tags
     if (hasSystemPrompt) {
       normalized.push('SystemPrompt');
+    }
+    if (hasLLMRead) {
+      normalized.push('LLMRead');
     }
 
     // LLMWrite logic: if readonly exists, NO LLMWrite; otherwise, add LLMWrite
@@ -117,6 +123,13 @@ export class MindCache {
    */
   private hasSystemPrompt(tags: SystemTag[]): boolean {
     return tags.includes('SystemPrompt') || tags.includes('prompt');
+  }
+
+  /**
+   * Check if key can be read by LLM (has LLMRead or SystemPrompt)
+   */
+  private hasLLMRead(tags: SystemTag[]): boolean {
+    return tags.includes('LLMRead') || tags.includes('SystemPrompt') || tags.includes('prompt');
   }
 
   /**
@@ -1073,8 +1086,8 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
       const entry = this.stm[key];
-      // Check for SystemPrompt tag (or visible for backward compat)
-      if (this.hasSystemPrompt(entry.attributes.systemTags) || entry.attributes.visible) {
+      // Check for LLMRead or SystemPrompt tag (or visible for backward compat)
+      if (this.hasLLMRead(entry.attributes.systemTags) || entry.attributes.visible) {
         const hasTemplate = entry.attributes.systemTags?.includes('ApplyTemplate') || entry.attributes.systemTags?.includes('template') || entry.attributes.template;
         const processedValue = hasTemplate ? this.get_value(key) : entry.value;
 
@@ -1108,8 +1121,8 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
       const entry = this.stm[key];
-      // Check for SystemPrompt tag (or visible for backward compat)
-      if ((this.hasSystemPrompt(entry.attributes.systemTags) || entry.attributes.visible) && entry.attributes.type === 'image' && entry.attributes.contentType) {
+      // Check for LLMRead or SystemPrompt tag (or visible for backward compat)
+      if ((this.hasLLMRead(entry.attributes.systemTags) || entry.attributes.visible) && entry.attributes.type === 'image' && entry.attributes.contentType) {
         const dataUrl = this.createDataUrl(entry.value as string, entry.attributes.contentType);
         imageParts.push({
           type: 'file' as const,
@@ -1221,8 +1234,8 @@ export class MindCache {
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
       const entry = this.stm[key];
-      // Check for SystemPrompt tag (or visible for backward compat)
-      if (this.hasSystemPrompt(entry.attributes.systemTags) || entry.attributes.visible) {
+      // Check for LLMRead or SystemPrompt tag (or visible for backward compat)
+      if (this.hasLLMRead(entry.attributes.systemTags) || entry.attributes.visible) {
         if (entry.attributes.type === 'image') {
           promptLines.push(`image ${key} available`);
           return;
