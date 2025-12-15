@@ -130,7 +130,10 @@ function buildSystemPrompt(data: InstanceData): string {
   for (const [key, entry] of Object.entries(data)) {
     const tags = entry.attributes.tags?.join(', ') || '';
     const systemTags = entry.attributes.systemTags || [];
-    const hasLLMWrite = systemTags.includes('LLMWrite') && !systemTags.includes('readonly');
+    // Backward compat: if systemTags is empty, use legacy readonly attribute
+    const hasLLMWrite = systemTags.length > 0
+      ? (systemTags.includes('LLMWrite') && !systemTags.includes('readonly'))
+      : !entry.attributes.readonly;
     const readonly = hasLLMWrite ? '' : ' (readonly)';
     systemPromptParts.push(`- **${key}**${readonly}: ${entry.attributes.type}${tags ? ` [${tags}]` : ''}`);
   }
@@ -183,14 +186,18 @@ function createMindCacheTools(
         const data = await fetchInstanceData(env, instanceId);
         const existing = data[key];
 
-        // In "use" mode, can't write to keys without LLMWrite tag or SystemPrompt keys
+        // In "use" mode, can't write to readonly keys or SystemPrompt keys
         if (mode === 'use' && existing) {
           const systemTags = existing.attributes.systemTags || [];
-          const hasLLMWrite = systemTags.includes('LLMWrite') && !systemTags.includes('readonly');
-          const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt') || existing.attributes.visible;
+          // Backward compat: if systemTags is empty, use legacy readonly attribute
+          // Key is writable if: (has LLMWrite AND not readonly) OR (no systemTags AND not legacy readonly)
+          const hasLLMWrite = systemTags.length > 0
+            ? (systemTags.includes('LLMWrite') && !systemTags.includes('readonly'))
+            : !existing.attributes.readonly;
+          const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt');
 
           if (!hasLLMWrite) {
-            return { error: `Key "${key}" does not have LLMWrite permission` };
+            return { error: `Key "${key}" is readonly` };
           }
           if (hasSystemPrompt) {
             return { error: `Key "${key}" is a system prompt key and cannot be modified in use mode` };
@@ -232,14 +239,17 @@ function createMindCacheTools(
           return { error: `Key "${key}" not found` };
         }
 
-        // In "use" mode, can't delete keys without LLMWrite tag or SystemPrompt keys
+        // In "use" mode, can't delete readonly keys or SystemPrompt keys
         if (mode === 'use') {
           const systemTags = existing.attributes.systemTags || [];
-          const hasLLMWrite = systemTags.includes('LLMWrite') && !systemTags.includes('readonly');
-          const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt') || existing.attributes.visible;
+          // Backward compat: if systemTags is empty, use legacy readonly attribute
+          const hasLLMWrite = systemTags.length > 0
+            ? (systemTags.includes('LLMWrite') && !systemTags.includes('readonly'))
+            : !existing.attributes.readonly;
+          const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt');
 
           if (!hasLLMWrite) {
-            return { error: `Key "${key}" does not have LLMWrite permission` };
+            return { error: `Key "${key}" is readonly` };
           }
           if (hasSystemPrompt) {
             return { error: `Key "${key}" is a system prompt key and cannot be deleted in use mode` };
