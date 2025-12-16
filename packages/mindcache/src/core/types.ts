@@ -7,12 +7,17 @@ export type AccessLevel = 'user' | 'system';
 
 /**
  * Known system tags that control key behavior
- * - 'prompt': Include in system prompt (replaces visible)
- * - 'readonly': Cannot be modified by AI tools (replaces readonly)
+ * - 'SystemPrompt': Include in system prompt
+ * - 'LLMRead': LLM can read this key (visible to LLMs)
+ * - 'LLMWrite': LLM can write to this key via tools
  * - 'protected': Cannot be deleted (replaces hardcoded)
- * - 'template': Process value through template injection
+ * - 'ApplyTemplate': Process value through template injection
+ *
+ * @deprecated 'prompt' - Use 'SystemPrompt' instead
+ * @deprecated 'readonly' - Use absence of 'LLMWrite' instead (if LLMWrite not present, readonly=true)
+ * @deprecated 'template' - Use 'ApplyTemplate' instead
  */
-export type SystemTag = 'prompt' | 'readonly' | 'protected' | 'template';
+export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate' | 'prompt' | 'readonly' | 'template';
 
 /**
  * Attributes that can be set on a MindCache key
@@ -30,13 +35,13 @@ export interface KeyAttributes {
   zIndex: number;
 
   // Legacy attributes - kept for backward compatibility, derived from systemTags
-  /** @deprecated Use systemTags.includes('readonly') instead */
+  /** @deprecated Use !systemTags.includes('LLMWrite') instead */
   readonly: boolean;
-  /** @deprecated Use systemTags.includes('prompt') instead */
+  /** @deprecated Use systemTags.includes('SystemPrompt') instead */
   visible: boolean;
   /** @deprecated Use systemTags.includes('protected') instead */
   hardcoded: boolean;
-  /** @deprecated Use systemTags.includes('template') instead */
+  /** @deprecated Use systemTags.includes('ApplyTemplate') instead */
   template: boolean;
   /** @deprecated Use contentTags instead */
   tags?: string[];
@@ -75,7 +80,7 @@ export type GlobalListener = () => void;
 export const DEFAULT_KEY_ATTRIBUTES: KeyAttributes = {
   type: 'text',
   contentTags: [],
-  systemTags: ['prompt'], // visible by default
+  systemTags: ['SystemPrompt', 'LLMWrite'], // visible in system prompt and writable by LLM by default
   zIndex: 0,
   // Legacy - derived from systemTags
   readonly: false,

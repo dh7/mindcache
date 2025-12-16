@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Instance, KeyEntry, SyncData, Permission, API_URL, WS_URL } from './types';
 import { InstanceHeader, ActionButtons, TagFilter, KeyPropertiesPanel, EditableKeyName } from './components';
+import ChatInterface from './components/ChatInterface';
 
 export default function InstanceEditorPage() {
   const params = useParams();
@@ -40,8 +41,42 @@ export default function InstanceEditorPage() {
 
   // Tag filtering
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedSystemTags, setSelectedSystemTags] = useState<Array<'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate'>>([]);
   const [showUntagged, setShowUntagged] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+
+  // Chat panel resizing
+  const [leftPanelWidth, setLeftPanelWidth] = useState(30); // 30% width for chat
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Handle panel resizing
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) {
+        return;
+      }
+      const container = document.querySelector('.resize-container');
+      if (!container) {
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+      setLeftPanelWidth(Math.max(20, Math.min(80, newWidth))); // Clamp between 20% and 80%
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const saveTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
@@ -838,449 +873,520 @@ export default function InstanceEditorPage() {
   // Filter by selected tags - untagged is non-exclusive and can be combined with tag filters
   const filteredKeys = (() => {
     // Default: show all keys when nothing is selected
-    if (!showUntagged && selectedTags.length === 0) {
+    if (!showUntagged && selectedTags.length === 0 && selectedSystemTags.length === 0) {
       return sortedKeys;
     }
 
-    // Show keys that match: either have no tags (if untagged selected) OR have at least one selected tag
     return sortedKeys.filter(([_key, entry]) => {
       const keyTags = entry.attributes.tags || [];
+      const keySystemTags = entry.attributes.systemTags || [];
+
+      // System tag filter: must have ALL selected system tags
+      if (selectedSystemTags.length > 0) {
+        const hasAllSystemTags = selectedSystemTags.every(st => {
+          // Check new systemTags array first
+          if (keySystemTags.includes(st)) {
+            return true;
+          }
+
+          // Strict matching: only check for exact systemTags
+          if (st === 'SystemPrompt') {
+            return keySystemTags.includes('SystemPrompt') || keySystemTags.includes('prompt');
+          }
+          if (st === 'LLMRead') {
+            return keySystemTags.includes('LLMRead');
+          }
+          if (st === 'LLMWrite') {
+            return keySystemTags.includes('LLMWrite');
+          }
+          if (st === 'protected') {
+            return _key === '$Date' || _key === '$TIME';
+          }
+          if (st === 'ApplyTemplate') {
+            return keySystemTags.includes('ApplyTemplate') || keySystemTags.includes('template');
+          }
+          return false;
+        });
+        if (!hasAllSystemTags) {
+          return false;
+        }
+      }
+
+      // Content tag filter
+      if (!showUntagged && selectedTags.length === 0) {
+        return true; // No content tag filter active
+      }
+
       const hasNoTags = keyTags.length === 0;
-      const hasSelectedTag = selectedTags.length > 0 && selectedTags.some(selectedTag => keyTags.includes(selectedTag));
+      const hasSelectedTag = selectedTags.length > 0 && selectedTags.some(st => keyTags.includes(st));
 
       if (showUntagged && selectedTags.length > 0) {
-        // Both untagged and tags selected: show keys with no tags OR with selected tags
         return hasNoTags || hasSelectedTag;
       } else if (showUntagged) {
-        // Only untagged selected
         return hasNoTags;
       } else {
-        // Only tags selected
         return hasSelectedTag;
       }
     });
   })();
 
   return (
-    <div className="min-h-screen p-8">
-      <div className="max-w-4xl mx-auto">
-        <InstanceHeader
-          instance={instance}
-          instanceName={instanceName}
-          editingName={editingName}
-          canEdit={canEdit}
-          connected={connected}
-          permission={permission}
-          error={error}
-          onNameChange={setInstanceName}
-          onStartEdit={() => setEditingName(true)}
-          onCancelEdit={() => {
-            setInstanceName(instance?.name || '');
-            setEditingName(false);
-          }}
-          onSaveName={handleUpdateInstanceName}
-        />
+    <div className="h-screen flex overflow-hidden resize-container bg-zinc-950">
+      {/* Left Panel - Chat */}
+      <div style={{ width: `${leftPanelWidth}%` }} className="flex flex-col min-h-0 p-4 border-r border-zinc-800">
+        <ChatInterface instanceId={instanceId} mode="use" />
+      </div>
 
-        {canEdit && (
-          <ActionButtons
-            onAddKey={() => setShowAddKey(true)}
-            onExportJSON={handleExportJSON}
-            onImportJSON={handleImportJSON}
-            onExportMarkdown={handleExportMarkdown}
-            onImportMarkdown={handleImportMarkdown}
+      {/* Resizer */}
+      <div
+        className={`w-1 bg-transparent hover:bg-cyan-400 hover:bg-opacity-30 cursor-col-resize transition-colors flex-shrink-0 ${isResizing ? 'bg-cyan-400 bg-opacity-50' : ''}`}
+        onMouseDown={() => setIsResizing(true)}
+      />
+
+      {/* Right Panel - Existing Content */}
+      <div style={{ width: `${100 - leftPanelWidth}%` }} className="flex flex-col min-h-0 overflow-y-auto p-8">
+        <div className="max-w-4xl mx-auto w-full">
+          <InstanceHeader
+            instance={instance}
+            instanceName={instanceName}
+            editingName={editingName}
+            canEdit={canEdit}
+            connected={connected}
+            permission={permission}
+            error={error}
+            onNameChange={setInstanceName}
+            onStartEdit={() => setEditingName(true)}
+            onCancelEdit={() => {
+              setInstanceName(instance?.name || '');
+              setEditingName(false);
+            }}
+            onSaveName={handleUpdateInstanceName}
           />
-        )}
 
-        <TagFilter
-          availableTags={availableTags}
-          selectedTags={selectedTags}
-          showUntagged={showUntagged}
-          onToggleTag={(tag) => {
-            setSelectedTags(prev =>
-              prev.includes(tag)
-                ? prev.filter(t => t !== tag)
-                : [...prev, tag]
-            );
-          }}
-          onToggleUntagged={() => setShowUntagged(!showUntagged)}
-          onClearFilters={() => {
-            setSelectedTags([]);
-            setShowUntagged(false);
-          }}
-        />
-
-        {/* Keys List */}
-        <div className="space-y-3">
-          {filteredKeys.length === 0 ? (
-            <div className="text-zinc-500 text-center py-8 border border-zinc-800 rounded-lg">
-              {Object.keys(keys).length === 0
-                ? `No keys yet. ${canEdit ? 'Add one to get started.' : ''}`
-                : selectedTags.length > 0
-                  ? 'No keys match the selected tags.'
-                  : 'No keys to display.'}
-            </div>
-          ) : (
-            filteredKeys.map(([key, entry]) => {
-              const isEmpty = !entry.value || (typeof entry.value === 'string' && entry.value.trim() === '');
-              const isSystemKey = key.startsWith('$');
-              const contentType = entry.attributes.type || 'text';
-              const dataUrl = getDataUrl(key);
-
-              let displayValue = '';
-              if (isEmpty) {
-                displayValue = '_______';
-              } else if (contentType === 'image') {
-                displayValue = `[IMAGE: ${entry.attributes.contentType || 'unknown'}]`;
-              } else if (contentType === 'file') {
-                displayValue = `[FILE: ${entry.attributes.contentType || 'unknown'}]`;
-              } else if (contentType === 'json') {
-                try {
-                  displayValue = typeof entry.value === 'string'
-                    ? JSON.stringify(JSON.parse(entry.value), null, 2)
-                    : JSON.stringify(entry.value, null, 2);
-                } catch {
-                  displayValue = String(entry.value);
-                }
-              } else {
-                displayValue = typeof entry.value === 'object'
-                  ? JSON.stringify(entry.value, null, 2)
-                  : String(entry.value);
-              }
-
-              const indicators = [];
-              if (contentType !== 'text') {
-                indicators.push(contentType.toUpperCase().charAt(0));
-              }
-              if (entry.attributes.readonly) {
-                indicators.push('R');
-              }
-              if (!entry.attributes.visible) {
-                indicators.push('V');
-              }
-              if (entry.attributes.template) {
-                indicators.push('T');
-              }
-              if (entry.attributes.hardcoded || isSystemKey) {
-                indicators.push('H');
-              }
-
-              return (
-                <div
-                  key={key}
-                  className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4"
-                >
-                  <div
-                    className="flex justify-between items-start cursor-pointer"
-                    onClick={(e) => {
-                      // Toggle expand/collapse if click is not on an interactive element
-                      if (canEdit) {
-                        const target = e.target as HTMLElement;
-                        // Don't toggle if clicking on buttons or inputs
-                        if (!target.closest('button') && !target.closest('input') && !target.closest('textarea')) {
-                          togglePropertiesPanel(key);
-                        }
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Key name - when expanded: text + pen icon, click to edit with underline */}
-                      {expandedPropertiesKey === key && canEdit ? (
-                        <EditableKeyName
-                          keyName={key}
-                          onSave={(newName) => {
-                            if (newName && newName !== key) {
-                              handleSaveAttributes(key, newName, entry.attributes);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <span className="font-mono text-blue-400">{key}</span>
-                      )}
-                      {/* Only show indicators and tags when NOT expanded */}
-                      {expandedPropertiesKey !== key && (
-                        <>
-                          {indicators.length > 0 && (
-                            <span className="text-xs text-yellow-400">
-                              [{indicators.join('')}]
-                            </span>
-                          )}
-                          {entry.attributes.tags && entry.attributes.tags.length > 0 && (
-                            <div className="flex gap-1 flex-wrap">
-                              {entry.attributes.tags.map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="px-2 py-0.5 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 rounded font-mono border border-cyan-600"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {entry.attributes.zIndex !== undefined && entry.attributes.zIndex !== 0 && (
-                            <span className="text-xs text-zinc-500">
-                              z:{entry.attributes.zIndex}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    <div className="flex gap-1">
-                      {canEdit && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            togglePropertiesPanel(key);
-                          }}
-                          className={`text-sm leading-none px-1 transition-colors ${expandedPropertiesKey === key
-                            ? 'text-cyan-400'
-                            : 'text-cyan-600 hover:text-yellow-400'
-                          }`}
-                          title={expandedPropertiesKey === key ? 'Collapse Properties' : 'Edit Properties'}
-                        >
-                          <svg
-                            className={`w-4 h-4 transition-transform ${expandedPropertiesKey === key ? 'rotate-180' : ''}`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                      )}
-                      {canEdit && !entry.attributes.readonly && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteKey(key);
-                          }}
-                          className="p-2 text-zinc-600 hover:text-red-400 hover:bg-zinc-800 rounded-md transition"
-                          title="Delete"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {/* Only show value display when NOT expanded (value is in panel when expanded) */}
-                  {expandedPropertiesKey !== key && (
-                    <>
-                      {contentType === 'image' && dataUrl ? (
-                        <div className="mt-2">
-                          <img
-                            src={dataUrl}
-                            alt={`Preview of ${key}`}
-                            className="max-w-full h-auto border border-zinc-700 rounded"
-                            style={{ maxHeight: '300px' }}
-                          />
-                          {canEdit && (
-                            <button
-                              onClick={() => {
-                                const input = document.createElement('input');
-                                input.type = 'file';
-                                input.accept = 'image/*';
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement).files?.[0];
-                                  if (file) {
-                                    handleFileUpload(key, file);
-                                  }
-                                };
-                                input.click();
-                              }}
-                              className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
-                            >
-                              Replace Image
-                            </button>
-                          )}
-                        </div>
-                      ) : contentType === 'file' ? (
-                        <div className="mt-2">
-                          <div className="text-xs text-zinc-400">
-                            {entry.attributes.contentType || 'File'}
-                          </div>
-                          {canEdit && (
-                            <button
-                              onClick={() => {
-                                const input = document.createElement('input');
-                                input.type = 'file';
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement).files?.[0];
-                                  if (file) {
-                                    handleFileUpload(key, file);
-                                  }
-                                };
-                                input.click();
-                              }}
-                              className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
-                            >
-                              Replace File
-                            </button>
-                          )}
-                        </div>
-                      ) : canEdit && !entry.attributes.readonly ? (
-                        <>
-                          <textarea
-                            className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-cyan-600 outline-none resize-y transition-colors"
-                            rows={contentType === 'json' ? 6 : 2}
-                            value={keyValues[key] ?? ''}
-                            onChange={(e) => handleKeyValueChange(key, e.target.value)}
-                            onFocus={() => setEditingKey(key)}
-                            onBlur={() => {
-                              // Delay clearing to allow real-time sync to respect our edit
-                              setTimeout(() => setEditingKey(null), 100);
-                            }}
-                            placeholder="Enter value..."
-                          />
-                          {(pendingSaves.has(key) || savedKeys.has(key) || editingKey === key) && (
-                            <div className="flex items-center justify-end gap-2 text-xs mt-1">
-                              {pendingSaves.has(key) && (
-                                <span className="text-amber-400 flex items-center gap-1">
-                                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                  </svg>
-                                  Saving...
-                                </span>
-                              )}
-                              {savedKeys.has(key) && !pendingSaves.has(key) && (
-                                <span className="text-green-400 flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  Saved
-                                </span>
-                              )}
-                              {!savedKeys.has(key) && !pendingSaves.has(key) && editingKey === key && (
-                                <button
-                                  onClick={() => handleManualSave(key)}
-                                  className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs transition-colors"
-                                >
-                                  Save
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
-                          {displayValue}
-                        </pre>
-                      )}
-                    </>
-                  )}
-
-                  {/* Inline Properties Panel */}
-                  <KeyPropertiesPanel
-                    keyName={key}
-                    entry={entry}
-                    availableTags={availableTags}
-                    isExpanded={expandedPropertiesKey === key}
-                    onToggle={() => togglePropertiesPanel(key)}
-                    onSave={(newKeyName, attributes) => handleSaveAttributes(key, newKeyName, attributes)}
-                    onFileUpload={handleFileUpload}
-                    onValueChange={handleKeyValueChange}
-                    onClearValue={handleClearValue}
-                    currentValue={
-                      entry.attributes.type === 'image' || entry.attributes.type === 'file'
-                        ? String(entry.value ?? '')
-                        : keyValues[key] ?? ''
-                    }
-                    canEdit={canEdit}
-                  />
-                </div>
-              );
-            })
+          {canEdit && (
+            <ActionButtons
+              onAddKey={() => setShowAddKey(true)}
+              onExportJSON={handleExportJSON}
+              onImportJSON={handleImportJSON}
+              onExportMarkdown={handleExportMarkdown}
+              onImportMarkdown={handleImportMarkdown}
+            />
           )}
-        </div>
 
-        {/* Add Key Modal */}
-        {showAddKey && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
-              <h3 className="text-lg mb-4">Add New Key</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Key Name</label>
-                  <input
-                    type="text"
-                    className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    placeholder="my_key"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Type</label>
-                  <select
-                    className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-                    value={newKeyType}
-                    onChange={(e) => setNewKeyType(e.target.value as 'text' | 'json')}
+          <TagFilter
+            availableTags={availableTags}
+            selectedTags={selectedTags}
+            selectedSystemTags={selectedSystemTags}
+            showUntagged={showUntagged}
+            onToggleTag={(tag) => {
+              setSelectedTags(prev =>
+                prev.includes(tag)
+                  ? prev.filter(t => t !== tag)
+                  : [...prev, tag]
+              );
+            }}
+            onToggleSystemTag={(tag) => {
+              setSelectedSystemTags(prev =>
+                prev.includes(tag)
+                  ? prev.filter(t => t !== tag)
+                  : [...prev, tag]
+              );
+            }}
+            onToggleUntagged={() => setShowUntagged(!showUntagged)}
+            onClearFilters={() => {
+              setSelectedTags([]);
+              setSelectedSystemTags([]);
+              setShowUntagged(false);
+            }}
+          />
+
+          {/* Keys List */}
+          <div className="space-y-3">
+            {filteredKeys.length === 0 ? (
+              <div className="text-zinc-500 text-center py-8 border border-zinc-800 rounded-lg">
+                {Object.keys(keys).length === 0
+                  ? `No keys yet. ${canEdit ? 'Add one to get started.' : ''}`
+                  : (selectedTags.length > 0 || selectedSystemTags.length > 0)
+                    ? 'No keys match the selected filters.'
+                    : 'No keys to display.'}
+              </div>
+            ) : (
+              filteredKeys.map(([key, entry]) => {
+                const isEmpty = !entry.value || (typeof entry.value === 'string' && entry.value.trim() === '');
+                const contentType = entry.attributes.type || 'text';
+                const dataUrl = getDataUrl(key);
+
+                let displayValue = '';
+                if (isEmpty) {
+                  displayValue = '_______';
+                } else if (contentType === 'image') {
+                  displayValue = `[IMAGE: ${entry.attributes.contentType || 'unknown'}]`;
+                } else if (contentType === 'file') {
+                  displayValue = `[FILE: ${entry.attributes.contentType || 'unknown'}]`;
+                } else if (contentType === 'json') {
+                  try {
+                    displayValue = typeof entry.value === 'string'
+                      ? JSON.stringify(JSON.parse(entry.value), null, 2)
+                      : JSON.stringify(entry.value, null, 2);
+                  } catch {
+                    displayValue = String(entry.value);
+                  }
+                } else {
+                  displayValue = typeof entry.value === 'object'
+                    ? JSON.stringify(entry.value, null, 2)
+                    : String(entry.value);
+                }
+
+                const indicators = [];
+                if (contentType !== 'text') {
+                  indicators.push(contentType.toUpperCase().charAt(0));
+                }
+                // Show system tags: SystemPrompt, LLMRead, LLMWrite, ApplyTemplate, Protected
+                const systemTags = entry.attributes.systemTags || [];
+
+                // SP: Only SystemPrompt tag
+                if (systemTags.includes('SystemPrompt') || systemTags.includes('prompt')) {
+                  indicators.push('SP');
+                }
+
+                // LR: Only LLMRead tag
+                if (systemTags.includes('LLMRead')) {
+                  indicators.push('LR');
+                }
+
+                // LW: Only LLMWrite tag
+                if (systemTags.includes('LLMWrite')) {
+                  indicators.push('LW');
+                }
+
+                // AT: ApplyTemplate
+                if (systemTags.includes('ApplyTemplate') || systemTags.includes('template')) {
+                  indicators.push('AT');
+                }
+
+                // P: Only $Date and $TIME
+                if (key === '$Date' || key === '$TIME') {
+                  indicators.push('P');
+                }
+
+                return (
+                  <div
+                    key={key}
+                    className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4"
                   >
-                    <option value="text">Text</option>
-                    <option value="json">JSON</option>
-                    <option value="image">Image</option>
-                    <option value="file">File</option>
-                  </select>
-                </div>
-                {(newKeyType === 'text' || newKeyType === 'json') && (
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Value</label>
-                    <textarea
-                      className="w-full p-2 bg-gray-700 border border-gray-600 rounded font-mono text-xs"
-                      rows={4}
-                      value={newKeyValue}
-                      onChange={(e) => setNewKeyValue(e.target.value)}
-                      placeholder={newKeyType === 'json' ? '{ "key": "value" }' : 'Enter value...'}
+                    <div
+                      className="flex justify-between items-start cursor-pointer"
+                      onClick={(e) => {
+                      // Toggle expand/collapse if click is not on an interactive element
+                        if (canEdit) {
+                          const target = e.target as HTMLElement;
+                          // Don't toggle if clicking on buttons or inputs
+                          if (!target.closest('button') && !target.closest('input') && !target.closest('textarea')) {
+                            togglePropertiesPanel(key);
+                          }
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Key name - when expanded: text + pen icon, click to edit with underline */}
+                        {expandedPropertiesKey === key && canEdit ? (
+                          <EditableKeyName
+                            keyName={key}
+                            onSave={(newName) => {
+                              if (newName && newName !== key) {
+                                handleSaveAttributes(key, newName, entry.attributes);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="font-mono text-blue-400">{key}</span>
+                        )}
+                        {/* Only show indicators and tags when NOT expanded */}
+                        {expandedPropertiesKey !== key && (
+                          <>
+                            {indicators.length > 0 && (
+                              <span className="text-xs text-yellow-400">
+                              [{indicators.join('')}]
+                              </span>
+                            )}
+                            {entry.attributes.tags && entry.attributes.tags.length > 0 && (
+                              <div className="flex gap-1 flex-wrap">
+                                {entry.attributes.tags.map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="px-2 py-0.5 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 rounded font-mono border border-cyan-600"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {entry.attributes.zIndex !== undefined && entry.attributes.zIndex !== 0 && (
+                              <span className="text-xs text-zinc-500">
+                              z:{entry.attributes.zIndex}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        {canEdit && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePropertiesPanel(key);
+                            }}
+                            className={`text-sm leading-none px-1 transition-colors ${expandedPropertiesKey === key
+                              ? 'text-cyan-400'
+                              : 'text-cyan-600 hover:text-yellow-400'
+                            }`}
+                            title={expandedPropertiesKey === key ? 'Collapse Properties' : 'Edit Properties'}
+                          >
+                            <svg
+                              className={`w-4 h-4 transition-transform ${expandedPropertiesKey === key ? 'rotate-180' : ''}`}
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        )}
+                        {canEdit && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteKey(key);
+                            }}
+                            className="p-2 text-zinc-600 hover:text-red-400 hover:bg-zinc-800 rounded-md transition"
+                            title="Delete"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {/* Only show value display when NOT expanded (value is in panel when expanded) */}
+                    {expandedPropertiesKey !== key && (
+                      <>
+                        {contentType === 'image' && dataUrl ? (
+                          <div className="mt-2">
+                            <img
+                              src={dataUrl}
+                              alt={`Preview of ${key}`}
+                              className="max-w-full h-auto border border-zinc-700 rounded"
+                              style={{ maxHeight: '300px' }}
+                            />
+                            {canEdit && (
+                              <button
+                                onClick={() => {
+                                  const input = document.createElement('input');
+                                  input.type = 'file';
+                                  input.accept = 'image/*';
+                                  input.onchange = (e) => {
+                                    const file = (e.target as HTMLInputElement).files?.[0];
+                                    if (file) {
+                                      handleFileUpload(key, file);
+                                    }
+                                  };
+                                  input.click();
+                                }}
+                                className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
+                              >
+                              Replace Image
+                              </button>
+                            )}
+                          </div>
+                        ) : contentType === 'file' ? (
+                          <div className="mt-2">
+                            <div className="text-xs text-zinc-400">
+                              {entry.attributes.contentType || 'File'}
+                            </div>
+                            {canEdit && (
+                              <button
+                                onClick={() => {
+                                  const input = document.createElement('input');
+                                  input.type = 'file';
+                                  input.onchange = (e) => {
+                                    const file = (e.target as HTMLInputElement).files?.[0];
+                                    if (file) {
+                                      handleFileUpload(key, file);
+                                    }
+                                  };
+                                  input.click();
+                                }}
+                                className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
+                              >
+                              Replace File
+                              </button>
+                            )}
+                          </div>
+                        ) : canEdit ? (
+                          <>
+                            <textarea
+                              className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-cyan-600 outline-none resize-y transition-colors"
+                              rows={contentType === 'json' ? 6 : 2}
+                              value={keyValues[key] ?? ''}
+                              onChange={(e) => handleKeyValueChange(key, e.target.value)}
+                              onFocus={() => setEditingKey(key)}
+                              onBlur={() => {
+                              // Delay clearing to allow real-time sync to respect our edit
+                                setTimeout(() => setEditingKey(null), 100);
+                              }}
+                              placeholder="Enter value..."
+                            />
+                            {(pendingSaves.has(key) || savedKeys.has(key) || editingKey === key) && (
+                              <div className="flex items-center justify-end gap-2 text-xs mt-1">
+                                {pendingSaves.has(key) && (
+                                  <span className="text-amber-400 flex items-center gap-1">
+                                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                  Saving...
+                                  </span>
+                                )}
+                                {savedKeys.has(key) && !pendingSaves.has(key) && (
+                                  <span className="text-green-400 flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  Saved
+                                  </span>
+                                )}
+                                {!savedKeys.has(key) && !pendingSaves.has(key) && editingKey === key && (
+                                  <button
+                                    onClick={() => handleManualSave(key)}
+                                    className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs transition-colors"
+                                  >
+                                  Save
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
+                            {displayValue}
+                          </pre>
+                        )}
+                      </>
+                    )}
+
+                    {/* Inline Properties Panel */}
+                    <KeyPropertiesPanel
+                      keyName={key}
+                      entry={entry}
+                      availableTags={availableTags}
+                      isExpanded={expandedPropertiesKey === key}
+                      onToggle={() => togglePropertiesPanel(key)}
+                      onSave={(newKeyName, attributes) => handleSaveAttributes(key, newKeyName, attributes)}
+                      onFileUpload={handleFileUpload}
+                      onValueChange={handleKeyValueChange}
+                      onClearValue={handleClearValue}
+                      currentValue={
+                        entry.attributes.type === 'image' || entry.attributes.type === 'file'
+                          ? String(entry.value ?? '')
+                          : keyValues[key] ?? ''
+                      }
+                      canEdit={canEdit}
                     />
                   </div>
-                )}
-                {(newKeyType === 'image' || newKeyType === 'file') && (
+                );
+              })
+            )}
+          </div>
+
+          {/* Add Key Modal */}
+          {showAddKey && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
+                <h3 className="text-lg mb-4">Add New Key</h3>
+                <div className="space-y-4">
                   <div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = newKeyType === 'image' ? 'image/*' : '*/*';
-                        input.onchange = async (e) => {
-                          const file = (e.target as HTMLInputElement).files?.[0];
-                          if (file && newKeyName.trim()) {
-                            await handleFileUpload(newKeyName.trim(), file);
-                            setNewKeyName('');
-                            setNewKeyValue('');
-                            setShowAddKey(false);
-                          }
-                        };
-                        input.click();
-                      }}
-                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm"
-                    >
-                      Upload {newKeyType === 'image' ? 'Image' : 'File'}
-                    </button>
+                    <label className="block text-xs text-gray-400 mb-1">Key Name</label>
+                    <input
+                      type="text"
+                      className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      placeholder="my_key"
+                      autoFocus
+                    />
                   </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowAddKey(false)}
-                  className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500 text-sm"
-                >
-                  Cancel
-                </button>
-                {(newKeyType === 'text' || newKeyType === 'json') && (
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Type</label>
+                    <select
+                      className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                      value={newKeyType}
+                      onChange={(e) => setNewKeyType(e.target.value as 'text' | 'json')}
+                    >
+                      <option value="text">Text</option>
+                      <option value="json">JSON</option>
+                      <option value="image">Image</option>
+                      <option value="file">File</option>
+                    </select>
+                  </div>
+                  {(newKeyType === 'text' || newKeyType === 'json') && (
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Value</label>
+                      <textarea
+                        className="w-full p-2 bg-gray-700 border border-gray-600 rounded font-mono text-xs"
+                        rows={4}
+                        value={newKeyValue}
+                        onChange={(e) => setNewKeyValue(e.target.value)}
+                        placeholder={newKeyType === 'json' ? '{ "key": "value" }' : 'Enter value...'}
+                      />
+                    </div>
+                  )}
+                  {(newKeyType === 'image' || newKeyType === 'file') && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = newKeyType === 'image' ? 'image/*' : '*/*';
+                          input.onchange = async (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (file && newKeyName.trim()) {
+                              await handleFileUpload(newKeyName.trim(), file);
+                              setNewKeyName('');
+                              setNewKeyValue('');
+                              setShowAddKey(false);
+                            }
+                          };
+                          input.click();
+                        }}
+                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm"
+                      >
+                      Upload {newKeyType === 'image' ? 'Image' : 'File'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end gap-3 mt-6">
                   <button
-                    onClick={handleAddKey}
-                    className="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 text-sm"
-                    disabled={!newKeyName.trim()}
+                    onClick={() => setShowAddKey(false)}
+                    className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500 text-sm"
                   >
-                    Add Key
+                  Cancel
                   </button>
-                )}
+                  {(newKeyType === 'text' || newKeyType === 'json') && (
+                    <button
+                      onClick={handleAddKey}
+                      className="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 text-sm"
+                      disabled={!newKeyName.trim()}
+                    >
+                    Add Key
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

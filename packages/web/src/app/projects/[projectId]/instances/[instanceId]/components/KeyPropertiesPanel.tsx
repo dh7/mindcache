@@ -37,6 +37,7 @@ export function KeyPropertiesPanel({
     type: entry.attributes.type,
     contentType: entry.attributes.contentType || '',
     tags: entry.attributes.tags || [],
+    systemTags: entry.attributes.systemTags || [],
     zIndex: entry.attributes.zIndex ?? 0
   });
   const [zIndexInput, setZIndexInput] = useState(String(entry.attributes.zIndex ?? 0));
@@ -55,6 +56,7 @@ export function KeyPropertiesPanel({
       type: entry.attributes.type,
       contentType: entry.attributes.contentType || '',
       tags: entry.attributes.tags || [],
+      systemTags: entry.attributes.systemTags || [],
       zIndex: entry.attributes.zIndex ?? 0
     });
     setZIndexInput(String(entry.attributes.zIndex ?? 0));
@@ -216,7 +218,7 @@ export function KeyPropertiesPanel({
 
       {/* 2. Value - based on type */}
       {/* Text/JSON value editor */}
-      {isTextType && canEdit && !entry.attributes.readonly && (
+      {isTextType && canEdit && (
         <div className="flex flex-col space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-gray-400 text-xs">value:</span>
@@ -240,7 +242,7 @@ export function KeyPropertiesPanel({
       )}
 
       {/* Text/JSON readonly display */}
-      {isTextType && (!canEdit || entry.attributes.readonly) && currentValue && (
+      {isTextType && !canEdit && currentValue && (
         <div className="flex flex-col space-y-1">
           <span className="text-gray-400 text-xs">value:</span>
           <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
@@ -345,56 +347,109 @@ export function KeyPropertiesPanel({
         </select>
       </div>
 
-      {/* 4. System tags (R, V, T) and z-index - at the end */}
+      {/* 4. System tags (SystemPrompt, LLMRead, LLMWrite, ApplyTemplate) and z-index - at the end */}
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        {/* Readonly */}
+        {/* SystemPrompt */}
         <div className="flex items-center gap-1">
-          <span className="text-yellow-400">[R]</span>
-          {attributesForm.hardcoded ? (
-            <span className="text-gray-500 font-mono">{attributesForm.readonly ? 'true' : 'false'}</span>
-          ) : (
-            <button
-              onClick={() => handleChange('readonly', !attributesForm.readonly)}
-              disabled={!canEdit}
-              className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
-            >
-              {attributesForm.readonly ? 'true' : 'false'}
-            </button>
-          )}
-        </div>
-
-        {/* Visible */}
-        <div className="flex items-center gap-1">
-          <span className="text-yellow-400">[V]</span>
+          <span className="text-yellow-400">[SP]</span>
           <button
-            onClick={() => handleChange('visible', !attributesForm.visible)}
+            onClick={() => {
+              const currentSystemTags = attributesForm.systemTags || [];
+              const hasSystemPrompt = currentSystemTags.includes('SystemPrompt') || currentSystemTags.includes('prompt');
+              const newSystemTags = hasSystemPrompt
+                ? currentSystemTags.filter(t => t !== 'SystemPrompt' && t !== 'prompt')
+                : [...currentSystemTags.filter(t => t !== 'SystemPrompt' && t !== 'prompt'), 'SystemPrompt'];
+              // Update both at once to avoid async state issues
+              const newForm = { ...attributesForm, systemTags: newSystemTags, visible: !hasSystemPrompt };
+              setAttributesForm(newForm);
+              onSave(keyName, newForm);
+            }}
             disabled={!canEdit}
             className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+            title="SystemPrompt: Include in system prompt"
           >
-            {attributesForm.visible ? 'true' : 'false'}
+            {(attributesForm.systemTags || []).includes('SystemPrompt') || (attributesForm.systemTags || []).includes('prompt') ? 'true' : 'false'}
           </button>
         </div>
 
-        {/* Template */}
+        {/* LLMRead */}
         <div className="flex items-center gap-1">
-          <span className="text-yellow-400">[T]</span>
+          <span className="text-yellow-400">[LR]</span>
+          <button
+            onClick={() => {
+              const currentSystemTags = attributesForm.systemTags || [];
+              const hasLLMRead = currentSystemTags.includes('LLMRead');
+              const newSystemTags = hasLLMRead
+                ? currentSystemTags.filter(t => t !== 'LLMRead')
+                : [...currentSystemTags.filter(t => t !== 'LLMRead'), 'LLMRead'];
+              const newForm = { ...attributesForm, systemTags: newSystemTags };
+              setAttributesForm(newForm);
+              onSave(keyName, newForm);
+            }}
+            disabled={!canEdit}
+            className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+            title="LLMRead: LLM can read this key"
+          >
+            {(attributesForm.systemTags || []).includes('LLMRead') ? 'true' : 'false'}
+          </button>
+        </div>
+
+        {/* LLMWrite */}
+        <div className="flex items-center gap-1">
+          <span className="text-yellow-400">[LW]</span>
           {attributesForm.hardcoded ? (
-            <span className="text-gray-500 font-mono">{attributesForm.template ? 'true' : 'false'}</span>
+            <span className="text-gray-500 font-mono">{(attributesForm.systemTags || []).includes('LLMWrite') ? 'true' : 'false'}</span>
           ) : (
             <button
-              onClick={() => handleChange('template', !attributesForm.template)}
+              onClick={() => {
+                const currentSystemTags = attributesForm.systemTags || [];
+                const hasLW = currentSystemTags.includes('LLMWrite');
+                const newSystemTags = hasLW
+                  ? currentSystemTags.filter(t => t !== 'LLMWrite')
+                  : [...currentSystemTags.filter(t => t !== 'LLMWrite' && t !== 'readonly'), 'LLMWrite'];
+                const newForm = { ...attributesForm, systemTags: newSystemTags, readonly: hasLW };
+                setAttributesForm(newForm);
+                onSave(keyName, newForm);
+              }}
               disabled={!canEdit}
               className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+              title="LLMWrite: LLM can write via tools"
             >
-              {attributesForm.template ? 'true' : 'false'}
+              {(attributesForm.systemTags || []).includes('LLMWrite') ? 'true' : 'false'}
             </button>
           )}
         </div>
 
-        {/* Hardcoded - just display if true */}
+        {/* ApplyTemplate */}
+        <div className="flex items-center gap-1">
+          <span className="text-yellow-400">[AT]</span>
+          {attributesForm.hardcoded ? (
+            <span className="text-gray-500 font-mono">{(attributesForm.systemTags || []).includes('ApplyTemplate') ? 'true' : 'false'}</span>
+          ) : (
+            <button
+              onClick={() => {
+                const currentSystemTags = attributesForm.systemTags || [];
+                const hasAT = currentSystemTags.includes('ApplyTemplate') || currentSystemTags.includes('template');
+                const newSystemTags = hasAT
+                  ? currentSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template')
+                  : [...currentSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template'), 'ApplyTemplate'];
+                const newForm = { ...attributesForm, systemTags: newSystemTags, template: !hasAT };
+                setAttributesForm(newForm);
+                onSave(keyName, newForm);
+              }}
+              disabled={!canEdit}
+              className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+              title="ApplyTemplate: Process template injection"
+            >
+              {(attributesForm.systemTags || []).includes('ApplyTemplate') || (attributesForm.systemTags || []).includes('template') ? 'true' : 'false'}
+            </button>
+          )}
+        </div>
+
+        {/* Protected - just display if true */}
         {attributesForm.hardcoded && (
           <div className="flex items-center gap-1">
-            <span className="text-yellow-400">[H]</span>
+            <span className="text-yellow-400">[P]</span>
             <span className="text-gray-500 font-mono">true</span>
           </div>
         )}

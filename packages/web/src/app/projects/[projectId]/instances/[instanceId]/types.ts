@@ -14,6 +14,7 @@ export interface KeyEntry {
     type: 'text' | 'image' | 'file' | 'json';
     contentType?: string;
     tags?: string[];
+    systemTags?: string[]; // SystemPrompt, LLMWrite, ApplyTemplate, protected, etc.
     zIndex?: number;
   };
   updatedAt?: number;
