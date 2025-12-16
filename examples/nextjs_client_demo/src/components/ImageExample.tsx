@@ -1,21 +1,32 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
-import { MindCache } from 'mindcache';
+import { useEffect, useState } from 'react';
+import { useMindCache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import type { TypedToolCall, ToolSet } from 'ai';
 
 export default function ImageExample() {
-  const mindcacheRef = useRef(new MindCache());
+  // Use the hook - handles all async init and cleanup automatically
+  const { mindcache, isLoaded } = useMindCache({
+    indexedDB: {
+      dbName: 'image_example_db',
+      storeName: 'image_store',
+      debounceMs: 500
+    }
+  });
+
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [stmVersion, setStmVersion] = useState(0);
+  const [keysInitialized, setKeysInitialized] = useState(false);
 
   // Initialize STM with image field
   useEffect(() => {
+    if (!isLoaded || !mindcache) return;
+
     // Create STM key if it doesn't exist
-    if (!mindcacheRef.current.has('user_image')) {
-      mindcacheRef.current.set_value('user_image', '', { 
-        visible: false, 
+    if (!mindcache.has('user_image')) {
+      mindcache.set_value('user_image', '', {
+        visible: false,
         readonly: true,
         type: 'image',
         contentType: 'image/jpeg'
@@ -23,26 +34,28 @@ export default function ImageExample() {
     }
 
     // Load initial image from STM
-    const dataUrl = mindcacheRef.current.get_data_url('user_image');
+    const dataUrl = mindcache.get_data_url('user_image');
     setImageUrl(dataUrl);
 
     // Subscribe to STM changes
     const handleSTMChange = () => {
-      const dataUrl = mindcacheRef.current.get_data_url('user_image');
+      const dataUrl = mindcache.get_data_url('user_image');
       setImageUrl(dataUrl);
     };
 
-    mindcacheRef.current.subscribeToAll(handleSTMChange);
+    mindcache.subscribeToAll(handleSTMChange);
+    setKeysInitialized(true);
 
     return () => {
-      mindcacheRef.current.unsubscribeFromAll(handleSTMChange);
+      mindcache.unsubscribeFromAll(handleSTMChange);
     };
-  }, []);
+  }, [isLoaded, mindcache]);
 
   // Handle image upload
   const handleImageUpload = async (file: File) => {
+    if (!mindcache) return;
     try {
-      await mindcacheRef.current.set_file('user_image', file, {
+      await mindcache.set_file('user_image', file, {
         visible: true,
         readonly: false
       });
@@ -54,10 +67,9 @@ export default function ImageExample() {
     }
   };
 
-  // Handle tool calls (optional - ChatInterface handles everything now)
+  // Handle tool calls
   const handleToolCall = async (toolCall: TypedToolCall<ToolSet>) => {
     console.log('🔧 Tool call executed:', toolCall);
-    // ChatInterface now handles all tool calls including analyze_image and generate_image
   };
 
   const getInitialMessages = () => {
@@ -76,6 +88,18 @@ export default function ImageExample() {
     ];
   };
 
+  // Show loading state
+  if (!isLoaded || !mindcache || !keysInitialized) {
+    return (
+      <div className="h-screen bg-black text-green-400 font-mono p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-2xl mb-4">Loading...</div>
+          <div className="animate-pulse">●●●</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex gap-1">
       {/* Left Panel - Chat */}
@@ -88,7 +112,7 @@ export default function ImageExample() {
         <ChatInterface
           onToolCall={handleToolCall}
           initialMessages={getInitialMessages()}
-          stmLoaded={true}
+          stmLoaded={keysInitialized}
           stmVersion={stmVersion}
           systemPrompt={`You are a helpful assistant that can work with images stored in short-term memory (STM).
 The current image is stored as 'user_image' in STM.
@@ -111,7 +135,7 @@ IMAGE GENERATION (NEW IMAGE):
 - Example: generate_image({ prompt: "a cat sitting on a windowsill", imageName: "user_image" })
 
 REMEMBER: Always set imageName to "user_image" so changes are visible to the user!`}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcache}
         />
       </div>
 
@@ -126,9 +150,9 @@ REMEMBER: Always set imageName to "user_image" so changes are visible to the use
           {/* Image Display */}
           <div className="flex-1 flex items-center justify-center min-h-0">
             {imageUrl ? (
-              <img 
-                src={imageUrl} 
-                alt="User uploaded" 
+              <img
+                src={imageUrl}
+                alt="User uploaded"
                 className="max-w-full max-h-full object-contain border border-gray-600 rounded"
               />
             ) : (
@@ -164,4 +188,3 @@ REMEMBER: Always set imageName to "user_image" so changes are visible to the use
     </div>
   );
 }
-

@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
-import { MindCache } from 'mindcache';
+import { useEffect, useState, useCallback } from 'react';
+import { useMindCache, MindCache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import Workflows from './Workflows';
 import type { TypedToolCall, ToolSet } from 'ai';
@@ -12,7 +12,15 @@ const WORKFLOW_STEPS = `1. Search about {{topic}} and write a comprehensive summ
 4. Generate an image for the tweet that matches {{audience}} and {{company}} brand. Store it as tweet_image. Tweet text: {{tweet}}. Audience: {{audience}}. Company summary: {{company_summary}}`;
 
 export default function TweetWorkflowExample() {
-  const mindcacheRef = useRef(new MindCache());
+  // Use the hook - handles all async init and cleanup automatically
+  const { mindcache, isLoaded } = useMindCache({
+    indexedDB: {
+      dbName: 'tweet_workflow_db',
+      storeName: 'tweet_store',
+      debounceMs: 500
+    }
+  });
+
   const [formData, setFormData] = useState({
     topic: '',
     company: '',
@@ -23,13 +31,30 @@ export default function TweetWorkflowExample() {
   const [tweetText, setTweetText] = useState('');
   const [tweetImage, setTweetImage] = useState<string | undefined>(undefined);
   const [stmVersion, setStmVersion] = useState(0);
-  
+  const [keysInitialized, setKeysInitialized] = useState(false);
+
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
   const [chatStatus, setChatStatus] = useState<string>('ready');
 
+  const loadFormData = useCallback((mc: MindCache) => {
+    setFormData({
+      topic: mc.get_value('topic') || '',
+      company: mc.get_value('company') || '',
+      audience: mc.get_value('audience') || ''
+    });
+    setContentSummary(mc.get_value('content_summary') || '');
+    setCompanySummary(mc.get_value('company_summary') || '');
+    setTweetText(mc.get_value('tweet') || '');
+
+    const dataUrl = mc.get_data_url('tweet_image');
+    setTweetImage(dataUrl);
+  }, []);
+
   // Initialize STM with all fields
   useEffect(() => {
+    if (!isLoaded || !mindcache) return;
+
     const fields = [
       { key: 'topic', value: '', visible: true, readonly: false },
       { key: 'company', value: '', visible: true, readonly: false },
@@ -41,44 +66,33 @@ export default function TweetWorkflowExample() {
     ];
 
     fields.forEach(({ key, value, visible, readonly, type, contentType }) => {
-      if (!mindcacheRef.current.has(key)) {
-        mindcacheRef.current.set_value(key, value, { visible, readonly, type: type as any, contentType });
+      if (!mindcache.has(key)) {
+        mindcache.set_value(key, value, { visible, readonly, type: type as any, contentType });
       }
     });
 
     // Load initial values from STM
-    loadFormData();
+    loadFormData(mindcache);
 
     // Subscribe to STM changes
     const handleSTMChange = () => {
-      loadFormData();
+      loadFormData(mindcache);
     };
 
-    mindcacheRef.current.subscribeToAll(handleSTMChange);
+    mindcache.subscribeToAll(handleSTMChange);
+    setKeysInitialized(true);
 
     return () => {
-      mindcacheRef.current.unsubscribeFromAll(handleSTMChange);
+      mindcache.unsubscribeFromAll(handleSTMChange);
     };
-  }, []);
-
-  const loadFormData = () => {
-    setFormData({
-      topic: mindcacheRef.current.get_value('topic') || '',
-      company: mindcacheRef.current.get_value('company') || '',
-      audience: mindcacheRef.current.get_value('audience') || ''
-    });
-    setContentSummary(mindcacheRef.current.get_value('content_summary') || '');
-    setCompanySummary(mindcacheRef.current.get_value('company_summary') || '');
-    setTweetText(mindcacheRef.current.get_value('tweet') || '');
-    
-    const dataUrl = mindcacheRef.current.get_data_url('tweet_image');
-    setTweetImage(dataUrl);
-  };
+  }, [isLoaded, mindcache, loadFormData]);
 
   // Handle form input changes
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    mindcacheRef.current.set_value(field, value);
+    if (mindcache) {
+      mindcache.set_value(field, value);
+    }
     setStmVersion(v => v + 1);
   };
 
@@ -93,7 +107,7 @@ export default function TweetWorkflowExample() {
   };
 
   const handleWorkflowPromptSent = () => {
-    setWorkflowPrompt(''); // Clear the prompt after sending
+    setWorkflowPrompt('');
   };
 
   const handleExecutionComplete = () => {
@@ -120,6 +134,18 @@ export default function TweetWorkflowExample() {
     ];
   };
 
+  // Show loading state
+  if (!isLoaded || !mindcache || !keysInitialized) {
+    return (
+      <div className="h-screen bg-black text-green-400 font-mono p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-2xl mb-4">Loading...</div>
+          <div className="animate-pulse">●●●</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex gap-1">
       {/* Left Panel - Chat */}
@@ -136,7 +162,7 @@ export default function TweetWorkflowExample() {
             workflowPrompt={workflowPrompt}
             onWorkflowPromptSent={handleWorkflowPromptSent}
             onStatusChange={handleStatusChange}
-            stmLoaded={true}
+            stmLoaded={keysInitialized}
             stmVersion={stmVersion}
             systemPrompt={`You are a helpful marketing assistant that creates engaging tweets with images.
 
@@ -156,7 +182,7 @@ Available fields in STM:
 - tweet_image: The generated tweet image
 
 Always use {{fieldname}} to reference values from STM in your responses and tool calls.`}
-            mindcacheInstance={mindcacheRef.current}
+            mindcacheInstance={mindcache}
           />
 
           {/* Workflow Component */}
@@ -165,7 +191,7 @@ Always use {{fieldname}} to reference values from STM in your responses and tool
               onSendPrompt={handleSendPrompt}
               isExecuting={chatStatus !== 'ready'}
               onExecutionComplete={handleExecutionComplete}
-              stmLoaded={true}
+              stmLoaded={keysInitialized}
               stmVersion={stmVersion}
               workflow={WORKFLOW_STEPS}
             />
@@ -247,9 +273,9 @@ Always use {{fieldname}} to reference values from STM in your responses and tool
               {/* Tweet Image */}
               <div className="border border-gray-700 rounded overflow-hidden bg-black" style={{ minHeight: '200px' }}>
                 {tweetImage ? (
-                  <img 
-                    src={tweetImage} 
-                    alt="Tweet image" 
+                  <img
+                    src={tweetImage}
+                    alt="Tweet image"
                     className="w-full h-auto"
                   />
                 ) : (
@@ -265,4 +291,3 @@ Always use {{fieldname}} to reference values from STM in your responses and tool
     </div>
   );
 }
-

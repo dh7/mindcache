@@ -37,7 +37,11 @@ export class IndexedDBAdapter {
     await this.load();
 
     const listener = () => {
-      this.scheduleSave();
+      // Don't save if this change came from deserialize (loading)
+      // The isRemoteUpdate flag is set during deserialization
+      if (this.mindcache && !this.mindcache.isRemoteUpdate()) {
+        this.scheduleSave();
+      }
     };
 
     mc.subscribeToAll(listener);
@@ -63,7 +67,7 @@ export class IndexedDBAdapter {
 
   private initDB(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 1);
+      const request = indexedDB.open(this.dbName);
 
       request.onerror = () => {
         console.error('MindCache: IndexedDB error:', request.error);
@@ -71,8 +75,37 @@ export class IndexedDBAdapter {
       };
 
       request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
+        const db = request.result;
+
+        // Check if the required store exists
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          // Store doesn't exist - need to trigger upgrade
+          const currentVersion = db.version;
+          db.close();
+
+          // Reopen with incremented version to trigger onupgradeneeded
+          const upgradeRequest = indexedDB.open(this.dbName, currentVersion + 1);
+
+          upgradeRequest.onerror = () => {
+            console.error('MindCache: IndexedDB upgrade error:', upgradeRequest.error);
+            reject(upgradeRequest.error);
+          };
+
+          upgradeRequest.onupgradeneeded = () => {
+            const upgradeDb = upgradeRequest.result;
+            if (!upgradeDb.objectStoreNames.contains(this.storeName)) {
+              upgradeDb.createObjectStore(this.storeName);
+            }
+          };
+
+          upgradeRequest.onsuccess = () => {
+            this.db = upgradeRequest.result;
+            resolve();
+          };
+        } else {
+          this.db = db;
+          resolve();
+        }
       };
 
       request.onupgradeneeded = () => {

@@ -168,6 +168,15 @@ export class MindCache {
       this._accessLevel = options.accessLevel;
     }
 
+    // Cloud and IndexedDB are mutually exclusive to avoid data conflicts
+    if (options?.cloud && options?.indexedDB) {
+      throw new Error(
+        'MindCache: Cannot use both cloud and indexedDB together. ' +
+        'Choose one persistence method to avoid data conflicts. ' +
+        'Use cloud for real-time sync, or indexedDB for local-only persistence.'
+      );
+    }
+
     const initPromises: Promise<void>[] = [];
 
     if (options?.cloud) {
@@ -179,11 +188,17 @@ export class MindCache {
 
     if (options?.indexedDB) {
       // IndexedDB is async, so we wait for it
+      this._isLoaded = false;
       initPromises.push(this._initIndexedDB(options.indexedDB));
     }
 
     if (initPromises.length > 0) {
-      this._initPromise = Promise.all(initPromises).then(() => { });
+      this._initPromise = Promise.all(initPromises).then(() => {
+        // If we are strictly local (no cloud), we are loaded when init finishes
+        if (!this._cloudConfig) {
+          this._isLoaded = true;
+        }
+      });
     }
   }
 
@@ -1207,6 +1222,9 @@ export class MindCache {
 
   deserialize(data: Record<string, STMEntry>): void {
     if (typeof data === 'object' && data !== null) {
+      // Set flag to prevent adapters from saving data we just loaded
+      this._isRemoteUpdate = true;
+
       this.clear();
 
       Object.entries(data).forEach(([key, entry]) => {
@@ -1263,6 +1281,9 @@ export class MindCache {
       });
 
       this.notifyGlobalListeners();
+
+      // Reset flag after notify
+      this._isRemoteUpdate = false;
     }
   }
 

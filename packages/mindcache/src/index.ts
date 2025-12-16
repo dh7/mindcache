@@ -11,3 +11,6 @@ export type { CloudConfig, ConnectionState, CloudAdapterEvents } from './cloud';
 export { IndexedDBAdapter } from './local';
 export type { IndexedDBConfig } from './local';
 
+// React exports
+export { useMindCache } from './react';
+export type { UseMindCacheResult } from './react';
