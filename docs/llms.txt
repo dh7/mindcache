@@ -123,6 +123,52 @@ mc.set_value('counter', 1);
 - `mc.isLoaded` - true when cloud data loaded
 - `mc.disconnect()` - Clean disconnect
 
+## Local Persistence (IndexedDB) - MindCache 2.4+
+
+Persist data locally in the browser using IndexedDB:
+
+```typescript
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache({
+  indexedDB: {
+    dbName: 'my-app-db',
+    storeName: 'my-store',
+    debounceMs: 500  // Save delay to batch writes
+  }
+});
+
+await mc.waitForSync(); // Wait for IndexedDB to load
+mc.set_value('userName', 'Alice'); // Auto-saved to IndexedDB
+```
+
+**Note:** Cloud and IndexedDB are mutually exclusive to avoid data conflicts.
+
+## React Hook - useMindCache
+
+Simplest way to use MindCache in React:
+
+```tsx
+import { useMindCache } from 'mindcache';
+
+function MyComponent() {
+  const { mindcache, isLoaded, error } = useMindCache({
+    indexedDB: { dbName: 'my-app' }
+  });
+
+  if (!isLoaded) return <Loading />;
+  if (error) return <Error message={error.message} />;
+
+  return <div>{mindcache.get_value('userName')}</div>;
+}
+```
+
+The hook handles:
+- Async initialization
+- Loading state
+- Cleanup on unmount
+- Error handling
+
 ## For Full Documentation
 
 See the comprehensive LLM documentation at:

@@ -17,13 +17,15 @@
 11. [Serialization](#serialization)
 12. [Image & File Support](#image--file-support)
 13. [Cloud Sync](#cloud-sync)
-14. [Integration Patterns](#integration-patterns)
-15. [Common Use Cases](#common-use-cases)
-16. [Error Handling](#error-handling)
-17. [TypeScript Types](#typescript-types)
-18. [Quick Reference](#quick-reference)
-19. [Complete App Examples](#complete-app-examples)
-20. [Best Practices Summary](#best-practices-summary)
+14. [Local Persistence (IndexedDB)](#local-persistence-indexeddb)
+15. [React Hook - useMindCache](#react-hook---usemindcache)
+16. [Integration Patterns](#integration-patterns)
+17. [Common Use Cases](#common-use-cases)
+18. [Error Handling](#error-handling)
+19. [TypeScript Types](#typescript-types)
+20. [Quick Reference](#quick-reference)
+21. [Complete App Examples](#complete-app-examples)
+22. [Best Practices Summary](#best-practices-summary)
 
 ---
 
@@ -1069,6 +1071,157 @@ NEXT_PUBLIC_INSTANCE_ID=your-instance-id
 // Clean disconnect when component unmounts
 mc.disconnect();
 ```
+
+---
+
+## Local Persistence (IndexedDB)
+
+MindCache 2.4+ supports local browser persistence using IndexedDB. Data is automatically saved and loaded across page reloads.
+
+### Basic Usage
+
+```typescript
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache({
+  indexedDB: {
+    dbName: 'my-app-db',      // Database name
+    storeName: 'my-store',     // Object store name
+    debounceMs: 500            // Delay before saving (batches writes)
+  }
+});
+
+// Wait for data to load from IndexedDB
+await mc.waitForSync();
+
+// Now use normally - changes auto-save
+mc.set_value('userName', 'Alice');
+mc.set_value('preferences', { theme: 'dark' });
+
+// On page reload, data is automatically restored
+```
+
+### Configuration Options
+
+```typescript
+interface IndexedDBConfig {
+  dbName?: string;      // Default: 'mindcache_db'
+  storeName?: string;   // Default: 'mindcache_store'
+  key?: string;         // Default: 'mindcache_data'
+  debounceMs?: number;  // Default: 1000
+}
+```
+
+### When to Use IndexedDB vs Cloud
+
+| Feature | IndexedDB | Cloud |
+|---------|-----------|-------|
+| Persistence | Local browser only | Across devices |
+| Offline support | Yes | Requires connection |
+| Multi-device sync | No | Yes |
+| Collaboration | No | Yes |
+| Setup complexity | None | Requires API keys |
+
+**Important:** Cloud and IndexedDB are mutually exclusive. Attempting to use both throws an error:
+
+```typescript
+// ❌ This will throw an error!
+const mc = new MindCache({
+  cloud: { instanceId: 'xxx', apiKey: 'xxx', baseUrl: 'xxx' },
+  indexedDB: { dbName: 'my-db' }
+});
+// Error: Cannot use both cloud and indexedDB together
+```
+
+---
+
+## React Hook - useMindCache
+
+The `useMindCache` hook is the simplest way to use MindCache in React applications. It handles async initialization, loading state, and cleanup automatically.
+
+### Basic Usage
+
+```tsx
+'use client';
+import { useMindCache } from 'mindcache';
+
+function MyComponent() {
+  const { mindcache, isLoaded, error } = useMindCache({
+    indexedDB: { dbName: 'my-app' }
+  });
+
+  if (!isLoaded) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <div>
+      <h1>Hello, {mindcache.get_value('userName')}</h1>
+      <button onClick={() => mindcache.set_value('userName', 'Bob')}>
+        Change Name
+      </button>
+    </div>
+  );
+}
+```
+
+### Hook Return Type
+
+```typescript
+interface UseMindCacheResult {
+  mindcache: MindCache | null;  // null until loaded
+  isLoaded: boolean;             // true when ready
+  error: Error | null;           // initialization error
+}
+```
+
+### With Cloud Sync
+
+```tsx
+const { mindcache, isLoaded } = useMindCache({
+  cloud: {
+    instanceId: 'my-instance',
+    tokenEndpoint: '/api/ws-token',
+    baseUrl: 'https://api.mindcache.dev'
+  }
+});
+```
+
+### With Key Initialization
+
+```tsx
+function FormComponent() {
+  const { mindcache, isLoaded } = useMindCache({
+    indexedDB: { dbName: 'form-data' }
+  });
+  const [keysReady, setKeysReady] = useState(false);
+
+  useEffect(() => {
+    if (!isLoaded || !mindcache) return;
+
+    // Initialize default keys after load
+    if (!mindcache.has('name')) {
+      mindcache.set_value('name', '', { readonly: false });
+    }
+    if (!mindcache.has('email')) {
+      mindcache.set_value('email', '', { readonly: false });
+    }
+
+    setKeysReady(true);
+  }, [isLoaded, mindcache]);
+
+  if (!isLoaded || !keysReady) return <Loading />;
+
+  return <Form mindcache={mindcache} />;
+}
+```
+
+### What the Hook Handles
+
+1. **Async Initialization** - Creates MindCache instance and waits for `waitForSync()`
+2. **React StrictMode** - Prevents double initialization in development
+3. **Loading State** - Returns `isLoaded: false` until fully initialized
+4. **Error Handling** - Catches initialization errors
+5. **Cleanup** - Calls `disconnect()` on unmount
 
 ---
 
