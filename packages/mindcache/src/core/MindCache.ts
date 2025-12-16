@@ -32,12 +32,25 @@ export interface MindCacheCloudOptions {
   baseUrl?: string;
 }
 
+export interface MindCacheIndexedDBOptions {
+  /** Database name (defaults to 'mindcache_db') */
+  dbName?: string;
+  /** Store name (defaults to 'mindcache_store') */
+  storeName?: string;
+  /** Storage key (defaults to 'mindcache_data') */
+  key?: string;
+  /** Debounce time in ms for saving (defaults to 1000) */
+  debounceMs?: number;
+}
+
 /**
  * Constructor options for MindCache
  */
 export interface MindCacheOptions {
   /** Cloud sync configuration. If omitted, runs in local-only mode. */
   cloud?: MindCacheCloudOptions;
+  /** IndexedDB configuration */
+  indexedDB?: MindCacheIndexedDBOptions;
   /** Access level for tag operations. 'system' allows managing system tags. */
   accessLevel?: AccessLevel;
 }
@@ -154,12 +167,23 @@ export class MindCache {
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
     }
+
+    const initPromises: Promise<void>[] = [];
+
     if (options?.cloud) {
       this._cloudConfig = options.cloud;
       this._isLoaded = false; // Wait for sync
       this._connectionState = 'disconnected';
-      // Initialize cloud connection asynchronously
-      this._initPromise = this._initCloud();
+      initPromises.push(this._initCloud());
+    }
+
+    if (options?.indexedDB) {
+      // IndexedDB is async, so we wait for it
+      initPromises.push(this._initIndexedDB(options.indexedDB));
+    }
+
+    if (initPromises.length > 0) {
+      this._initPromise = Promise.all(initPromises).then(() => { });
     }
   }
 
@@ -271,6 +295,21 @@ export class MindCache {
       this._connectionState = 'error';
       this._isLoaded = true; // Allow usage even if cloud fails
     }
+  }
+
+  private async _initIndexedDB(config: MindCacheIndexedDBOptions): Promise<void> {
+    try {
+      const IndexedDBAdapter = await this._getIndexedDBAdapterClass();
+      const adapter = new IndexedDBAdapter(config);
+      await adapter.attach(this);
+    } catch (error) {
+      console.error('MindCache: Failed to initialize IndexedDB:', error);
+    }
+  }
+
+  protected async _getIndexedDBAdapterClass(): Promise<any> {
+    const { IndexedDBAdapter } = await import('../local/IndexedDBAdapter');
+    return IndexedDBAdapter;
   }
 
   /**
