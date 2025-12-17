@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { mindcache } from 'mindcache';
+import { useEffect, useState, useCallback } from 'react';
+import { useMindCache } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import STMEditor from './STMEditor';
 import STMMenu from './STMMenu';
@@ -11,17 +11,44 @@ import Workflows from './Workflows';
 import type { TypedToolCall, ToolSet } from 'ai';
 
 export default function ClientSTMDemo() {
-  const mindcacheRef = useRef(mindcache);
-  const [leftWidth, setLeftWidth] = useState(70); // Percentage width for left panel
+  // Use the hook - handles all async init and cleanup automatically
+  const { mindcache, isLoaded } = useMindCache({
+    indexedDB: {
+      dbName: 'client_demo_db',
+      storeName: 'client_demo_store',
+      debounceMs: 500
+    }
+  });
+
+  const [leftWidth, setLeftWidth] = useState(70);
   const [isResizing, setIsResizing] = useState(false);
-  const [stmLoaded, setStmLoaded] = useState(false); // Track STM loading state
-  const [stmVersion, setStmVersion] = useState(0); // Force refresh of getTagged values
-  const [chatKey, setChatKey] = useState(0); // Force chat remount on load/import/clear
-  const [selectedTags, setSelectedTags] = useState<string[]>([]); // Tag filter for STM Editor
-  
+  const [stmVersion, setStmVersion] = useState(0);
+  const [chatKey, setChatKey] = useState(0);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [keysInitialized, setKeysInitialized] = useState(false);
+
   // Workflow state
   const [workflowPrompt, setWorkflowPrompt] = useState<string>('');
   const [chatStatus, setChatStatus] = useState<string>('ready');
+
+  // Initialize default keys once loaded
+  useEffect(() => {
+    if (!isLoaded || !mindcache) return;
+
+    // If no saved data (fresh DB), create default keys
+    const currentKeys = Object.keys(mindcache.getAll());
+    const userKeys = currentKeys.filter(key => !key.startsWith('$'));
+
+    if (userKeys.length === 0) {
+      console.log('Creating default STM keys...');
+      mindcache.set_value('name', 'Anonymous User');
+      mindcache.set_value('preferences', 'No preferences set');
+      mindcache.set_value('notes', 'No notes');
+      console.log('Created keys:', Object.keys(mindcache.getAll()));
+    }
+
+    setKeysInitialized(true);
+  }, [isLoaded, mindcache]);
 
   // Callback to force refresh of getTagged values
   const handleSTMChange = useCallback(() => {
@@ -31,89 +58,40 @@ export default function ClientSTMDemo() {
   // Callback to fully refresh UI (chat, workflows) after load/import/clear
   const handleFullRefresh = useCallback(() => {
     console.log('🔄 Full UI refresh triggered');
-    // Increment version to refresh workflows and STM editor
     setStmVersion(v => v + 1);
-    // Increment chat key to force remount with new initial messages
     setChatKey(k => k + 1);
   }, []);
 
-
   // Define initial assistant message using tagged content
   const getInitialMessages = () => {
-    if (!stmLoaded) {
-      // Return default message while STM is loading
+    if (!keysInitialized || !mindcache) {
       return [
         {
           id: 'welcome-message',
           role: 'assistant' as const,
-          parts: [
-            {
-              type: 'text' as const,
-              text: 'Hello!'
-            }
-          ],
+          parts: [{ type: 'text' as const, text: 'Hello!' }],
           createdAt: new Date()
         }
       ];
     }
 
-    const assistantFirstMessage = mindcacheRef.current.getTagged("AssistantFirstMessage");
-    const messageText = assistantFirstMessage 
-      ? assistantFirstMessage.split(': ').slice(1).join(': ') // Extract value part after "key: "
+    const assistantFirstMessage = mindcache.getTagged("AssistantFirstMessage");
+    const messageText = assistantFirstMessage
+      ? assistantFirstMessage.split(': ').slice(1).join(': ')
       : 'Hello!';
-    
-    
+
     return [
       {
         id: 'welcome-message',
         role: 'assistant' as const,
-        parts: [
-          {
-            type: 'text' as const,
-            text: messageText
-          }
-        ],
+        parts: [{ type: 'text' as const, text: messageText }],
         createdAt: new Date()
       }
     ];
   };
-  
-  // Initialize with auto-load and default keys
-  useEffect(() => {
-    const initializeSTM = async () => {
-      // Try to load from localStorage first
-      const saved = localStorage.getItem('mindcache_stm');
-      if (saved) {
-        try {
-          mindcacheRef.current.fromJSON(saved);
-          console.log('✅ Auto-loaded STM from localStorage');
-        } catch (error) {
-          console.error('❌ Failed to auto-load STM:', error);
-        }
-      }
-
-      // If no saved data, create default keys
-      const currentKeys = Object.keys(mindcacheRef.current.getAll());
-      const userKeys = currentKeys.filter(key => !key.startsWith('$'));
-      
-      if (userKeys.length === 0) {
-        console.log('Creating default STM keys...');
-        mindcacheRef.current.set_value('name', 'Anonymous User');
-        mindcacheRef.current.set_value('preferences', 'No preferences set');
-        mindcacheRef.current.set_value('notes', 'No notes');
-        console.log('Created keys:', Object.keys(mindcacheRef.current.getAll()));
-      }
-      
-      // Set loaded state after everything is initialized
-      setStmLoaded(true);
-    };
-
-    initializeSTM();
-  }, []);
 
   const handleToolCall = async (toolCall: TypedToolCall<ToolSet>) => {
     console.log('🔧 Tool call executed:', toolCall);
-    // ChatInterface now handles all tool calls including analyze_image and generate_image
   };
 
   // Workflow handlers
@@ -122,7 +100,7 @@ export default function ClientSTMDemo() {
   };
 
   const handleWorkflowPromptSent = () => {
-    setWorkflowPrompt(''); // Clear the prompt after sending
+    setWorkflowPrompt('');
   };
 
   const handleExecutionComplete = () => {
@@ -140,17 +118,12 @@ export default function ClientSTMDemo() {
   }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) {
-      return;
-    }
-    
+    if (!isResizing) return;
+
     const containerRect = document.querySelector('.resize-container')?.getBoundingClientRect();
-    if (!containerRect) {
-      return;
-    }
-    
+    if (!containerRect) return;
+
     const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-    // Constrain between 20% and 80%
     const constrainedWidth = Math.min(Math.max(newLeftWidth, 20), 80);
     setLeftWidth(constrainedWidth);
   }, [isResizing]);
@@ -166,7 +139,7 @@ export default function ClientSTMDemo() {
       document.addEventListener('mouseup', handleMouseUp);
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-      
+
       return () => {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
@@ -176,7 +149,7 @@ export default function ClientSTMDemo() {
     }
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  if (!stmLoaded) {
+  if (!isLoaded || !mindcache || !keysInitialized) {
     return (
       <div className="h-screen bg-black text-green-400 font-mono p-6 flex items-center justify-center">
         <div className="text-center">
@@ -190,51 +163,50 @@ export default function ClientSTMDemo() {
   return (
     <div className="h-screen bg-black text-green-400 font-mono p-6 flex overflow-hidden resize-container">
       {/* Left Panel - ChatInterface */}
-      <div 
+      <div
         style={{ width: `${leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <ChatInterface 
-          key={chatKey} // Force remount on load/import/clear
-          onToolCall={handleToolCall} 
+        <ChatInterface
+          key={chatKey}
+          onToolCall={handleToolCall}
           initialMessages={getInitialMessages()}
           workflowPrompt={workflowPrompt}
           onWorkflowPromptSent={handleWorkflowPromptSent}
           onStatusChange={handleStatusChange}
-          stmLoaded={stmLoaded}
+          stmLoaded={keysInitialized}
           stmVersion={stmVersion}
-          mindcacheInstance={mindcacheRef.current}
+          mindcacheInstance={mindcache}
         />
       </div>
-      
-      {/* Resizer - invisible but functional */}
+
+      {/* Resizer */}
       <div
-        className={`w-1 bg-transparent hover:bg-green-400 hover:bg-opacity-30 cursor-col-resize transition-colors flex-shrink-0 ${
-          isResizing ? 'bg-green-400 bg-opacity-50' : ''
-        }`}
+        className={`w-1 bg-transparent hover:bg-green-400 hover:bg-opacity-30 cursor-col-resize transition-colors flex-shrink-0 ${isResizing ? 'bg-green-400 bg-opacity-50' : ''
+          }`}
         onMouseDown={handleMouseDown}
         title="Drag to resize panels"
       />
-      
+
       {/* Right Panel - STM Menu + Editor + Workflows */}
-      <div 
+      <div
         style={{ width: `${100 - leftWidth}%` }}
         className="flex flex-col min-h-0"
       >
-        <STMMenu 
-          onRefresh={handleFullRefresh} 
+        <STMMenu
+          onRefresh={handleFullRefresh}
           selectedTags={selectedTags}
           onSelectedTagsChange={setSelectedTags}
         />
-        <STMEditor 
-          onSTMChange={handleSTMChange} 
+        <STMEditor
+          onSTMChange={handleSTMChange}
           selectedTags={selectedTags}
         />
-        <Workflows 
+        <Workflows
           onSendPrompt={handleSendPrompt}
           isExecuting={chatStatus !== 'ready'}
           onExecutionComplete={handleExecutionComplete}
-          stmLoaded={stmLoaded}
+          stmLoaded={keysInitialized}
           stmVersion={stmVersion}
         />
       </div>

@@ -19,7 +19,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "lucide-react": "^0.511.0",
-    "mindcache": "^1.0.0",
+    "mindcache": "^2.4.0",
     "next": "^15.5.7",
     "react": "^19",
     "react-dom": "^19",

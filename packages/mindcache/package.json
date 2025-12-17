@@ -1,6 +1,6 @@
 {
   "name": "mindcache",
-  "version": "2.3.0",
+  "version": "2.4.1",
   "description": "A TypeScript library for managing short-term memory in AI agents through an LLM-friendly key-value repository",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -57,6 +57,7 @@
   "homepage": "https://github.com/dh7/mindcache#readme",
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/react": "^19.2.7",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.57.0",
@@ -68,7 +69,8 @@
     "zod": "^3.23.0"
   },
   "peerDependencies": {
-    "ai": ">=3.0.0"
+    "ai": ">=3.0.0",
+    "react": "^19.0.0"
   },
   "peerDependenciesMeta": {
     "ai": {
