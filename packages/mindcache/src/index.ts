@@ -1,5 +1,6 @@
 // Core exports (MindCache 1.0 compatible)
-export { MindCache, mindcache } from './core';
+export { MindCache } from './core';
+
 export type { KeyAttributes, STM, STMEntry, Listener, MindCacheOptions, MindCacheCloudOptions, MindCacheIndexedDBOptions } from './core';
 export { DEFAULT_KEY_ATTRIBUTES } from './core';
 

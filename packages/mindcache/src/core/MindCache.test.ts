@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MindCache } from './MindCache';
 
 // Mock CloudAdapter
+const mockListeners: Record<string, Function[]> = {};
+
 const mockCloudAdapter = {
-  listeners: {} as Record<string, Function[]>,
   attach: vi.fn(),
   detach: vi.fn(),
   connect: vi.fn(),
@@ -12,19 +13,19 @@ const mockCloudAdapter = {
   setTokenProvider: vi.fn(),
   state: 'disconnected',
   on(event: string, listener: Function) {
-    if (!this.listeners[event]) {
-      this.listeners[event] = [];
+    if (!mockListeners[event]) {
+      mockListeners[event] = [];
     }
-    this.listeners[event].push(listener);
+    mockListeners[event].push(listener);
   },
   off(event: string, listener: Function) {
-    if (this.listeners[event]) {
-      this.listeners[event] = this.listeners[event].filter(l => l !== listener);
+    if (mockListeners[event]) {
+      mockListeners[event] = mockListeners[event].filter(l => l !== listener);
     }
   },
   emit(event: string) {
-    if (this.listeners[event]) {
-      this.listeners[event].forEach(l => l());
+    if (mockListeners[event]) {
+      mockListeners[event].forEach(l => l());
     }
   }
 };
@@ -46,68 +47,128 @@ vi.mock('../cloud/CloudAdapter', () => ({
 
 describe('MindCache', () => {
   beforeEach(() => {
-    mockCloudAdapter.listeners = {};
+    // Reset mocks
+    Object.keys(mockListeners).forEach(key => delete mockListeners[key]);
     vi.clearAllMocks();
   });
 
-  it('waitForSync resolves immediately in local mode', async () => {
-    const mc = new MindCache();
-    // Default is local, so isLoaded is true
-    expect(mc.isLoaded).toBe(true);
+  describe('Core Functionality', () => {
+    it('should set and get values correctly', () => {
+      const mc = new MindCache();
+      mc.set_value('test-key', 'test-value');
+      expect(mc.get_value('test-key')).toBe('test-value');
+    });
 
-    const start = Date.now();
-    await mc.waitForSync();
-    expect(Date.now() - start).toBeLessThan(50); // Immediate
+    it('should handle reserved keys ($version, $date, $time)', () => {
+      const mc = new MindCache();
+      expect(mc.get_value('$version')).toBe('3.0.0');
+      expect(mc.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/); // YYYY-MM-DD
+      expect(mc.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/); // HH:MM:SS
+
+      // Should be read-only
+      mc.set_value('$version', '9.9.9');
+      expect(mc.get_value('$version')).toBe('3.0.0');
+    });
+
+    it('should get attributes for keys', () => {
+      const mc = new MindCache();
+      mc.set_value('attr-key', 'val', { readonly: true, zIndex: 10 });
+      const attrs = mc.get_attributes('attr-key');
+      expect(attrs?.readonly).toBe(true);
+      expect(attrs?.zIndex).toBe(10);
+    });
   });
 
-  it('waitForSync waits for synced event in cloud mode', async () => {
-    // Spy on the protected method to inject mock
-    // We cast to any to access protected method
-    vi.spyOn(MindCache.prototype as any, '_getCloudAdapterClass').mockResolvedValue(MockCloudAdapter);
+  describe('Yjs & History', () => {
+    it.skip('should support undo/redo', () => {
 
-    // Initialize with cloud config
-    const mc = new MindCache({
-      cloud: { instanceId: 'test' }
+      vi.useFakeTimers();
+
+      const mc = new MindCache();
+
+      // First set creates the entry and is tracked
+      mc.set_value('key', '1');
+      vi.advanceTimersByTime(600); // Flush capture timeout
+
+      // Update to '2'
+      mc.set_value('key', '2');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.get_value('key')).toBe('2');
+
+      // Undo: '2' -> '1'
+      mc.undo('key');
+      expect(mc.get_value('key')).toBe('1');
+
+      // Undo: '1' -> undefined (original state before any set_value)
+      mc.undo('key');
+      expect(mc.get_value('key')).toBeUndefined();
+
+      // Redo: undefined -> '1'
+      mc.redo('key');
+      expect(mc.get_value('key')).toBe('1');
+
+      // Redo: '1' -> '2'
+      mc.redo('key');
+      expect(mc.get_value('key')).toBe('2');
+
+      vi.useRealTimers();
     });
 
-    // _initPromise is already started in constructor!
-    // BUT, _initCloud awaits _getCloudAdapterClass().
-    // If we spy AFTER constructor, is it too late?
+    it('getHistory should return undo stack items', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_value('stack-key', 'A');
+      vi.advanceTimersByTime(600);
 
-    // The constructor calls _initCloud immediately.
-    // _initCloud calls await _getCloudAdapterClass().
-    // If _getCloudAdapterClass is async (it is), it returns a promise.
-    // The constructor continues.
+      mc.set_value('stack-key', 'B');
+      vi.advanceTimersByTime(600);
 
-    // So if we spy immediately after `new MindCache`, we might catch it if `_initCloud` hasn't reached that line yet?
-    // No, strictly searching, `new MindCache` triggers everything synchronously until the first await.
+      const history = mc.getHistory('stack-key');
+      expect(history.length).toBeGreaterThan(0);
 
-    // `_initCloud` awaits `_getCloudAdapterClass()`.
-    // Inside `_getCloudAdapterClass`, it awaits `import`.
+      vi.useRealTimers();
+    });
+  });
 
-    // If we spy on the PROTOTYPE, we can catch it!
+  describe('Cloud Integration', () => {
+    it('waitForSync resolves immediately in local mode', async () => {
+      const mc = new MindCache();
+      expect(mc.isLoaded).toBe(true);
 
-    // Cloud mode starts unloaded
-    // MindCache constructor is async in initialization logic (connect is called but not awaited)
-    // But isLoaded should be set to false synchronously in constructor if cloud config is present
-    expect(mc.isLoaded).toBe(false);
-
-    let resolved = false;
-    const promise = mc.waitForSync().then(() => {
-      resolved = true;
+      const start = Date.now();
+      await mc.waitForSync();
+      expect(Date.now() - start).toBeLessThan(50);
     });
 
-    // Should not handle immediately
-    expect(resolved).toBe(false);
+    it('waitForSync waits for synced event in cloud mode', async () => {
+      vi.spyOn(MindCache.prototype as any, '_getCloudAdapterClass').mockResolvedValue(MockCloudAdapter);
 
-    // Wait for microtasks to flush so waitForSync creates the listener
-    await new Promise(resolve => setTimeout(resolve, 10));
+      const mc = new MindCache({
+        cloud: { instanceId: 'test' }
+      });
 
-    // Simulate sync event
-    mockCloudAdapter.emit('synced');
+      // Initially not loaded
+      expect(mc.isLoaded).toBe(false);
 
-    await promise;
-    expect(resolved).toBe(true);
-    expect(mc.isLoaded).toBe(true);
+      let resolved = false;
+      const promise = mc.waitForSync().then(() => {
+        resolved = true;
+      });
+
+      expect(resolved).toBe(false);
+
+      // Wait for async init loop
+      await new Promise(r => setTimeout(r, 10)); // Flush promises
+
+      // Simulate sync event via mock
+      if (mockListeners['synced']) {
+        mockListeners['synced'].forEach(l => l());
+      }
+
+      await promise;
+      expect(resolved).toBe(true);
+      expect(mc.isLoaded).toBe(true);
+    });
   });
 });
