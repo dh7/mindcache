@@ -128,9 +128,8 @@ export class MindCache {
       normalized.push('readonly');
     } else if (hasLLMWrite) {
       normalized.push('LLMWrite');
-    } else {
-      normalized.push('LLMWrite');
     }
+    // If neither readonly nor LLMWrite is set, that's fine - key is readable but not LLM-writable
 
     return normalized;
   }
