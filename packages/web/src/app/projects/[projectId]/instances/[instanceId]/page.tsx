@@ -211,9 +211,18 @@ export default function InstanceEditorPage() {
     switch (msg.type) {
       case 'set':
         if (msg.key && msg.attributes) {
-          if (msg.attributes.type === 'document') {
+          // Check if this is an existing document type key
+          const existingEntry = keys[msg.key];
+          const isExistingDocument = existingEntry?.attributes?.type === 'document';
+
+          if (msg.attributes.type === 'document' && !existingEntry) {
+            // Creating a new document
             mcRef.current.set_document(msg.key, String(msg.value ?? ''));
+          } else if (isExistingDocument) {
+            // Updating an existing document - use set_attributes to not overwrite Y.Text
+            mcRef.current.set_attributes(msg.key, msg.attributes);
           } else {
+            // Non-document type
             mcRef.current.set_value(msg.key, msg.value, msg.attributes);
           }
         }
@@ -413,14 +422,19 @@ export default function InstanceEditorPage() {
     // Update local state
     setKeyValues(prev => ({ ...prev, [key]: '' }));
 
-    // Send to server
-    sendMessage({
-      type: 'set',
-      key,
-      value: '',
-      attributes: entry.attributes,
-      timestamp: Date.now()
-    });
+    // For document type, use replace_document_text for RT sync
+    if (entry.attributes.type === 'document' && mcRef.current) {
+      mcRef.current.replace_document_text(key, '');
+    } else {
+      // Send to server via sendMessage for other types
+      sendMessage({
+        type: 'set',
+        key,
+        value: '',
+        attributes: entry.attributes,
+        timestamp: Date.now()
+      });
+    }
   };
 
   // Toggle the properties panel for a key

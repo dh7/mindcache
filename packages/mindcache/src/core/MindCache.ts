@@ -727,6 +727,33 @@ export class MindCache {
     return entryMap ? entryMap.get('attributes') : undefined;
   }
 
+  /**
+   * Update only the attributes of a key without modifying the value.
+   * Useful for updating tags, permissions etc. on document type keys.
+   */
+  set_attributes(key: string, attributes: Partial<KeyAttributes>): void {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return; // Key doesn't exist
+    }
+
+    this.doc.transact(() => {
+      const existingAttrs = entryMap.get('attributes') as KeyAttributes;
+      const mergedAttrs = { ...existingAttrs, ...attributes };
+
+      // Normalize system tags
+      if (mergedAttrs.systemTags) {
+        mergedAttrs.systemTags = this.normalizeSystemTags(mergedAttrs.systemTags);
+      }
+
+      entryMap.set('attributes', mergedAttrs);
+    });
+  }
+
   set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
     if (key === '$date' || key === '$time' || key === '$version') {
       return;
