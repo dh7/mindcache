@@ -41,12 +41,15 @@ export class MindCacheInstanceDO extends DurableObject {
     // Initialize Yjs Update Listener
     this.doc.on('update', (update: Uint8Array, origin: any, _doc: Y.Doc, transaction: Y.Transaction) => {
 
-      // Broadcast to clients
+      // Broadcast to clients - wrap update in sync protocol format
       if (origin !== this) {
         const webSockets = this.ctx.getWebSockets();
         for (const ws of webSockets) {
           if (origin !== ws) {
-            this.sendBinary(ws, update);
+            // Wrap the update in a sync protocol message (messageYjsUpdate = 2)
+            const encoder = encoding.createEncoder();
+            syncProtocol.writeUpdate(encoder, update);
+            this.sendBinary(ws, encoding.toUint8Array(encoder));
           }
         }
       }
@@ -158,9 +161,9 @@ export class MindCacheInstanceDO extends DurableObject {
     const rootMap = this.doc.getMap('mindcache');
     const now = Date.now();
 
-    // Simple transaction wrapper
+    // Note: Durable Objects SQLite doesn't support raw SQL transactions.
+    // Each exec call is atomic. For batch atomicity, use ctx.storage.transactionSync().
     try {
-      this.sql.exec('BEGIN TRANSACTION');
       keysUpdated.forEach(key => {
         const entryMap = rootMap.get(key) as Y.Map<any> | undefined;
         if (!entryMap || !entryMap.has('value')) { // Check if it's a valid entry
@@ -193,12 +196,8 @@ export class MindCacheInstanceDO extends DurableObject {
           );
         }
       });
-      this.sql.exec('COMMIT');
     } catch (e) {
       console.error('Failed to update SQLite view', e);
-      try {
-        this.sql.exec('ROLLBACK');
-      } catch { /* Ignore rollback errors */ }
     }
   }
 
@@ -341,13 +340,15 @@ export class MindCacheInstanceDO extends DurableObject {
 
     // Handle Yjs Binary messages
     if (message instanceof ArrayBuffer) {
+      const update = new Uint8Array(message);
       const encoder = encoding.createEncoder();
-      const decoder = decoding.createDecoder(new Uint8Array(message));
+      const decoder = decoding.createDecoder(update);
 
       // This helper handles Sync Step 1, Step 2, and Update exchange automatically
-      syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
+      // The doc.on('update') listener will broadcast changes to other clients
+      syncProtocol.readSyncMessage(decoder, encoder, this.doc, ws);
 
-      // If the encoder has content (response), send it back
+      // If the encoder has content (response), send it back to the sender
       if (encoding.length(encoder) > 0) {
         this.sendBinary(ws, encoding.toUint8Array(encoder));
       }
@@ -415,6 +416,16 @@ export class MindCacheInstanceDO extends DurableObject {
     const webSockets = this.ctx.getWebSockets();
     for (const ws of webSockets) {
       this.send(ws, message);
+    }
+  }
+
+  private broadcastBinary(message: Uint8Array, exclude?: WebSocket): void {
+    // Broadcast binary (Yjs) message to all clients except the sender
+    const webSockets = this.ctx.getWebSockets();
+    for (const ws of webSockets) {
+      if (ws !== exclude) {
+        this.sendBinary(ws, message);
+      }
     }
   }
 }

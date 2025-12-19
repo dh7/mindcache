@@ -203,6 +203,9 @@ export class CloudAdapter {
           } else if (msg.type === 'auth_error' || msg.type === 'error') {
             this._state = 'error';
             this.emit('error', new Error(msg.error));
+          } else {
+            // Log unhandled message types for debugging (not an error, just informational)
+            console.debug('MindCache Cloud: Received message type:', msg.type, msg);
           }
         } else {
           // Handle Binary Yjs messages

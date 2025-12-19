@@ -28,6 +28,8 @@ export interface MindCacheCloudOptions {
   projectId?: string;
   /** API endpoint to fetch WS token (recommended for browser) */
   tokenEndpoint?: string;
+  /** Function to fetch token dynamically (overrides tokenEndpoint) */
+  tokenProvider?: () => Promise<string>;
   /** Direct API key (server-side only, never expose in browser!) */
   apiKey?: string;
   /** WebSocket base URL (defaults to production) */
@@ -421,8 +423,8 @@ export class MindCache {
       // throw new Error('MindCache Cloud: baseUrl is required.');
     }
 
-    // Ensure baseUrl is set or fallback
-    const baseUrl = (this._cloudConfig.baseUrl || 'https://api.mindcache.io')
+    // Ensure baseUrl is set or fallback to production
+    const baseUrl = (this._cloudConfig.baseUrl || 'https://api.mindcache.dev')
       .replace('https://', 'wss://')
       .replace('http://', 'ws://');
 
@@ -433,7 +435,9 @@ export class MindCache {
       apiKey: this._cloudConfig.apiKey
     });
 
-    if (this._cloudConfig.tokenEndpoint) {
+    if (this._cloudConfig.tokenProvider) {
+      adapter.setTokenProvider(this._cloudConfig.tokenProvider);
+    } else if (this._cloudConfig.tokenEndpoint) {
       const tokenEndpoint = this._cloudConfig.tokenEndpoint;
       const instanceId = this._cloudConfig.instanceId;
       let resolvedBaseUrl: string;
