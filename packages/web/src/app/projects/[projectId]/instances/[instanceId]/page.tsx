@@ -445,7 +445,7 @@ export default function InstanceEditorPage() {
   // Save attributes from the inline KeyPropertiesPanel component
   const handleSaveAttributes = (oldKey: string, newKeyName: string, attributes: KeyEntry['attributes']) => {
     const currentEntry = keys[oldKey];
-    if (!currentEntry) {
+    if (!currentEntry || !mcRef.current) {
       return;
     }
 
@@ -456,14 +456,22 @@ export default function InstanceEditorPage() {
         return;
       }
 
-      // Create new key with updated attributes
-      sendMessage({
-        type: 'set',
-        key: newKeyName,
-        value: currentEntry.value,
-        attributes,
-        timestamp: Date.now()
-      });
+      const isDocument = currentEntry.attributes?.type === 'document';
+
+      if (isDocument) {
+        // For documents, get the text content and create new document
+        const textContent = mcRef.current.get_document_text(oldKey) || '';
+        mcRef.current.set_document(newKeyName, textContent, attributes);
+      } else {
+        // Create new key with updated attributes
+        sendMessage({
+          type: 'set',
+          key: newKeyName,
+          value: currentEntry.value,
+          attributes,
+          timestamp: Date.now()
+        });
+      }
 
       // Delete old key
       sendMessage({
