@@ -392,6 +392,31 @@ if (attrs?.readonly) {
 }
 ```
 
+### Setting Attributes (v3.2+)
+
+Update only the attributes of a key without modifying its value. Useful for updating tags, permissions, etc. on document type keys.
+
+```typescript
+// Signature
+set_attributes(key: string, attributes: Partial<KeyAttributes>): void
+
+// Example: Add a tag without changing the value
+mindcache.set_attributes('notes', {
+  tags: ['important', 'shared']
+});
+
+// Example: Toggle LLMWrite permission
+mindcache.set_attributes('config', {
+  systemTags: ['LLMRead']  // Remove LLMWrite, keep LLMRead
+});
+
+// Example: Update document type without overwriting Y.Text
+mindcache.set_document('article', 'Initial content');
+// Later, update only the tags:
+mindcache.set_attributes('article', { tags: ['published'] });
+// The collaborative document content is preserved!
+```
+
 ### Readonly Keys
 
 Readonly keys cannot be modified by AI-generated tools, only by your code.
@@ -1732,6 +1757,9 @@ const prompt = mindcache.get_system_prompt();
 // Tags
 mindcache.addTag('key', 'tagName');
 const tagged = mindcache.getTagged('tagName');
+
+// Update attributes only (v3.2+)
+mindcache.set_attributes('key', { tags: ['new-tag'] });
 
 // Events
 mindcache.subscribe('key', (value) => console.log(value));
