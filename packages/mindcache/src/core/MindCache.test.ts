@@ -260,6 +260,26 @@ describe('MindCache', () => {
       expect(mc.get_attributes('notes')?.type).toBe('document');
     });
 
+    it('set_value on document key should use diff-based replace', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+      vi.advanceTimersByTime(600);
+
+      // Using set_value on a document should route to replace_document_text
+      mc.set_value('doc', 'Hello Beautiful World');
+      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+
+      // Y.Text should still exist (not replaced with string)
+      expect(mc.get_document('doc')).toBeDefined();
+
+      // Undo should work (diff was applied)
+      mc.undo('doc');
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+
+      vi.useRealTimers();
+    });
+
     it('should return Y.Text for document keys via get_document', () => {
       const mc = new MindCache();
       mc.set_document('doc');

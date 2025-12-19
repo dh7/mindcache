@@ -728,6 +728,19 @@ export class MindCache {
       return;
     }
 
+    // For existing document type keys, use diff-based replace
+    const existingEntry = this.rootMap.get(key);
+    if (existingEntry) {
+      const existingAttrs = existingEntry.get('attributes') as KeyAttributes;
+      if (existingAttrs?.type === 'document') {
+        // Route to replace_document_text for smart diff handling
+        if (typeof value === 'string') {
+          this.replace_document_text(key, value);
+        }
+        return;
+      }
+    }
+
     // Check if we need to create a new entry (outside transaction for UndoManager setup)
     let entryMap = this.rootMap.get(key);
     const isNewEntry = !entryMap;
