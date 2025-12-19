@@ -24,7 +24,7 @@ export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 
  */
 export interface KeyAttributes {
   /** The type of value stored */
-  type: 'text' | 'image' | 'file' | 'json';
+  type: 'text' | 'image' | 'file' | 'json' | 'document';
   /** MIME type for files/images */
   contentType?: string;
   /** User-defined tags for organizing keys */

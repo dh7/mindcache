@@ -250,4 +250,250 @@ describe('MindCache', () => {
       expect(mc.isLoaded).toBe(true);
     });
   });
+
+  describe('Document Type', () => {
+    it('should create a document with set_document', () => {
+      const mc = new MindCache();
+      mc.set_document('notes', 'Hello World');
+
+      expect(mc.get_document_text('notes')).toBe('Hello World');
+      expect(mc.get_attributes('notes')?.type).toBe('document');
+    });
+
+    it('should return Y.Text for document keys via get_document', () => {
+      const mc = new MindCache();
+      mc.set_document('doc');
+
+      const yText = mc.get_document('doc');
+      expect(yText).toBeDefined();
+      expect(typeof yText?.insert).toBe('function'); // Y.Text has insert method
+    });
+
+    it('should return undefined for get_document on non-document keys', () => {
+      const mc = new MindCache();
+      mc.set_value('text-key', 'hello');
+
+      expect(mc.get_document('text-key')).toBeUndefined();
+    });
+
+    it('should support insert_text and delete_text', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello');
+
+      mc.insert_text('doc', 5, ' World');
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+
+      mc.delete_text('doc', 5, 6);
+      expect(mc.get_document_text('doc')).toBe('Hello');
+    });
+
+    it('should support replace_document_text', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Initial content');
+
+      mc.replace_document_text('doc', 'Replaced content');
+      expect(mc.get_document_text('doc')).toBe('Replaced content');
+    });
+
+    it('get_value should return plain text for document keys', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Content');
+
+      expect(mc.get_value('doc')).toBe('Content');
+    });
+
+    it('serialize should convert Y.Text to string', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Serialized');
+
+      const serialized = mc.serialize();
+      expect(serialized.doc.value).toBe('Serialized');
+      expect(serialized.doc.attributes.type).toBe('document');
+    });
+
+    it('should support per-key undo for document edits', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_document('doc', 'Initial');
+      vi.advanceTimersByTime(600);
+
+      mc.insert_text('doc', 7, ' Text');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.get_document_text('doc')).toBe('Initial Text');
+
+      mc.undo('doc');
+      expect(mc.get_document_text('doc')).toBe('Initial');
+
+      mc.redo('doc');
+      expect(mc.get_document_text('doc')).toBe('Initial Text');
+
+      vi.useRealTimers();
+    });
+
+    it('should support global undo for document edits', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+
+      mc.set_value('regular-key', 'regular value');
+      mc.set_document('doc', 'Document content');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.get_value('regular-key')).toBe('regular value');
+      expect(mc.get_document_text('doc')).toBe('Document content');
+
+      // Global undo should revert both
+      mc.undoAll();
+      expect(mc.get_value('regular-key')).toBeUndefined();
+      expect(mc.get_document_text('doc')).toBeUndefined();
+
+      // Global redo should restore both
+      mc.redoAll();
+      expect(mc.get_value('regular-key')).toBe('regular value');
+      expect(mc.get_document_text('doc')).toBe('Document content');
+
+      vi.useRealTimers();
+    });
+
+    it('should track document changes in history when history enabled', () => {
+      const mc = new MindCache({
+        indexedDB: { dbName: 'doc-history-test' }
+      });
+
+      expect(mc.historyEnabled).toBe(true);
+
+      mc.set_document('doc', 'First');
+      mc.insert_text('doc', 5, ' edit');
+
+      const history = mc.getGlobalHistory();
+      expect(history.length).toBeGreaterThan(0);
+      // History should include the doc key
+      const docEntries = history.filter(h => h.keysAffected?.includes('doc'));
+      expect(docEntries.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('LLM Tools', () => {
+    it('should generate write_ tools for writable keys', () => {
+      const mc = new MindCache();
+      mc.set_value('writable', 'value', { readonly: false });
+      mc.set_value('readonly', 'value', { readonly: true });
+
+      const tools = mc.get_aisdk_tools();
+      const toolNames = Object.keys(tools);
+
+      expect(toolNames).toContain('write_writable');
+      expect(toolNames).not.toContain('write_readonly');
+    });
+
+    it('should not generate tools for system keys', () => {
+      const mc = new MindCache();
+      const tools = mc.get_aisdk_tools();
+      const toolNames = Object.keys(tools);
+
+      expect(toolNames).not.toContain('write_$date');
+      expect(toolNames).not.toContain('write_$time');
+    });
+
+    it('should sanitize key names for tool names', () => {
+      const mc = new MindCache();
+      mc.set_value('my-special@key!', 'value');
+
+      const tools = mc.get_aisdk_tools();
+      expect(Object.keys(tools)).toContain('write_my-special_key_');
+    });
+
+    it('write_ tool should execute correctly', async () => {
+      const mc = new MindCache();
+      mc.set_value('test', 'old_value');
+
+      const tools = mc.get_aisdk_tools();
+      const result = await tools['write_test'].execute({ value: 'new_value' });
+
+      expect(result.result).toContain('Successfully wrote');
+      expect(mc.get_value('test')).toBe('new_value');
+    });
+
+    it('should generate additional tools for document keys', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'content');
+
+      const tools = mc.get_aisdk_tools();
+      const toolNames = Object.keys(tools);
+
+      expect(toolNames).toContain('write_doc');
+      expect(toolNames).toContain('append_doc');
+      expect(toolNames).toContain('insert_doc');
+      expect(toolNames).toContain('edit_doc');
+    });
+
+    it('append_ tool should add text to end of document', async () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello');
+
+      const tools = mc.get_aisdk_tools();
+      await tools['append_doc'].execute({ text: ' World' });
+
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+    });
+
+    it('insert_ tool should insert text at position', async () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+
+      const tools = mc.get_aisdk_tools();
+      await tools['insert_doc'].execute({ index: 5, text: ' Beautiful' });
+
+      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+    });
+
+    it('edit_ tool should find and replace text', async () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+
+      const tools = mc.get_aisdk_tools();
+      await tools['edit_doc'].execute({ find: 'World', replace: 'Universe' });
+
+      expect(mc.get_document_text('doc')).toBe('Hello Universe');
+    });
+
+    it('executeToolCall should work with sanitized tool names', () => {
+      const mc = new MindCache();
+      mc.set_value('my-special@key!', 'original');
+
+      const result = mc.executeToolCall('write_my-special_key_', 'new_value');
+
+      expect(result).not.toBeNull();
+      expect(result!.key).toBe('my-special@key!');
+      expect(mc.get_value('my-special@key!')).toBe('new_value');
+    });
+
+    it('executeToolCall should return null for invalid tool names', () => {
+      const mc = new MindCache();
+      expect(mc.executeToolCall('invalid_tool', 'value')).toBeNull();
+      expect(mc.executeToolCall('write_nonexistent', 'value')).toBeNull();
+    });
+
+    it('get_system_prompt should include tool hints for writable keys', () => {
+      const mc = new MindCache();
+      mc.set_value('writable', 'value', { readonly: false, visible: true });
+
+      const prompt = mc.get_system_prompt();
+
+      expect(prompt).toContain('writable: value');
+      expect(prompt).toContain('write_writable tool');
+    });
+
+    it('get_system_prompt should include document tool hints for document keys', () => {
+      const mc = new MindCache();
+      mc.set_document('notes', 'content');
+
+      const prompt = mc.get_system_prompt();
+
+      expect(prompt).toContain('notes: content');
+      expect(prompt).toContain('write_notes');
+      expect(prompt).toContain('append_notes');
+      expect(prompt).toContain('edit_notes');
+    });
+  });
 });

@@ -577,9 +577,17 @@ export class MindCache {
     const json: STM = {};
     for (const [key, val] of this.rootMap) {
       const entryMap = val as Y.Map<any>;
+      const attrs = entryMap.get('attributes') as KeyAttributes;
+      let value = entryMap.get('value');
+
+      // Convert Y.Text to string for serialization
+      if (attrs?.type === 'document' && value instanceof Y.Text) {
+        value = value.toString();
+      }
+
       json[key] = {
-        value: entryMap.get('value'),
-        attributes: entryMap.get('attributes')
+        value,
+        attributes: attrs
       };
     }
     return json;
@@ -674,6 +682,11 @@ export class MindCache {
 
     const attributes = entryMap.get('attributes') as KeyAttributes;
     const value = entryMap.get('value');
+
+    // For document type, return plain text representation
+    if (attributes?.type === 'document' && value instanceof Y.Text) {
+      return value.toString();
+    }
 
     // Recursion check for templates
     if (_processingStack && _processingStack.has(key)) {
@@ -789,6 +802,110 @@ export class MindCache {
     });
   }
 
+  // Document methods for collaborative editing
+
+  /**
+   * Create or get a collaborative document key.
+   * Uses Y.Text for character-level concurrent editing.
+   *
+   * Note: This exposes Yjs Y.Text directly for editor bindings (y-quill, y-codemirror, etc.)
+   */
+  set_document(key: string, initialText?: string, attributes?: Partial<KeyAttributes>): void {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return;
+    }
+
+    let entryMap = this.rootMap.get(key);
+
+    if (!entryMap) {
+      entryMap = new Y.Map();
+      this.rootMap.set(key, entryMap);
+
+      // Create Y.Text for collaborative editing
+      const yText = new Y.Text(initialText || '');
+      entryMap.set('value', yText);
+      entryMap.set('attributes', {
+        ...DEFAULT_KEY_ATTRIBUTES,
+        type: 'document',
+        contentTags: [],
+        systemTags: ['SystemPrompt', 'LLMWrite'],
+        tags: [],
+        zIndex: 0,
+        ...attributes
+      });
+    }
+
+    // Ensure UndoManager for this key
+    this.getUndoManager(key);
+  }
+
+  /**
+   * Get the Y.Text object for a document key.
+   * Use this to bind to editors (Quill, CodeMirror, Monaco, etc.)
+   *
+   * @returns Y.Text or undefined if key doesn't exist or isn't a document
+   */
+  get_document(key: string): Y.Text | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
+
+    const attrs = entryMap.get('attributes') as KeyAttributes;
+    if (attrs?.type !== 'document') {
+      return undefined;
+    }
+
+    const value = entryMap.get('value');
+    if (value instanceof Y.Text) {
+      return value;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get plain text content of a document key.
+   * For collaborative editing, use get_document() and bind to an editor.
+   */
+  get_document_text(key: string): string | undefined {
+    const yText = this.get_document(key);
+    return yText?.toString();
+  }
+
+  /**
+   * Insert text at a position in a document key.
+   */
+  insert_text(key: string, index: number, text: string): void {
+    const yText = this.get_document(key);
+    if (yText) {
+      yText.insert(index, text);
+    }
+  }
+
+  /**
+   * Delete text from a document key.
+   */
+  delete_text(key: string, index: number, length: number): void {
+    const yText = this.get_document(key);
+    if (yText) {
+      yText.delete(index, length);
+    }
+  }
+
+  /**
+   * Replace all text in a document key (atomic operation).
+   */
+  replace_document_text(key: string, newText: string): void {
+    const yText = this.get_document(key);
+    if (yText) {
+      this.doc.transact(() => {
+        yText.delete(0, yText.length);
+        yText.insert(0, newText);
+      });
+    }
+  }
+
   // ... (subscribe methods)
   subscribe(key: string, listener: Listener): () => void {
     if (!this.listeners[key]) {
@@ -813,6 +930,312 @@ export class MindCache {
 
   private notifyGlobalListeners(): void {
     this.globalListeners.forEach(l => l());
+  }
+
+  // Sanitize key name for use in tool names
+  private sanitizeKeyForTool(key: string): string {
+    return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  // Find original key from sanitized tool name
+  private findKeyFromSanitizedTool(sanitizedKey: string): string | undefined {
+    for (const [key] of this.rootMap) {
+      if (this.sanitizeKeyForTool(key) === sanitizedKey) {
+        return key;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Generate Vercel AI SDK compatible tools for writable keys.
+   * For document type keys, generates additional tools: append_, insert_, edit_
+   */
+  get_aisdk_tools(): Record<string, any> {
+    const tools: Record<string, any> = {};
+
+    for (const [key, val] of this.rootMap) {
+      // Skip system keys
+      if (key.startsWith('$')) {
+        continue;
+      }
+
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+
+      // Check if key has LLMWrite access (writable by LLM)
+      const isWritable = !attributes?.readonly &&
+        (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+
+      if (!isWritable) {
+        continue;
+      }
+
+      const sanitizedKey = this.sanitizeKeyForTool(key);
+      const isDocument = attributes?.type === 'document';
+
+      // 1. write_ tool (for all writable keys)
+      tools[`write_${sanitizedKey}`] = {
+        description: isDocument
+          ? `Rewrite the entire "${key}" document`
+          : `Write a value to the STM key: ${key}`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            value: { type: 'string', description: isDocument ? 'New document content' : 'The value to write' }
+          },
+          required: ['value']
+        },
+        execute: async ({ value }: { value: any }) => {
+          if (isDocument) {
+            this.replace_document_text(key, value);
+          } else {
+            this.set_value(key, value);
+          }
+          return {
+            result: `Successfully wrote "${value}" to ${key}`,
+            key,
+            value
+          };
+        }
+      };
+
+      // For document type, add additional tools
+      if (isDocument) {
+        // 2. append_ tool
+        tools[`append_${sanitizedKey}`] = {
+          description: `Append text to the end of "${key}" document`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'Text to append' }
+            },
+            required: ['text']
+          },
+          execute: async ({ text }: { text: string }) => {
+            const yText = this.get_document(key);
+            if (yText) {
+              yText.insert(yText.length, text);
+              return {
+                result: `Successfully appended to ${key}`,
+                key,
+                appended: text
+              };
+            }
+            return { result: `Document ${key} not found`, key };
+          }
+        };
+
+        // 3. insert_ tool
+        tools[`insert_${sanitizedKey}`] = {
+          description: `Insert text at a position in "${key}" document`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              index: { type: 'number', description: 'Position to insert at (0 = start)' },
+              text: { type: 'string', description: 'Text to insert' }
+            },
+            required: ['index', 'text']
+          },
+          execute: async ({ index, text }: { index: number; text: string }) => {
+            this.insert_text(key, index, text);
+            return {
+              result: `Successfully inserted text at position ${index} in ${key}`,
+              key,
+              index,
+              inserted: text
+            };
+          }
+        };
+
+        // 4. edit_ tool (find and replace)
+        tools[`edit_${sanitizedKey}`] = {
+          description: `Find and replace text in "${key}" document`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              find: { type: 'string', description: 'Text to find' },
+              replace: { type: 'string', description: 'Replacement text' }
+            },
+            required: ['find', 'replace']
+          },
+          execute: async ({ find, replace }: { find: string; replace: string }) => {
+            const yText = this.get_document(key);
+            if (yText) {
+              const text = yText.toString();
+              const idx = text.indexOf(find);
+              if (idx !== -1) {
+                yText.delete(idx, find.length);
+                yText.insert(idx, replace);
+                return {
+                  result: `Successfully replaced "${find}" with "${replace}" in ${key}`,
+                  key,
+                  find,
+                  replace,
+                  index: idx
+                };
+              }
+              return { result: `Text "${find}" not found in ${key}`, key };
+            }
+            return { result: `Document ${key} not found`, key };
+          }
+        };
+      }
+    }
+
+    return tools;
+  }
+
+  /**
+   * Generate a system prompt containing all visible STM keys and their values.
+   * Indicates which tools can be used to modify writable keys.
+   */
+  get_system_prompt(): string {
+    const lines: string[] = [];
+
+    for (const [key, val] of this.rootMap) {
+      // Skip system keys for now, add them at the end
+      if (key.startsWith('$')) {
+        continue;
+      }
+
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+
+      // Check visibility
+      const isVisible = attributes?.visible !== false &&
+        (attributes?.systemTags?.includes('prompt') ||
+          attributes?.systemTags?.includes('SystemPrompt') ||
+          !attributes?.systemTags);
+
+      if (!isVisible) {
+        continue;
+      }
+
+      const value = this.get_value(key);
+      const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
+
+      // Check if writable
+      const isWritable = !attributes?.readonly &&
+        (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+
+      const isDocument = attributes?.type === 'document';
+      const sanitizedKey = this.sanitizeKeyForTool(key);
+
+      if (isWritable) {
+        if (isDocument) {
+          lines.push(`${key}: ${displayValue}. Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`);
+        } else {
+          const oldValueHint = displayValue ? ` This tool DOES NOT append — start your response with the old value (${displayValue})` : '';
+          lines.push(`${key}: ${displayValue}. You can rewrite "${key}" by using the write_${sanitizedKey} tool.${oldValueHint}`);
+        }
+      } else {
+        lines.push(`${key}: ${displayValue}`);
+      }
+    }
+
+    // Add temporal keys
+    lines.push(`$date: ${this.get_value('$date')}`);
+    lines.push(`$time: ${this.get_value('$time')}`);
+
+    return lines.join(', ');
+  }
+
+  /**
+   * Execute a tool call by name with the given value.
+   * Returns the result or null if tool not found.
+   */
+  executeToolCall(toolName: string, value: any): { result: string; key: string; value?: any } | null {
+    // Parse tool name (format: action_keyname)
+    const match = toolName.match(/^(write|append|insert|edit)_(.+)$/);
+    if (!match) {
+      return null;
+    }
+
+    const [, action, sanitizedKey] = match;
+    const key = this.findKeyFromSanitizedTool(sanitizedKey);
+
+    if (!key) {
+      return null;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return null;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+
+    // Check if writable
+    const isWritable = !attributes?.readonly &&
+      (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+
+    if (!isWritable) {
+      return null;
+    }
+
+    const isDocument = attributes?.type === 'document';
+
+    switch (action) {
+      case 'write':
+        if (isDocument) {
+          this.replace_document_text(key, value);
+        } else {
+          this.set_value(key, value);
+        }
+        return {
+          result: `Successfully wrote "${value}" to ${key}`,
+          key,
+          value
+        };
+
+      case 'append':
+        if (isDocument) {
+          const yText = this.get_document(key);
+          if (yText) {
+            yText.insert(yText.length, value);
+            return {
+              result: `Successfully appended to ${key}`,
+              key,
+              value
+            };
+          }
+        }
+        return null;
+
+      case 'insert':
+        if (isDocument && typeof value === 'object' && value.index !== undefined && value.text) {
+          this.insert_text(key, value.index, value.text);
+          return {
+            result: `Successfully inserted at position ${value.index} in ${key}`,
+            key,
+            value: value.text
+          };
+        }
+        return null;
+
+      case 'edit':
+        if (isDocument && typeof value === 'object' && value.find && value.replace !== undefined) {
+          const yText = this.get_document(key);
+          if (yText) {
+            const text = yText.toString();
+            const idx = text.indexOf(value.find);
+            if (idx !== -1) {
+              yText.delete(idx, value.find.length);
+              yText.insert(idx, value.replace);
+              return {
+                result: `Successfully replaced "${value.find}" with "${value.replace}" in ${key}`,
+                key,
+                value: value.replace
+              };
+            }
+          }
+        }
+        return null;
+
+      default:
+        return null;
+    }
   }
 
   // Internal method stub for legacy compatibility
