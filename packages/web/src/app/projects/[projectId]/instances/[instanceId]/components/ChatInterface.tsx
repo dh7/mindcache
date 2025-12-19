@@ -77,7 +77,30 @@ export default function ChatInterface({
 
       {error && (
         <div className="mb-2 p-2 bg-red-900/20 border border-red-700 rounded text-red-400 text-xs">
-          Error: {error.message}
+          {(() => {
+            // Try to parse JSON error from API
+            try {
+              const msg = error.message;
+              if (msg.includes('context_length_exceeded')) {
+                return (
+                  <div>
+                    <strong>⚠️ Context too large:</strong> Your conversation or MindCache data exceeds the AI's context limit.
+                    <div className="mt-1 text-red-300">
+                      Try: reducing data in LLMRead keys, clearing some messages, or being more specific.
+                    </div>
+                  </div>
+                );
+              }
+              if (msg.includes('"error"')) {
+                const parsed = JSON.parse(msg);
+                const apiError = parsed.error || parsed;
+                return apiError.message || msg;
+              }
+              return msg;
+            } catch {
+              return error.message || 'An error occurred';
+            }
+          })()}
         </div>
       )}
 
