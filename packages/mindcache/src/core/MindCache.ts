@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag } from './types';
+import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
 
 // Browser environment type declarations
@@ -48,10 +48,12 @@ export interface MindCacheIndexedDBOptions {
  * Constructor options for MindCache
  */
 export interface MindCacheOptions {
-  /** Cloud sync configuration. If omitted, runs in local-only mode. */
+  /** Cloud sync configuration. If omitted, runs in local-only mode. IndexedDB auto-enabled for offline support. */
   cloud?: MindCacheCloudOptions;
-  /** IndexedDB configuration */
+  /** IndexedDB configuration. Ignored in cloud mode (auto-enabled). */
   indexedDB?: MindCacheIndexedDBOptions;
+  /** History tracking options (enabled in IndexedDB and Cloud modes) */
+  history?: HistoryOptions;
   /** Access level for tag operations. 'system' allows managing system tags. */
   accessLevel?: AccessLevel;
 }
@@ -147,6 +149,14 @@ export class MindCache {
   // Undo Managers Cache
   private _undoManagers: Map<string, Y.UndoManager> = new Map();
 
+  // Global Undo Manager (watches entire rootMap)
+  private _globalUndoManager: Y.UndoManager | null = null;
+
+  // History tracking
+  private _history: HistoryEntry[] = [];
+  private _historyOptions: HistoryOptions = { maxEntries: 100, snapshotInterval: 10 };
+  private _historyEnabled = false;
+
   constructor(options?: MindCacheOptions) {
     // Initialize Yjs
     this.doc = new Y.Doc();
@@ -178,6 +188,9 @@ export class MindCache {
       this.notifyGlobalListeners();
     });
 
+    // Initialize global undo manager immediately to capture all changes from start
+    this.initGlobalUndoManager();
+
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
     }
@@ -189,12 +202,25 @@ export class MindCache {
       this._isLoaded = false; // Wait for sync
       this._connectionState = 'disconnected';
       initPromises.push(this._initCloud());
+
+      // Auto-enable IndexedDB for offline support in cloud mode
+      if (typeof window !== 'undefined') {
+        const dbName = `mindcache_cloud_${options.cloud.instanceId}`;
+        initPromises.push(this._initYIndexedDB(dbName));
+      }
+
+      // Enable history tracking in cloud mode
+      this.enableHistory(options.history);
     }
 
-    if (options?.indexedDB) {
+    // Only use explicit indexedDB config if NOT in cloud mode
+    if (options?.indexedDB && !options?.cloud) {
       // Use y-indexeddb
       this._isLoaded = false;
       initPromises.push(this._initYIndexedDB(options.indexedDB.dbName || 'mindcache_yjs_db'));
+
+      // Enable history tracking in offline mode
+      this.enableHistory(options.history);
     }
 
     if (initPromises.length > 0) {
@@ -252,6 +278,125 @@ export class MindCache {
       return [];
     }
     return um.undoStack;
+  }
+
+  // Initialize global undo manager (watches entire rootMap)
+  private initGlobalUndoManager(): void {
+    if (!this._globalUndoManager) {
+      this._globalUndoManager = new Y.UndoManager(this.rootMap, {
+        captureTimeout: 500
+      });
+    }
+  }
+
+  /**
+   * Undo all recent local changes (across all keys)
+   * Only undoes YOUR changes, not changes from other users in cloud mode
+   */
+  undoAll(): void {
+    this.initGlobalUndoManager();
+    this._globalUndoManager?.undo();
+  }
+
+  /**
+   * Redo previously undone local changes
+   */
+  redoAll(): void {
+    this.initGlobalUndoManager();
+    this._globalUndoManager?.redo();
+  }
+
+  /**
+   * Check if there are changes to undo globally
+   */
+  canUndoAll(): boolean {
+    this.initGlobalUndoManager();
+    return (this._globalUndoManager?.undoStack.length ?? 0) > 0;
+  }
+
+  /**
+   * Check if there are changes to redo globally
+   */
+  canRedoAll(): boolean {
+    this.initGlobalUndoManager();
+    return (this._globalUndoManager?.redoStack.length ?? 0) > 0;
+  }
+
+  // Enable history tracking (called for IndexedDB and Cloud modes)
+  private enableHistory(options?: HistoryOptions): void {
+    if (this._historyEnabled) {
+      return;
+    }
+
+    this._historyEnabled = true;
+    if (options) {
+      this._historyOptions = { ...this._historyOptions, ...options };
+    }
+
+    // Track changes to record history
+    this.rootMap.observeDeep((events: Y.YEvent<any>[]) => {
+      // Determine which keys were affected
+      const keysAffected = new Set<string>();
+      events.forEach(event => {
+        if (event.target === this.rootMap) {
+          // Direct changes to rootMap
+          const mapEvent = event as Y.YMapEvent<any>;
+          mapEvent.keysChanged.forEach(key => keysAffected.add(key));
+        } else if (event.target.parent === this.rootMap) {
+          // Changes to entry maps
+          for (const [key, val] of this.rootMap) {
+            if (val === event.target) {
+              keysAffected.add(key);
+              break;
+            }
+          }
+        }
+      });
+
+      if (keysAffected.size > 0) {
+        const entry: HistoryEntry = {
+          id: this.generateId(),
+          timestamp: Date.now(),
+          keysAffected: Array.from(keysAffected)
+        };
+
+        this._history.push(entry);
+
+        // Trim old entries
+        const max = this._historyOptions.maxEntries || 100;
+        if (this._history.length > max) {
+          this._history = this._history.slice(-max);
+        }
+      }
+    });
+  }
+
+  private generateId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  /**
+   * Get global history of all changes (available in IndexedDB and Cloud modes)
+   */
+  getGlobalHistory(): HistoryEntry[] {
+    return [...this._history];
+  }
+
+  /**
+   * Check if history tracking is enabled
+   */
+  get historyEnabled(): boolean {
+    return this._historyEnabled;
+  }
+
+  /**
+   * Restore to a specific version (time travel)
+   * Note: Full implementation requires storing update binaries, which is not yet implemented.
+   * @returns false - not yet fully implemented
+   */
+  restoreToVersion(_versionId: string): boolean {
+    console.warn('restoreToVersion: Full implementation requires storing update binaries. Not yet implemented.');
+    return false;
   }
 
   get accessLevel(): AccessLevel {

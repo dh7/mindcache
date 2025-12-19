@@ -90,3 +90,25 @@ export const DEFAULT_KEY_ATTRIBUTES: KeyAttributes = {
   tags: []
 };
 
+/**
+ * A single entry in the global history log
+ */
+export interface HistoryEntry {
+  /** Unique identifier for this history entry */
+  id: string;
+  /** Timestamp when the change occurred */
+  timestamp: number;
+  /** Keys that were affected by this change */
+  keysAffected?: string[];
+}
+
+/**
+ * History options for offline and cloud modes
+ */
+export interface HistoryOptions {
+  /** Max history entries to keep (default: 100) */
+  maxEntries?: number;
+  /** Save full snapshot every N entries for fast restore (default: 10) */
+  snapshotInterval?: number;
+}
+

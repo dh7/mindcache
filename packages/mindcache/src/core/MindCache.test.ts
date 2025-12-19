@@ -129,6 +129,85 @@ describe('MindCache', () => {
 
       vi.useRealTimers();
     });
+
+    it('undoAll should undo all recent changes across keys', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+
+      // Make changes (all within capture timeout, so they batch together)
+      mc.set_value('key1', 'a');
+      mc.set_value('key2', 'b');
+      vi.advanceTimersByTime(600); // Flush the capture timeout
+
+      expect(mc.get_value('key1')).toBe('a');
+      expect(mc.get_value('key2')).toBe('b');
+
+      // Undo should revert all batched changes
+      mc.undoAll();
+      // After undo, both keys should be undefined (reverted to initial state)
+      expect(mc.get_value('key1')).toBeUndefined();
+      expect(mc.get_value('key2')).toBeUndefined();
+
+      // Redo should restore both
+      mc.redoAll();
+      expect(mc.get_value('key1')).toBe('a');
+      expect(mc.get_value('key2')).toBe('b');
+
+      vi.useRealTimers();
+    });
+
+    it('canUndoAll and canRedoAll should reflect stack state', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+
+      // Initially no undo/redo available (after initializing global undo manager)
+      expect(mc.canUndoAll()).toBe(false);
+      expect(mc.canRedoAll()).toBe(false);
+
+      mc.set_value('test', 'value');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.canUndoAll()).toBe(true);
+      expect(mc.canRedoAll()).toBe(false);
+
+      mc.undoAll();
+      expect(mc.canUndoAll()).toBe(false);
+      expect(mc.canRedoAll()).toBe(true);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('History Tracking', () => {
+    it('history should be disabled in memory-only mode', () => {
+      const mc = new MindCache();
+      expect(mc.historyEnabled).toBe(false);
+      expect(mc.getGlobalHistory()).toEqual([]);
+    });
+
+    it('history should be enabled in offline mode', () => {
+      // We can't fully test IndexedDB in unit tests without mocking
+      // but we can verify the API exists
+      const mc = new MindCache({
+        indexedDB: { dbName: 'test-history-db' }
+      });
+      expect(mc.historyEnabled).toBe(true);
+    });
+
+    it('getGlobalHistory returns history entries with keys affected', () => {
+      const mc = new MindCache({
+        indexedDB: { dbName: 'test-history-db-2' }
+      });
+
+      mc.set_value('myKey', 'myValue');
+
+      const history = mc.getGlobalHistory();
+      expect(history.length).toBeGreaterThan(0);
+      expect(history[0]).toHaveProperty('id');
+      expect(history[0]).toHaveProperty('timestamp');
+      expect(history[0]).toHaveProperty('keysAffected');
+      expect(history[0].keysAffected).toContain('myKey');
+    });
   });
 
   describe('Cloud Integration', () => {
