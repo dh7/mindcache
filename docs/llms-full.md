@@ -34,15 +34,18 @@
 MindCache is a TypeScript library for managing short-term memory in AI agents. It provides:
 
 - **Key-value storage** optimized for LLM consumption
+- **Document type** for collaborative Markdown editing (v3.1+)
 - **Automatic tool generation** for Vercel AI SDK integration
 - **System prompt generation** with memory context
 - **Template injection** with `{{key}}` syntax
+- **Undo/Redo** per-key and global (v3.0+)
 - **Cloud sync** with real-time collaboration (v2.0+)
 
 ### When to Use MindCache
 
 ✅ **Good for:**
 - AI agent memory during conversations
+- Collaborative document editing with LLMs
 - Form data tracking with AI assistance
 - Session-based context management
 - Sharing state between AI tools
@@ -199,6 +202,146 @@ const allData = mindcache.getAll();
 for (const [key, entry] of Object.entries(mindcache.getAll())) {
   console.log(`${key}: ${JSON.stringify(entry.value)}`);
 }
+```
+
+---
+
+## Document Type (v3.1+)
+
+Create collaborative documents for real-time editing with LLMs.
+
+### Creating Documents
+
+```typescript
+// Create a new document
+mc.set_document('notes', '# My Notes');
+
+// Create empty document
+mc.set_document('draft');
+```
+
+### Getting Document Content
+
+```typescript
+// Get Y.Text for editor binding (Quill, CodeMirror, etc.)
+const yText = mc.get_document('notes');
+
+// Get plain text snapshot
+const text = mc.get_document_text('notes');
+
+// get_value also returns plain text for documents
+const text2 = mc.get_value('notes');
+```
+
+### Character-Level Editing
+
+```typescript
+// Insert at position
+mc.insert_text('notes', 0, 'New heading\n');
+
+// Delete range
+mc.delete_text('notes', 0, 12);
+```
+
+### Smart Replace (Diff-Based)
+
+```typescript
+// Replace all content - uses diff for small changes
+mc.replace_document_text('notes', '# Updated Notes');
+
+// How it works:
+// - Changes < 80%: Uses fast-diff for incremental operations
+// - Changes > 80%: Full replacement (more efficient for rewrites)
+
+// Custom threshold
+mc.replace_document_text('notes', newContent, 0.5); // 50% threshold
+
+// set_value on documents also uses diff!
+mc.set_value('notes', 'New content'); // Routes to replace_document_text
+```
+
+### Benefits of Diff-Based Updates
+
+- **Better undo**: Undo removes just the change, not entire document
+- **Concurrent edits preserved**: Other users' changes merge cleanly
+- **Smaller network sync**: Only changed characters transmitted
+
+### Document LLM Tools
+
+Documents get additional tools automatically:
+
+```typescript
+const tools = mc.get_aisdk_tools();
+// For document key 'notes':
+// - write_notes: Replace entire document
+// - append_notes: Add text to end
+// - insert_notes: Insert at position
+// - edit_notes: Find and replace
+```
+
+### Editor Integration
+
+```tsx
+import { useMindCacheDocument } from 'mindcache/react';
+
+function MarkdownEditor({ mc }) {
+  const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
+  
+  return (
+    <textarea 
+      value={text} 
+      onChange={e => replaceText(e.target.value)} 
+    />
+  );
+  
+  // For rich editors, use yText directly:
+  // const binding = new QuillBinding(yText, quillInstance);
+}
+```
+
+---
+
+## Undo/Redo (v3.0+)
+
+MindCache supports both per-key and global undo/redo.
+
+### Per-Key Undo
+
+```typescript
+mc.set_value('name', 'Alice');
+mc.set_value('name', 'Bob');
+
+mc.undo('name');
+mc.get_value('name'); // 'Alice'
+
+mc.redo('name');
+mc.get_value('name'); // 'Bob'
+```
+
+### Global Undo
+
+```typescript
+mc.set_value('a', '1');
+mc.set_value('b', '2');
+
+mc.undoAll(); // Reverts all recent changes
+mc.redoAll(); // Restores them
+
+mc.canUndoAll(); // boolean
+mc.canRedoAll(); // boolean
+```
+
+### History Tracking
+
+History is enabled automatically in Offline and Cloud modes:
+
+```typescript
+const mc = new MindCache({ indexedDB: { dbName: 'app' } });
+
+mc.historyEnabled; // true
+
+const history = mc.getGlobalHistory();
+// [{ id, timestamp, keysAffected: ['name', 'notes'] }, ...]
 ```
 
 ---

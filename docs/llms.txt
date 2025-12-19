@@ -1,8 +1,8 @@
 # MindCache
 
-> AI Agent Memory Management - A TypeScript library for managing short-term memory in AI agents through an LLM-friendly key-value repository.
+> AI Agent Memory Management - Collaborative key-value store for AI agents with real-time sync.
 
-MindCache helps AI agents maintain context during conversations and across tool calls. It provides automatic tool generation so agents can read/write memory without manual tool definitions.
+MindCache 3.1 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
 
 ## Quick Links
 
@@ -10,166 +10,88 @@ MindCache helps AI agents maintain context during conversations and across tool 
 - Full LLM Documentation: https://mindcache.dev/llms-full.md
 - GitHub: https://github.com/dh7/mindcache
 - npm: https://www.npmjs.com/package/mindcache
-- Cloud App: https://app.mindcache.dev
 
 ## Installation
 
 npm install mindcache
 
-## Core Concepts
+## 3 Modes
 
-### Key-Value Storage
-Store any data type: text, JSON, images, files. All data is stored in LLM-friendly format.
-
-### Automatic Tool Generation
-Tools are automatically generated for each writable key, integrating with Vercel AI SDK.
-
-### System Prompt Generation
-Automatically generate system prompts containing all memory context.
-
-### Template Injection
-Use {{key}} syntax to inject memory values into templates.
-
-## Quick Start
-
-```typescript
-import { mindcache } from 'mindcache';
-
-// Store values
-mindcache.set_value('userName', 'Alice');
-mindcache.set_value('favoriteColor', 'blue');
-
-// Generate system prompt for AI agent
-const systemPrompt = mindcache.get_system_prompt();
-
-// Generate tools for Vercel AI SDK
-const tools = mindcache.get_aisdk_tools();
-
-// Use with AI SDK
-import { generateText } from 'ai';
-const { text } = await generateText({
-  model: openai('gpt-4'),
-  tools: tools,
-  system: systemPrompt,
-  prompt: 'Remember that I love green now.'
-});
-// AI automatically calls write_favoriteColor('green')
-```
-
-## API Methods
-
-### Core Methods
-- set_value(key, value, attributes?) - Store a value
-- get_value(key) - Retrieve a value
-- delete(key) - Remove a key
-- has(key) - Check if key exists
-- clear() - Clear all memory
-
-### Memory Management
-- get_system_prompt() - Generate system prompt from visible keys
-- get_aisdk_tools() - Generate Vercel AI SDK tools
-- injectSTM(template) - Inject {{key}} values into template
-- getSTM() - Get formatted string of all visible entries
-
-### Attributes
-- readonly: boolean - Prevent AI from modifying
-- visible: boolean - Include in system prompt
-- tags: string[] - Categorize entries
-- template: boolean - Enable {{key}} resolution
-
-### Serialization
-- toJSON() / fromJSON() - JSON format
-- toMarkdown() / fromMarkdown() - Markdown format
-- serialize() / deserialize() - Complete state
-
-### Events
-- subscribe(key, listener) - Listen to key changes
-- subscribeToAll(listener) - Listen to all changes
-
-## Cloud Sync (MindCache 2.0)
-
-Two authentication patterns:
-
-### Pattern 1: Secure (Production) - API key stays on server
-```typescript
-// Client
-const mc = new MindCache({
-  cloud: {
-    instanceId: 'xxx',
-    baseUrl: 'https://api.mindcache.dev',
-    tokenEndpoint: '/api/ws-token'  // Your backend route
-  }
-});
-await mc.waitForSync();
-```
-
-### Pattern 2: Simple (Demos) - API key in browser
-```typescript
-// No backend needed!
-const mc = new MindCache({
-  cloud: {
-    instanceId: 'xxx',
-    apiKey: 'del_xxx:sec_xxx',  // Or mc_live_xxx
-    baseUrl: 'https://api.mindcache.dev'
-  }
-});
-await mc.waitForSync();
-mc.set_value('counter', 1);
-```
-
-### Key Methods
-- `await mc.waitForSync()` - Wait for initial data load
-- `mc.connectionState` - 'disconnected' | 'connecting' | 'connected' | 'error'
-- `mc.isLoaded` - true when cloud data loaded
-- `mc.disconnect()` - Clean disconnect
-
-## Local Persistence (IndexedDB) - MindCache 2.4+
-
-Persist data locally in the browser using IndexedDB:
-
+### Memory Only
 ```typescript
 import { MindCache } from 'mindcache';
-
-const mc = new MindCache({
-  indexedDB: {
-    dbName: 'my-app-db',
-    storeName: 'my-store',
-    debounceMs: 500  // Save delay to batch writes
-  }
-});
-
-await mc.waitForSync(); // Wait for IndexedDB to load
-mc.set_value('userName', 'Alice'); // Auto-saved to IndexedDB
+const mc = new MindCache();
 ```
 
-**Note:** Cloud and IndexedDB are mutually exclusive to avoid data conflicts.
+### Offline (IndexedDB)
+```typescript
+const mc = new MindCache({ indexedDB: { dbName: 'my-app' } });
+await mc.waitForSync();
+```
 
-## React Hook - useMindCache
+### Cloud (Real-Time Sync)
+```typescript
+import { MindCache } from 'mindcache/cloud';
+const mc = new MindCache({ cloud: { instanceId: 'xxx', tokenEndpoint: '/api/ws-token' } });
+await mc.waitForSync();
+```
 
-Simplest way to use MindCache in React:
+## Key Types
+
+### Text (Default)
+```typescript
+mc.set_value('name', 'Alice');
+mc.get_value('name'); // 'Alice'
+```
+
+### Document (Collaborative)
+```typescript
+mc.set_document('notes', '# My Notes');
+mc.insert_text('notes', 0, 'New text');
+mc.replace_document_text('notes', 'Updated content'); // Uses diff!
+```
+
+## LLM Tools
+
+```typescript
+// Auto-generate Vercel AI SDK tools
+const tools = mc.get_aisdk_tools();
+
+// For regular keys: write_<key>
+// For document keys: write_<key>, append_<key>, insert_<key>, edit_<key>
+
+const prompt = mc.get_system_prompt();
+```
+
+## Undo/Redo
+
+```typescript
+mc.undo('key');     // Per-key undo
+mc.undoAll();       // Global undo
+mc.getGlobalHistory(); // Get history
+```
+
+## React Hooks
 
 ```tsx
-import { useMindCache } from 'mindcache';
+import { useMindCache, useMindCacheDocument } from 'mindcache/react';
 
-function MyComponent() {
-  const { mindcache, isLoaded, error } = useMindCache({
-    indexedDB: { dbName: 'my-app' }
-  });
-
-  if (!isLoaded) return <Loading />;
-  if (error) return <Error message={error.message} />;
-
-  return <div>{mindcache.get_value('userName')}</div>;
-}
+const { mindcache, isLoaded } = useMindCache({ indexedDB: { dbName: 'app' } });
+const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
 ```
 
-The hook handles:
-- Async initialization
-- Loading state
-- Cleanup on unmount
-- Error handling
+## Core Methods
 
-## For Full Documentation
+- set_value(key, value, attrs?) - Store value
+- get_value(key) - Get value
+- set_document(key, text?) - Create collaborative doc
+- get_document(key) - Get Y.Text for editor binding
+- replace_document_text(key, text) - Smart diff-based replace
+- get_aisdk_tools() - Generate LLM tools
+- get_system_prompt() - Generate prompt
+- undo(key) / redo(key) - Per-key undo
+- undoAll() / redoAll() - Global undo
 
-See the comprehensive LLM documentation at:
-https://mindcache.dev/llms-full.md
+## Full Documentation
+
+See https://mindcache.dev/llms-full.md
