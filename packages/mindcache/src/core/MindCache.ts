@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
+import diff from 'fast-diff';
 import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
 
@@ -894,16 +895,71 @@ export class MindCache {
   }
 
   /**
-   * Replace all text in a document key (atomic operation).
+   * Replace all text in a document key.
+   * Uses diff-based updates when changes are < diffThreshold (default 80%).
+   * This preserves concurrent edits and provides better undo granularity.
+   *
+   * @param key - The document key
+   * @param newText - The new text content
+   * @param diffThreshold - Percentage (0-1) of change above which full replace is used (default: 0.8)
    */
-  replace_document_text(key: string, newText: string): void {
+  replace_document_text(key: string, newText: string, diffThreshold = 0.8): void {
     const yText = this.get_document(key);
-    if (yText) {
+    if (!yText) {
+      return;
+    }
+
+    const oldText = yText.toString();
+
+    // If same content, do nothing
+    if (oldText === newText) {
+      return;
+    }
+
+    // If empty, just insert
+    if (oldText.length === 0) {
+      yText.insert(0, newText);
+      return;
+    }
+
+    // Compute diff
+    const diffs = diff(oldText, newText);
+
+    // Calculate change ratio
+    let changedChars = 0;
+    for (const [op, text] of diffs) {
+      if (op !== 0) {
+        changedChars += text.length;
+      }
+    }
+    const changeRatio = changedChars / Math.max(oldText.length, newText.length);
+
+    // If too many changes, do full replace (more efficient)
+    if (changeRatio > diffThreshold) {
       this.doc.transact(() => {
         yText.delete(0, yText.length);
         yText.insert(0, newText);
       });
+      return;
     }
+
+    // Apply incremental diff operations
+    this.doc.transact(() => {
+      let cursor = 0;
+      for (const [op, text] of diffs) {
+        if (op === 0) {
+          // Equal - move cursor
+          cursor += text.length;
+        } else if (op === -1) {
+          // Delete
+          yText.delete(cursor, text.length);
+        } else if (op === 1) {
+          // Insert
+          yText.insert(cursor, text);
+          cursor += text.length;
+        }
+      }
+    });
   }
 
   // ... (subscribe methods)

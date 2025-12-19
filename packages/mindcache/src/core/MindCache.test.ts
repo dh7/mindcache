@@ -295,6 +295,45 @@ describe('MindCache', () => {
       expect(mc.get_document_text('doc')).toBe('Replaced content');
     });
 
+    it('replace_document_text should use diff for small changes', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+      vi.advanceTimersByTime(600);
+
+      // Small change - should use diff (insert "Beautiful ")
+      mc.replace_document_text('doc', 'Hello Beautiful World');
+      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+
+      // Undo should only undo the insertion, not delete everything
+      mc.undo('doc');
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+
+      vi.useRealTimers();
+    });
+
+    it('replace_document_text should do full replace for major changes', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+
+      // Complete rewrite (>80% change) - full replace
+      mc.replace_document_text('doc', 'Completely Different Text Here');
+      expect(mc.get_document_text('doc')).toBe('Completely Different Text Here');
+    });
+
+    it('replace_document_text with custom threshold', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello');
+
+      // Force diff with threshold of 1.0 (always use diff)
+      mc.replace_document_text('doc', 'Goodbye', 1.0);
+      expect(mc.get_document_text('doc')).toBe('Goodbye');
+
+      // Force full replace with threshold of 0 (never use diff)
+      mc.replace_document_text('doc', 'Hello Again', 0);
+      expect(mc.get_document_text('doc')).toBe('Hello Again');
+    });
+
     it('get_value should return plain text for document keys', () => {
       const mc = new MindCache();
       mc.set_document('doc', 'Content');
