@@ -599,18 +599,38 @@ export class MindCache {
 
   // Deserialize state (for IndexedDBAdapter compatibility)
   deserialize(data: STM): void {
+    if (!data || typeof data !== 'object') {
+      return; // Handle null/undefined gracefully
+    }
     this.doc.transact(() => {
+      // Clear existing data first
+      for (const key of this.rootMap.keys()) {
+        this.rootMap.delete(key);
+      }
+      // Then load new data
       for (const [key, entry] of Object.entries(data)) {
         if (key.startsWith('$')) {
           continue;
         } // Skip reserved keys
-        let entryMap = this.rootMap.get(key);
-        if (!entryMap) {
-          entryMap = new Y.Map();
-          this.rootMap.set(key, entryMap);
-        }
+        const entryMap = new Y.Map();
+        this.rootMap.set(key, entryMap);
         entryMap.set('value', entry.value);
-        entryMap.set('attributes', entry.attributes);
+        // Normalize attributes (fill in missing fields with defaults)
+        const attrs = entry.attributes || {};
+        const normalizedAttrs: KeyAttributes = {
+          type: attrs.type || 'text',
+          contentTags: attrs.contentTags || [],
+          systemTags: attrs.systemTags || this.normalizeSystemTags(attrs.visible !== false ? ['prompt'] : []),
+          zIndex: attrs.zIndex ?? 0,
+          // Legacy fields
+          readonly: attrs.readonly ?? false,
+          visible: attrs.visible ?? true,
+          hardcoded: attrs.hardcoded ?? false,
+          template: attrs.template ?? false,
+          tags: attrs.tags || [],
+          contentType: attrs.contentType
+        };
+        entryMap.set('attributes', normalizedAttrs);
       }
     });
   }
@@ -671,8 +691,15 @@ export class MindCache {
 
   // Public API Methods
 
-  getAll(): STM {
-    return this.serialize();
+  getAll(): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [key] of this.rootMap) {
+      result[key] = this.get_value(key);
+    }
+    // Add temporal keys
+    result['$date'] = this.get_value('$date');
+    result['$time'] = this.get_value('$time');
+    return result;
   }
 
   get_value(key: string, _processingStack?: Set<string>): any {
@@ -877,6 +904,100 @@ export class MindCache {
   /** @deprecated Use set_value instead */
   set(key: string, value: any): void {
     this.set_value(key, value);
+  }
+
+  /**
+   * Update multiple values at once from an object.
+   * @deprecated Use set_value for individual keys
+   */
+  update(data: Record<string, any>): void {
+    this.doc.transact(() => {
+      for (const [key, value] of Object.entries(data)) {
+        if (key !== '$date' && key !== '$time' && key !== '$version') {
+          this.set_value(key, value);
+        }
+      }
+    });
+    this.notifyGlobalListeners();
+  }
+
+  /**
+   * Get the number of keys in MindCache.
+   */
+  size(): number {
+    // Include temporal keys in count
+    return this.rootMap.size + 2; // +2 for $date and $time
+  }
+
+  /**
+   * Get all keys in MindCache (including temporal keys).
+   */
+  keys(): string[] {
+    const keys = Array.from(this.rootMap.keys());
+    keys.push('$date', '$time');
+    return keys;
+  }
+
+  /**
+   * Get all values in MindCache (including temporal values).
+   */
+  values(): any[] {
+    const result: any[] = [];
+    for (const [key] of this.rootMap) {
+      result.push(this.get_value(key));
+    }
+    // Add temporal values
+    result.push(this.get_value('$date'));
+    result.push(this.get_value('$time'));
+    return result;
+  }
+
+  /**
+   * Get all key-value entries (including temporal entries).
+   */
+  entries(): Array<[string, any]> {
+    const result: Array<[string, any]> = [];
+    for (const [key] of this.rootMap) {
+      result.push([key, this.get_value(key)]);
+    }
+    // Add temporal entries
+    result.push(['$date', this.get_value('$date')]);
+    result.push(['$time', this.get_value('$time')]);
+    return result;
+  }
+
+  /**
+   * Unsubscribe from key changes.
+   * @deprecated Use the cleanup function returned by subscribe() instead
+   */
+  unsubscribe(key: string, listener: Listener): void {
+    if (this.listeners[key]) {
+      this.listeners[key] = this.listeners[key].filter(l => l !== listener);
+    }
+  }
+
+  /**
+   * Get the STM as a formatted string for LLM context.
+   * @deprecated Use get_system_prompt() instead
+   */
+  getSTM(): string {
+    return this.get_system_prompt();
+  }
+
+  /**
+   * Get the STM as an object with values directly (no attributes).
+   * Includes system keys ($date, $time).
+   * @deprecated Use getAll() for full STM format
+   */
+  getSTMObject(): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [key] of this.rootMap) {
+      result[key] = this.get_value(key);
+    }
+    // Add system keys
+    result['$date'] = this.get_value('$date');
+    result['$time'] = this.get_value('$time');
+    return result;
   }
 
   /**

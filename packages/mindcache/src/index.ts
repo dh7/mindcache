@@ -1,5 +1,9 @@
 // Core exports (MindCache 1.0 compatible)
+import { MindCache } from './core';
 export { MindCache } from './core';
+
+// Singleton instance for backwards compatibility
+export const mindcache = new MindCache();
 
 // Types - import like: import { KeyAttributes, KeyType, SystemTag } from 'mindcache'
 export type {
