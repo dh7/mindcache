@@ -20,11 +20,16 @@ export type AccessLevel = 'user' | 'system';
 export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate' | 'prompt' | 'readonly' | 'template';
 
 /**
+ * Type of value stored in a MindCache key
+ */
+export type KeyType = 'text' | 'image' | 'file' | 'json' | 'document';
+
+/**
  * Attributes that can be set on a MindCache key
  */
 export interface KeyAttributes {
   /** The type of value stored */
-  type: 'text' | 'image' | 'file' | 'json' | 'document';
+  type: KeyType;
   /** MIME type for files/images */
   contentType?: string;
   /** User-defined tags for organizing keys */

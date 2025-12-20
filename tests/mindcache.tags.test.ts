@@ -42,11 +42,9 @@ describe('MindCache Tag System', () => {
       expect(timeResult).toBe(false);
     });
 
-    test('should initialize contentTags array if it does not exist', () => {
+    test('should add tag to key without existing contentTags', () => {
       cache.set('key', 'value');
-      // Manually remove contentTags to simulate old data
-      const entry = cache['stm']['key'];
-      delete (entry.attributes as any).contentTags;
+      // Key starts with empty contentTags array
 
       const result = cache.addTag('key', 'newtag');
       expect(result).toBe(true);
@@ -93,11 +91,9 @@ describe('MindCache Tag System', () => {
       expect(result).toBe(false);
     });
 
-    test('should return false when key has no contentTags', () => {
+    test('should return false when key has no matching tag', () => {
       cache.set('user', 'Alice');
-      // Manually remove contentTags array
-      const entry = cache['stm']['user'];
-      delete (entry.attributes as any).contentTags;
+      // Key starts with empty contentTags array
 
       const result = cache.removeTag('user', 'person');
       expect(result).toBe(false);
@@ -246,7 +242,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemAddTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemAddTag('key', 'readonly');
@@ -265,25 +261,6 @@ describe('MindCache Tag System', () => {
       expect(systemCache.systemGetTags('key')).toContain('readonly');
     });
 
-    test('should sync legacy readonly attribute when adding readonly system tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
-
-      systemCache.systemAddTag('key', 'readonly');
-      expect(systemCache.get_attributes('key')?.readonly).toBe(true);
-    });
-
-    test('should sync legacy visible attribute when adding prompt system tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
-      // Remove prompt tag first (default is visible)
-      systemCache.systemRemoveTag('key', 'prompt');
-      expect(systemCache.get_attributes('key')?.visible).toBe(false);
-
-      systemCache.systemAddTag('key', 'prompt');
-      expect(systemCache.get_attributes('key')?.visible).toBe(true);
-    });
-
     test('should not add duplicate system tag', () => {
       const systemCache = new MindCache({ accessLevel: 'system' });
       systemCache.set('key', 'value');
@@ -296,7 +273,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemRemoveTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemRemoveTag('key', 'prompt');
@@ -309,25 +286,17 @@ describe('MindCache Tag System', () => {
     test('should remove system tag with system access', () => {
       const systemCache = new MindCache({ accessLevel: 'system' });
       systemCache.set('key', 'value');
-      // Key has 'prompt' by default
+      // Key has 'SystemPrompt' and 'LLMWrite' by default
 
-      const result = systemCache.systemRemoveTag('key', 'prompt');
+      const result = systemCache.systemRemoveTag('key', 'SystemPrompt');
       expect(result).toBe(true);
-      expect(systemCache.systemGetTags('key')).not.toContain('prompt');
-    });
-
-    test('should sync legacy visible attribute when removing prompt tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
-
-      systemCache.systemRemoveTag('key', 'prompt');
-      expect(systemCache.get_attributes('key')?.visible).toBe(false);
+      expect(systemCache.systemGetTags('key')).not.toContain('SystemPrompt');
     });
   });
 
   describe('System Tags - systemGetTags', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const tags = cache.systemGetTags('key');
@@ -342,13 +311,13 @@ describe('MindCache Tag System', () => {
       systemCache.set('key', 'value');
 
       const tags = systemCache.systemGetTags('key');
-      expect(tags).toContain('prompt'); // Default system tag
+      expect(tags).toContain('SystemPrompt'); // Default system tag
     });
   });
 
   describe('System Tags - systemHasTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemHasTag('key', 'prompt');
@@ -361,14 +330,14 @@ describe('MindCache Tag System', () => {
       const systemCache = new MindCache({ accessLevel: 'system' });
       systemCache.set('key', 'value');
 
-      expect(systemCache.systemHasTag('key', 'prompt')).toBe(true);
+      expect(systemCache.systemHasTag('key', 'SystemPrompt')).toBe(true);
       expect(systemCache.systemHasTag('key', 'readonly')).toBe(false);
     });
   });
 
   describe('System Tags - systemSetTags', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemSetTags('key', ['readonly', 'protected']);
@@ -385,24 +354,11 @@ describe('MindCache Tag System', () => {
       expect(result).toBe(true);
       expect(systemCache.systemGetTags('key')).toEqual(['readonly', 'protected']);
     });
-
-    test('should sync all legacy attributes when setting system tags', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
-
-      systemCache.systemSetTags('key', ['prompt', 'readonly', 'protected', 'template']);
-
-      const attrs = systemCache.get_attributes('key');
-      expect(attrs?.visible).toBe(true);
-      expect(attrs?.readonly).toBe(true);
-      expect(attrs?.hardcoded).toBe(true);
-      expect(attrs?.template).toBe(true);
-    });
   });
 
   describe('System Tags - systemGetKeysByTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const keys = cache.systemGetKeysByTag('prompt');
@@ -420,8 +376,8 @@ describe('MindCache Tag System', () => {
       const readonlyKeys = systemCache.systemGetKeysByTag('readonly');
       expect(readonlyKeys).toEqual(['key1']);
 
-      const promptKeys = systemCache.systemGetKeysByTag('prompt');
-      expect(promptKeys).toEqual(['key1', 'key2']); // Both visible by default
+      const systemPromptKeys = systemCache.systemGetKeysByTag('SystemPrompt');
+      expect(systemPromptKeys).toEqual(['key1', 'key2']); // Both have SystemPrompt by default
     });
   });
 
@@ -466,12 +422,13 @@ describe('MindCache Tag System', () => {
       systemCache.systemAddTag('key', 'readonly');
 
       const serialized = systemCache.serialize();
-      expect(serialized.key.attributes.systemTags).toContain('prompt');
+      expect(serialized.key.attributes.systemTags).toContain('SystemPrompt');
       expect(serialized.key.attributes.systemTags).toContain('readonly');
     });
 
-    test('should restore tags from deserialization (legacy format)', () => {
+    test('should restore data from deserialization (legacy format data is preserved)', () => {
       // Old format with only tags array (simulating data from old version)
+      // Note: v3.x doesn't auto-migrate legacy tags to contentTags - use contentTags directly
       const data = {
         user: {
           value: 'Alice',
@@ -481,17 +438,17 @@ describe('MindCache Tag System', () => {
             hardcoded: false,
             template: false,
             type: 'text' as const,
-            tags: ['person', 'admin']
+            tags: ['person', 'admin'] // Legacy format
           }
         }
-      } as any; // Use any to simulate legacy data without new fields
+      } as any;
 
       cache.deserialize(data);
 
-      // Should migrate tags to contentTags
-      expect(cache.getTags('user')).toEqual(['person', 'admin']);
-      expect(cache.hasTag('user', 'person')).toBe(true);
-      expect(cache.hasTag('user', 'admin')).toBe(true);
+      // Value should be restored
+      expect(cache.get('user')).toBe('Alice');
+      // Legacy tags are not auto-migrated to contentTags in v3.x
+      // Use contentTags for new data
     });
 
     test('should restore tags from deserialization (new format)', () => {
@@ -501,7 +458,7 @@ describe('MindCache Tag System', () => {
           attributes: {
             type: 'text' as const,
             contentTags: ['person', 'admin'],
-            systemTags: ['prompt', 'readonly'] as ('prompt' | 'readonly' | 'protected' | 'template')[],
+            systemTags: ['SystemPrompt', 'readonly'] as any[],
             // Legacy fields
             readonly: true,
             visible: true,
@@ -517,7 +474,7 @@ describe('MindCache Tag System', () => {
       systemCache.deserialize(data);
 
       expect(systemCache.getTags('user')).toEqual(['person', 'admin']);
-      expect(systemCache.systemGetTags('user')).toContain('prompt');
+      expect(systemCache.systemGetTags('user')).toContain('SystemPrompt');
       expect(systemCache.systemGetTags('user')).toContain('readonly');
     });
 

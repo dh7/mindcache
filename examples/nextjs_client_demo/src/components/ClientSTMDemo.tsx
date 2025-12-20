@@ -33,7 +33,9 @@ export default function ClientSTMDemo() {
 
   // Initialize default keys once loaded
   useEffect(() => {
-    if (!isLoaded || !mindcache) return;
+    if (!isLoaded || !mindcache) {
+return;
+}
 
     // If no saved data (fresh DB), create default keys
     const currentKeys = Object.keys(mindcache.getAll());
@@ -118,10 +120,14 @@ export default function ClientSTMDemo() {
   }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
+    if (!isResizing) {
+return;
+}
 
     const containerRect = document.querySelector('.resize-container')?.getBoundingClientRect();
-    if (!containerRect) return;
+    if (!containerRect) {
+return;
+}
 
     const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
     const constrainedWidth = Math.min(Math.max(newLeftWidth, 20), 80);

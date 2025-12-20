@@ -652,12 +652,21 @@ export class MindCache {
     return false;
   }
 
-  // InjectSTM replacement
-  private injectSTM(template: string, _processingStack: Set<string>): string {
+  // InjectSTM replacement (private helper)
+  private _injectSTMInternal(template: string, _processingStack: Set<string>): string {
     return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
       const val = this.get_value(key.trim(), _processingStack);
       return val !== undefined ? String(val) : `{{${key}}}`;
     });
+  }
+
+  /**
+   * Replace {{key}} placeholders in a template string with values from MindCache.
+   * @param template The template string with {{key}} placeholders
+   * @returns The template with placeholders replaced by values
+   */
+  injectSTM(template: string): string {
+    return this._injectSTMInternal(template, new Set());
   }
 
   // Public API Methods
@@ -702,7 +711,7 @@ export class MindCache {
       if (typeof value === 'string') {
         const stack = _processingStack || new Set();
         stack.add(key);
-        return this.injectSTM(value, stack);
+        return this._injectSTMInternal(value, stack);
       }
     }
     return value;
@@ -825,6 +834,672 @@ export class MindCache {
     this.doc.transact(() => {
       keys.forEach(k => this.rootMap.delete(k));
     });
+  }
+
+  // ============================================
+  // Restored Methods (from v2.x)
+  // ============================================
+
+  /**
+   * Check if a key exists in MindCache.
+   */
+  has(key: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return true;
+    }
+    return this.rootMap.has(key);
+  }
+
+  /**
+   * Delete a key from MindCache.
+   * @returns true if the key existed and was deleted
+   */
+  delete(key: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+    if (!this.rootMap.has(key)) {
+      return false;
+    }
+    this.rootMap.delete(key);
+    this.notifyGlobalListeners();
+    if (this.listeners[key]) {
+      this.listeners[key].forEach(listener => listener(undefined));
+    }
+    return true;
+  }
+
+  /** @deprecated Use get_value instead */
+  get(key: string): any {
+    return this.get_value(key);
+  }
+
+  /** @deprecated Use set_value instead */
+  set(key: string, value: any): void {
+    this.set_value(key, value);
+  }
+
+  /**
+   * Add a content tag to a key.
+   * @returns true if the tag was added, false if key doesn't exist or tag already exists
+   */
+  addTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const contentTags = attributes?.contentTags || [];
+
+    if (contentTags.includes(tag)) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newContentTags = [...contentTags, tag];
+      entryMap.set('attributes', {
+        ...attributes,
+        contentTags: newContentTags,
+        tags: newContentTags // Sync legacy tags array
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Remove a content tag from a key.
+   * @returns true if the tag was removed
+   */
+  removeTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const contentTags = attributes?.contentTags || [];
+    const tagIndex = contentTags.indexOf(tag);
+
+    if (tagIndex === -1) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newContentTags = contentTags.filter((t: string) => t !== tag);
+      entryMap.set('attributes', {
+        ...attributes,
+        contentTags: newContentTags,
+        tags: newContentTags // Sync legacy tags array
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Get all content tags for a key.
+   */
+  getTags(key: string): string[] {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return [];
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return [];
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.contentTags || [];
+  }
+
+  /**
+   * Get all unique content tags across all keys.
+   */
+  getAllTags(): string[] {
+    const allTags = new Set<string>();
+
+    for (const [, val] of this.rootMap) {
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      if (attributes?.contentTags) {
+        attributes.contentTags.forEach((tag: string) => allTags.add(tag));
+      }
+    }
+
+    return Array.from(allTags);
+  }
+
+  /**
+   * Check if a key has a specific content tag.
+   */
+  hasTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.contentTags?.includes(tag) || false;
+  }
+
+  /**
+   * Get all keys with a specific content tag as formatted string.
+   */
+  getTagged(tag: string): string {
+    const entries: Array<[string, any]> = [];
+
+    const keys = this.getSortedKeys();
+    keys.forEach(key => {
+      if (this.hasTag(key, tag)) {
+        entries.push([key, this.get_value(key)]);
+      }
+    });
+
+    return entries
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ');
+  }
+
+  /**
+   * Get array of keys with a specific content tag.
+   */
+  getKeysByTag(tag: string): string[] {
+    const keys = this.getSortedKeys();
+    return keys.filter(key => this.hasTag(key, tag));
+  }
+
+  // ============================================
+  // System Tag Methods (requires system access level)
+  // ============================================
+
+  /**
+   * Add a system tag to a key (requires system access).
+   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'readonly', 'protected', 'ApplyTemplate'
+   */
+  systemAddTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemAddTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const systemTags = attributes?.systemTags || [];
+
+    if (systemTags.includes(tag)) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newSystemTags = [...systemTags, tag];
+      const normalizedTags = this.normalizeSystemTags(newSystemTags);
+      entryMap.set('attributes', {
+        ...attributes,
+        systemTags: normalizedTags
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Remove a system tag from a key (requires system access).
+   */
+  systemRemoveTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemRemoveTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const systemTags = attributes?.systemTags || [];
+    const tagIndex = systemTags.indexOf(tag);
+
+    if (tagIndex === -1) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newSystemTags = systemTags.filter((t: SystemTag) => t !== tag);
+      entryMap.set('attributes', {
+        ...attributes,
+        systemTags: newSystemTags
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Get all system tags for a key (requires system access).
+   */
+  systemGetTags(key: string): SystemTag[] {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemGetTags requires system access level');
+      return [];
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return [];
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return [];
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.systemTags || [];
+  }
+
+  /**
+   * Check if a key has a specific system tag (requires system access).
+   */
+  systemHasTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemHasTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.systemTags?.includes(tag) || false;
+  }
+
+  /**
+   * Set all system tags for a key at once (requires system access).
+   */
+  systemSetTags(key: string, tags: SystemTag[]): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemSetTags requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      entryMap.set('attributes', {
+        ...attributes,
+        systemTags: [...tags]
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Get all keys with a specific system tag (requires system access).
+   */
+  systemGetKeysByTag(tag: SystemTag): string[] {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemGetKeysByTag requires system access level');
+      return [];
+    }
+
+    const keys = this.getSortedKeys();
+    return keys.filter(key => this.systemHasTag(key, tag));
+  }
+
+  /**
+   * Helper to get sorted keys (by zIndex).
+   */
+  private getSortedKeys(): string[] {
+    const entries: Array<{ key: string; zIndex: number }> = [];
+
+    for (const [key, val] of this.rootMap) {
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      entries.push({ key, zIndex: attributes?.zIndex ?? 0 });
+    }
+
+    return entries
+      .sort((a, b) => a.zIndex - b.zIndex)
+      .map(e => e.key);
+  }
+
+  /**
+   * Serialize to JSON string.
+   */
+  toJSON(): string {
+    return JSON.stringify(this.serialize());
+  }
+
+  /**
+   * Deserialize from JSON string.
+   */
+  fromJSON(jsonString: string): void {
+    try {
+      const data = JSON.parse(jsonString);
+      this.deserialize(data);
+    } catch (error) {
+      console.error('MindCache: Failed to deserialize JSON:', error);
+    }
+  }
+
+  /**
+   * Export to Markdown format.
+   */
+  toMarkdown(): string {
+    const now = new Date();
+    const lines: string[] = [];
+    const appendixEntries: Array<{
+      key: string;
+      type: string;
+      contentType: string;
+      base64: string;
+      label: string;
+    }> = [];
+    let appendixCounter = 0;
+
+    lines.push('# MindCache STM Export');
+    lines.push('');
+    lines.push(`Export Date: ${now.toISOString().split('T')[0]}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('## STM Entries');
+    lines.push('');
+
+    const sortedKeys = this.getSortedKeys();
+    sortedKeys.forEach(key => {
+      const entryMap = this.rootMap.get(key);
+      if (!entryMap) {
+        return;
+      }
+
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      const value = entryMap.get('value');
+
+      if (attributes?.hardcoded) {
+        return;
+      }
+
+      lines.push(`### ${key}`);
+      const entryType = attributes?.type || 'text';
+      lines.push(`- **Type**: \`${entryType}\``);
+      lines.push(`- **Readonly**: \`${attributes?.readonly ?? false}\``);
+      lines.push(`- **Visible**: \`${attributes?.visible ?? true}\``);
+      lines.push(`- **Template**: \`${attributes?.template ?? false}\``);
+      lines.push(`- **Z-Index**: \`${attributes?.zIndex ?? 0}\``);
+
+      if (attributes?.contentTags && attributes.contentTags.length > 0) {
+        lines.push(`- **Tags**: \`${attributes.contentTags.join('`, `')}\``);
+      }
+
+      if (attributes?.contentType) {
+        lines.push(`- **Content Type**: \`${attributes.contentType}\``);
+      }
+
+      if (entryType === 'image' || entryType === 'file') {
+        const label = String.fromCharCode(65 + appendixCounter);
+        appendixCounter++;
+        lines.push(`- **Value**: [See Appendix ${label}]`);
+
+        appendixEntries.push({
+          key,
+          type: entryType,
+          contentType: attributes?.contentType || 'application/octet-stream',
+          base64: value as string,
+          label
+        });
+      } else if (entryType === 'json') {
+        lines.push('- **Value**:');
+        lines.push('```json');
+        try {
+          const jsonValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+          lines.push(jsonValue);
+        } catch {
+          lines.push(String(value));
+        }
+        lines.push('```');
+      } else {
+        lines.push(`- **Value**: ${value}`);
+      }
+
+      lines.push('');
+    });
+
+    // Add appendix for binary data
+    if (appendixEntries.length > 0) {
+      lines.push('---');
+      lines.push('');
+      lines.push('## Appendix: Binary Data');
+      lines.push('');
+
+      appendixEntries.forEach(entry => {
+        lines.push(`### Appendix ${entry.label}: ${entry.key}`);
+        lines.push(`- **Type**: \`${entry.type}\``);
+        lines.push(`- **Content Type**: \`${entry.contentType}\``);
+        lines.push('- **Base64 Data**:');
+        lines.push('```');
+        lines.push(entry.base64);
+        lines.push('```');
+        lines.push('');
+      });
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Import from Markdown format.
+   */
+  fromMarkdown(markdown: string): void {
+    const lines = markdown.split('\n');
+    let currentKey: string | null = null;
+    let currentAttributes: Partial<KeyAttributes> = {};
+    let currentValue: string | null = null;
+    let inCodeBlock = false;
+    let codeBlockContent: string[] = [];
+    const _appendixData: Record<string, string> = {};
+
+    for (const line of lines) {
+      // Parse key headers
+      if (line.startsWith('### ') && !line.startsWith('### Appendix')) {
+        // Save previous entry
+        if (currentKey && currentValue !== null) {
+          this.set_value(currentKey, currentValue, currentAttributes);
+        }
+
+        currentKey = line.substring(4).trim();
+        currentAttributes = {};
+        currentValue = null;
+        continue;
+      }
+
+      // Parse appendix
+      if (line.startsWith('### Appendix ')) {
+        const match = line.match(/### Appendix ([A-Z]): (.+)/);
+        if (match) {
+          currentKey = match[2];
+        }
+        continue;
+      }
+
+      // Parse attributes
+      if (line.startsWith('- **Type**:')) {
+        const type = line.match(/`(.+)`/)?.[1] as KeyAttributes['type'];
+        if (type) {
+          currentAttributes.type = type;
+        }
+        continue;
+      }
+      if (line.startsWith('- **Readonly**:')) {
+        currentAttributes.readonly = line.includes('`true`');
+        continue;
+      }
+      if (line.startsWith('- **Visible**:')) {
+        currentAttributes.visible = line.includes('`true`');
+        continue;
+      }
+      if (line.startsWith('- **Template**:')) {
+        currentAttributes.template = line.includes('`true`');
+        continue;
+      }
+      if (line.startsWith('- **Z-Index**:')) {
+        const zIndex = parseInt(line.match(/`(\d+)`/)?.[1] || '0', 10);
+        currentAttributes.zIndex = zIndex;
+        continue;
+      }
+      if (line.startsWith('- **Tags**:')) {
+        const tags = line.match(/`([^`]+)`/g)?.map(t => t.slice(1, -1)) || [];
+        currentAttributes.contentTags = tags;
+        currentAttributes.tags = tags;
+        continue;
+      }
+      if (line.startsWith('- **Content Type**:')) {
+        currentAttributes.contentType = line.match(/`(.+)`/)?.[1];
+        continue;
+      }
+      if (line.startsWith('- **Value**:') && !line.includes('[See Appendix')) {
+        currentValue = line.substring(12).trim();
+        continue;
+      }
+
+      // Handle code blocks
+      if (line === '```json' || line === '```') {
+        if (inCodeBlock) {
+          // End of code block
+          inCodeBlock = false;
+          if (currentKey && codeBlockContent.length > 0) {
+            currentValue = codeBlockContent.join('\n');
+          }
+          codeBlockContent = [];
+        } else {
+          inCodeBlock = true;
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeBlockContent.push(line);
+      }
+    }
+
+    // Save last entry
+    if (currentKey && currentValue !== null) {
+      this.set_value(currentKey, currentValue, currentAttributes);
+    }
+  }
+
+  /**
+   * Set base64 binary data.
+   */
+  set_base64(key: string, base64Data: string, contentType: string, type: 'image' | 'file' = 'file', attributes?: Partial<KeyAttributes>): void {
+    if (!this.validateContentType(type, contentType)) {
+      throw new Error(`Invalid content type ${contentType} for type ${type}`);
+    }
+
+    const fileAttributes: Partial<KeyAttributes> = {
+      type,
+      contentType,
+      ...attributes
+    };
+
+    this.set_value(key, base64Data, fileAttributes);
+  }
+
+  /**
+   * Add an image from base64 data.
+   */
+  add_image(key: string, base64Data: string, contentType: string = 'image/jpeg', attributes?: Partial<KeyAttributes>): void {
+    if (!contentType.startsWith('image/')) {
+      throw new Error(`Invalid image content type: ${contentType}. Must start with 'image/'`);
+    }
+
+    this.set_base64(key, base64Data, contentType, 'image', attributes);
+  }
+
+  /**
+   * Get the data URL for an image or file key.
+   */
+  get_data_url(key: string): string | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    if (attributes?.type !== 'image' && attributes?.type !== 'file') {
+      return undefined;
+    }
+
+    if (!attributes?.contentType) {
+      return undefined;
+    }
+
+    const value = entryMap.get('value') as string;
+    return this.createDataUrl(value, attributes.contentType);
+  }
+
+  /**
+   * Get the base64 data for an image or file key.
+   */
+  get_base64(key: string): string | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    if (attributes?.type !== 'image' && attributes?.type !== 'file') {
+      return undefined;
+    }
+
+    return entryMap.get('value') as string;
   }
 
   // File methods
@@ -1223,10 +1898,18 @@ export class MindCache {
 
       if (isWritable) {
         if (isDocument) {
-          lines.push(`${key}: ${displayValue}. Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`);
+          lines.push(
+            `${key}: ${displayValue}. ` +
+            `Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`
+          );
         } else {
-          const oldValueHint = displayValue ? ` This tool DOES NOT append — start your response with the old value (${displayValue})` : '';
-          lines.push(`${key}: ${displayValue}. You can rewrite "${key}" by using the write_${sanitizedKey} tool.${oldValueHint}`);
+          const oldValueHint = displayValue
+            ? ` This tool DOES NOT append — start your response with the old value (${displayValue})`
+            : '';
+          lines.push(
+            `${key}: ${displayValue}. ` +
+            `You can rewrite "${key}" by using the write_${sanitizedKey} tool.${oldValueHint}`
+          );
         }
       } else {
         lines.push(`${key}: ${displayValue}`);
@@ -1244,7 +1927,10 @@ export class MindCache {
    * Execute a tool call by name with the given value.
    * Returns the result or null if tool not found.
    */
-  executeToolCall(toolName: string, value: any): { result: string; key: string; value?: any } | null {
+  executeToolCall(
+    toolName: string,
+    value: any
+  ): { result: string; key: string; value?: any } | null {
     // Parse tool name (format: action_keyname)
     const match = toolName.match(/^(write|append|insert|edit)_(.+)$/);
     if (!match) {

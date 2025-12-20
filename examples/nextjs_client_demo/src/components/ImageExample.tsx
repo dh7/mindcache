@@ -21,7 +21,9 @@ export default function ImageExample() {
 
   // Initialize STM with image field
   useEffect(() => {
-    if (!isLoaded || !mindcache) return;
+    if (!isLoaded || !mindcache) {
+return;
+}
 
     // Create STM key if it doesn't exist
     if (!mindcache.has('user_image')) {
@@ -53,7 +55,9 @@ export default function ImageExample() {
 
   // Handle image upload
   const handleImageUpload = async (file: File) => {
-    if (!mindcache) return;
+    if (!mindcache) {
+return;
+}
     try {
       await mindcache.set_file('user_image', file, {
         visible: true,

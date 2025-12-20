@@ -26,7 +26,9 @@ export default function FormExample() {
 
   // Initialize default keys and sync form state once loaded
   useEffect(() => {
-    if (!isLoaded || !mindcache) return;
+    if (!isLoaded || !mindcache) {
+return;
+}
 
     // Create STM keys if they don't exist
     if (!mindcache.has('name')) {
