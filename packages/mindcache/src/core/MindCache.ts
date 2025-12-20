@@ -1904,7 +1904,8 @@ export class MindCache {
           );
         } else {
           const oldValueHint = displayValue
-            ? ` This tool DOES NOT append — start your response with the old value (${displayValue})`
+            ? ' This tool DOES NOT append — start your response ' +
+            `with the old value (${displayValue})`
             : '';
           lines.push(
             `${key}: ${displayValue}. ` +
