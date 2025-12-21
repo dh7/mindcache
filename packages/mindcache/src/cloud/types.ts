@@ -140,5 +140,7 @@ export interface CloudAdapterEvents {
   disconnected: () => void;
   error: (error: Error) => void;
   synced: () => void;
+  network_online: () => void;
+  network_offline: () => void;
 }
 

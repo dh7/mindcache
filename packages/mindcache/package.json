@@ -1,6 +1,6 @@
 {
   "name": "mindcache",
-  "version": "3.3.0",
+  "version": "3.3.2",
   "description": "A TypeScript library for managing short-term memory in AI agents through an LLM-friendly key-value repository",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

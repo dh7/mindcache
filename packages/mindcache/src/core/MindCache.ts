@@ -74,6 +74,7 @@ interface ICloudAdapter {
   on(event: string, listener: (...args: any[]) => void): void;
   off(event: string, listener: (...args: any[]) => void): void;
   state: ConnectionState;
+  isOnline: boolean;
 }
 
 export class MindCache {
@@ -86,7 +87,7 @@ export class MindCache {
   private globalListeners: GlobalListener[] = [];
 
   // Metadata
-  public readonly version = '3.1.0';
+  public readonly version = '3.3.2';
 
   // Internal flag to prevent sync loops when receiving remote updates
   // (Less critical with Yjs but kept for API compat)
@@ -164,15 +165,32 @@ export class MindCache {
     this.doc = new Y.Doc();
     this.rootMap = this.doc.getMap('mindcache');
 
-    // Observers for local reactivity
-    this.rootMap.observe((event: Y.YMapEvent<any>) => {
-      // Iterate changes and trigger specific key listeners
-      event.keysChanged.forEach(key => {
+    // Deep observer for both key-specific and global listeners
+    // Using observeDeep to catch both root-level key add/remove AND nested value changes
+    this.rootMap.observeDeep((events: Y.YEvent<any>[]) => {
+      const keysAffected = new Set<string>();
+
+      events.forEach(event => {
+        if (event.target === this.rootMap) {
+          // Direct changes to rootMap (key added/removed)
+          const mapEvent = event as Y.YMapEvent<any>;
+          mapEvent.keysChanged.forEach(key => keysAffected.add(key));
+        } else if (event.target.parent === this.rootMap) {
+          // Changes to nested entry maps (value/attributes changed)
+          for (const [key, val] of this.rootMap) {
+            if (val === event.target) {
+              keysAffected.add(key);
+              break;
+            }
+          }
+        }
+      });
+
+      // Trigger key-specific listeners
+      keysAffected.forEach(key => {
         const entryMap = this.rootMap.get(key);
         if (entryMap) {
-          // Determine value
           const value = entryMap.get('value');
-          // Trigger listener
           if (this.listeners[key]) {
             this.listeners[key].forEach(l => l(value));
           }
@@ -183,10 +201,8 @@ export class MindCache {
           }
         }
       });
-    });
 
-    // Deep observer for global listener (so UI updates on any change)
-    this.rootMap.observeDeep((_events: Y.YEvent<any>[]) => {
+      // Trigger global listeners
       this.notifyGlobalListeners();
     });
 
@@ -341,16 +357,25 @@ export class MindCache {
       const keysAffected = new Set<string>();
       events.forEach(event => {
         if (event.target === this.rootMap) {
-          // Direct changes to rootMap
+          // Direct changes to rootMap (key added/removed)
           const mapEvent = event as Y.YMapEvent<any>;
           mapEvent.keysChanged.forEach(key => keysAffected.add(key));
-        } else if (event.target.parent === this.rootMap) {
-          // Changes to entry maps
-          for (const [key, val] of this.rootMap) {
-            if (val === event.target) {
-              keysAffected.add(key);
+        } else {
+          // Changes to nested structures (entry maps or Y.Text inside them)
+          // Walk up the parent chain to find which root key was affected
+          let current = event.target;
+          while (current && current.parent) {
+            if (current.parent === this.rootMap) {
+              // Found the entry map - now find which key it belongs to
+              for (const [key, val] of this.rootMap) {
+                if (val === current) {
+                  keysAffected.add(key);
+                  break;
+                }
+              }
               break;
             }
+            current = current.parent;
           }
         }
       });
@@ -529,6 +554,21 @@ export class MindCache {
 
   get isCloud(): boolean {
     return this._cloudConfig !== null;
+  }
+
+  /**
+   * Browser network status. Returns true if online or in local-only mode.
+   * In cloud mode, this updates instantly when network status changes.
+   */
+  get isOnline(): boolean {
+    if (!this._cloudAdapter) {
+      // Local mode - check navigator directly or assume online
+      if (typeof navigator !== 'undefined') {
+        return navigator.onLine;
+      }
+      return true;
+    }
+    return this._cloudAdapter.isOnline;
   }
 
   async waitForSync(): Promise<void> {

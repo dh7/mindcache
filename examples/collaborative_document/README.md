@@ -1,70 +1,82 @@
-# Collaborative Document Demo
+# MindCache Collaborative Document Demo
 
-Real-time collaborative document editing with MindCache's document type.
+Real-time collaborative document editing powered by MindCache Cloud and Y.Text CRDT.
 
 ## Features
 
-- **Split-screen editors**: Two MindCache instances editing the same document
-- **Real-time sync**: Changes appear instantly in both editors
-- **Offline simulation**: Click "Go Offline" to disconnect
-- **Diff-based updates**: Small edits don't replace entire document
-- **CRDT merging**: Conflicting edits merge automatically
+- **Real-time sync** - Changes sync instantly across all connected clients
+- **CRDT-based** - Uses Yjs for conflict-free collaborative editing
+- **Diff-based updates** - Only sends minimal diffs, not entire documents
+- **Cloud persistence** - Documents are stored in MindCache Cloud
+- **Cookie persistence** - Your credentials are saved for convenience
 
-## Quick Start
+## Getting Started
 
-```bash
-npm install
-npm run dev
-```
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-Open http://localhost:3002
+2. **Configure environment (optional):**
+   ```bash
+   cp env.example .env.local
+   # Edit .env.local if using a custom API URL
+   ```
+
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Open the app:**
+   - Navigate to [http://localhost:3001](http://localhost:3001)
+   - Enter your MindCache Cloud Instance ID and API Key
+   - Start editing!
+
+## Testing Real-Time Collaboration
+
+To see real-time collaboration in action:
+
+1. Open the app in two different browser windows
+2. Enter the same Instance ID and API Key in both
+3. Type in one editor and watch changes appear in the other!
+
+You can also open on different devices with the same credentials.
 
 ## How It Works
 
-Each editor has its own `MindCache` instance:
-
 ```typescript
-const mc1 = new MindCache({ indexedDB: { dbName: 'collab-demo-1' } });
-const mc2 = new MindCache({ indexedDB: { dbName: 'collab-demo-2' } });
+import { MindCache } from 'mindcache';
 
-// Create collaborative document
-mc1.set_document('shared_doc', '# Hello World');
-
-// Get Y.Text for reactive updates
-const yText = mc1.get_document('shared_doc');
-yText.observe(() => {
-  console.log('Document changed:', yText.toString());
-});
-```
-
-## For True Cloud Sync
-
-To sync across browsers/devices, use cloud mode:
-
-```typescript
-import { MindCache } from 'mindcache/cloud';
-
+// Connect to MindCache Cloud
 const mc = new MindCache({
   cloud: {
     instanceId: 'your-instance-id',
-    tokenEndpoint: '/api/ws-token'
+    apiKey: 'your-api-key',
+    baseUrl: 'https://api.mindcache.dev'
   }
 });
 
 await mc.waitForSync();
-mc.set_document('notes', '# Collaborative Notes');
+
+// Create or access a collaborative document
+if (!mc.get_document('shared_doc')) {
+  mc.set_document('shared_doc', '# Hello World');
+}
+
+// Get the Y.Text for direct manipulation
+const yText = mc.get_document('shared_doc');
+yText.observe(() => {
+  console.log('Document updated:', yText.toString());
+});
+
+// Make edits (diff-based, efficient)
+mc.replace_document_text('shared_doc', newContent);
 ```
 
-## Offline Support
+## Technical Details
 
-```typescript
-// Go offline
-mc.disconnect();
-
-// Changes queue locally...
-mc.set_value('local', 'still works');
-
-// Reconnect (requires new instance in current API)
-const mc2 = new MindCache({ cloud: { ... } });
-await mc2.waitForSync(); // Queued changes sync
-```
+- **Document Type** - Uses MindCache's `document` type which stores content as Y.Text
+- **Diff Algorithm** - Uses `fast-diff` to compute minimal changes
+- **CRDT** - Yjs provides conflict-free real-time collaboration
+- **WebSocket** - Cloud sync happens over WebSocket for low latency
