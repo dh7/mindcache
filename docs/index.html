@@ -72,7 +72,7 @@
                 </div>
                 <div class="hero-stats">
                     <div class="stat">
-                        <span class="stat-number">3.2</span>
+                        <span class="stat-number">3.3</span>
                         <span class="stat-label">Version</span>
                     </div>
                     <div class="stat">
@@ -240,14 +240,12 @@ const { text, toolCalls } = await generateText({
                         <pre><code>// Context Management with Tags & System Prompts
 import { mindcache } from 'mindcache';
 
-// Mark context items with tags
+// Set items with or without tags
+mindcache.set_value('tempNote', 'Meeting at 3pm');
 mindcache.set_value('userName', 'Alice', { tags: ['context'] });
 mindcache.set_value('userRole', 'developer', { tags: ['context'] });
 mindcache.set_value('projectName', 'MindCache', { tags: ['context'] });
 
-// Store non-context data without tags
-mindcache.set_value('tempNote', 'Meeting at 3pm');
-mindcache.set_value('cacheVersion', '1.0.0');
 
 // Extract only tagged context for focused prompts
 const contextData = mindcache.getTagged('context');
@@ -255,7 +253,7 @@ const contextData = mindcache.getTagged('context');
 
 // Generate system prompt with all visible keys
 const fullSystemPrompt = mindcache.get_system_prompt();
-// Includes all keys: userName, userRole, projectName, tempNote, cacheVersion
+// Includes all keys: userName, userRole, projectName, tempNote
 
 // Or create focused context from tagged items only
 const focusedContext = `Context: ${contextData}

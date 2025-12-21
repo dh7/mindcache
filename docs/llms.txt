@@ -2,7 +2,7 @@
 
 > AI Agent Memory Management - Collaborative key-value store for AI agents with real-time sync.
 
-MindCache 3.2 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
+MindCache 3.3 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
 
 ## Quick Links
 
@@ -83,8 +83,14 @@ const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
 ## Core Methods
 
 - set_value(key, value, attrs?) - Store value
-- get_value(key) - Get value
+- get_value(key) - Get value  
+- has(key) - Check if key exists
+- delete(key) - Remove key
+- keys() - Get all key names
+- getAll() - Get all values (simple format)
+- getAllEntries() - Get all entries with value+attributes (v3.3+)
 - set_attributes(key, attrs) - Update only attributes (v3.2+)
+- get_attributes(key) - Get key attributes
 - set_document(key, text?) - Create collaborative doc
 - get_document(key) - Get Y.Text for editor binding
 - replace_document_text(key, text) - Smart diff-based replace
@@ -92,6 +98,14 @@ const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
 - get_system_prompt() - Generate prompt
 - undo(key) / redo(key) - Per-key undo
 - undoAll() / redoAll() - Global undo
+
+## Tags
+
+- getTags(key) - Get tags for a key
+- addTag(key, tag) - Add tag to key
+- removeTag(key, tag) - Remove tag from key
+- hasTag(key, tag) - Check if key has tag
+- getKeysByTag(tag) - Get keys with tag
 
 ## Full Documentation
 
