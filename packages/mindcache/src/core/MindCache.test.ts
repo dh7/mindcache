@@ -61,13 +61,13 @@ describe('MindCache', () => {
 
     it('should handle reserved keys ($version, $date, $time)', () => {
       const mc = new MindCache();
-      expect(mc.get_value('$version')).toBe('3.1.0');
+      expect(mc.get_value('$version')).toBe('3.3.1');
       expect(mc.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/); // YYYY-MM-DD
       expect(mc.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/); // HH:MM:SS
 
       // Should be read-only
       mc.set_value('$version', '9.9.9');
-      expect(mc.get_value('$version')).toBe('3.1.0');
+      expect(mc.get_value('$version')).toBe('3.3.1');
     });
 
     it('should get attributes for keys', () => {

@@ -14,67 +14,57 @@ function getCookie(name: string): string {
   return match ? decodeURIComponent(match[2]) : '';
 }
 
-// Document editor component
-function DocumentEditor({
-  id,
-  mc,
-  color
+// Connection status badge component
+function ConnectionBadge({
+  state,
+  isOnline
 }: {
-  id: string;
-  mc: MindCache | null;
-  color: string;
+  state: 'disconnected' | 'connecting' | 'connected' | 'error';
+  isOnline: boolean;
 }) {
-  const [text, setText] = useState('');
+  // If browser is offline, show that immediately regardless of WebSocket state
+  if (!isOnline) {
+    return (
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-600 text-white font-semibold text-sm shadow-lg animate-pulse">
+        <span className="text-lg">📡</span>
+        <span>Network Offline</span>
+      </div>
+    );
+  }
 
-  // Subscribe to document changes
-  useEffect(() => {
-    if (!mc) {
-      return;
-    }
+  const config = {
+    disconnected: {
+      bg: 'bg-gray-600',
+      text: 'Disconnected',
+      icon: '○',
+      pulse: false
+    },
+    connecting: {
+      bg: 'bg-yellow-500',
+      text: 'Connecting...',
+      icon: '◐',
+      pulse: true
+    },
+    connected: {
+      bg: 'bg-green-500',
+      text: 'Connected to Cloud',
+      icon: '●',
+      pulse: true
+    },
+    error: {
+      bg: 'bg-red-500',
+      text: 'Connection Error',
+      icon: '✕',
+      pulse: false
+    },
+  };
 
-    // Get initial text
-    const initialText = mc.get_document_text('shared_doc') || '';
-    setText(initialText);
-
-    // Get Y.Text and subscribe to changes
-    const yText = mc.get_document('shared_doc');
-    if (yText) {
-      const handler = () => {
-        setText(yText.toString());
-      };
-      yText.observe(handler);
-      return () => yText.unobserve(handler);
-    }
-  }, [mc]);
-
-  const handleChange = useCallback((newText: string) => {
-    if (!mc) {
-      return;
-    }
-    mc.replace_document_text('shared_doc', newText);
-    setText(newText);
-  }, [mc]);
+  const { bg, text, icon, pulse } = config[state];
 
   return (
-    <div className={`flex-1 p-4 rounded-xl border-2 ${color} bg-gray-800/50 backdrop-blur`}>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-white">Editor {id}</h2>
-        <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-sm text-gray-400">Synced</span>
-        </div>
-      </div>
-
-      <textarea
-        value={text}
-        onChange={(e) => handleChange(e.target.value)}
-        placeholder="Start typing... changes sync in real-time!"
-        className="w-full h-64 p-4 bg-gray-900 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-gray-200 placeholder-gray-500"
-      />
-
-      <div className="mt-2 text-xs text-gray-500">
-        {text.length} characters
-      </div>
+    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${bg} text-white font-semibold text-sm shadow-lg`}>
+      <span className={`text-lg ${pulse ? 'animate-pulse' : ''}`}>{icon}</span>
+      <span>{text}</span>
     </div>
   );
 }
@@ -82,8 +72,11 @@ function DocumentEditor({
 export default function Home() {
   const [instanceId, setInstanceId] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [connected, setConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [isOnline, setIsOnline] = useState(true); // Browser network status
+  const [text, setText] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const mindCacheRef = useRef<MindCache | null>(null);
 
   // Load saved credentials from cookies on mount
@@ -94,7 +87,33 @@ export default function Home() {
     if (savedApiKey) setApiKey(savedApiKey);
   }, []);
 
-  const log = (msg: string) => setLogs(prev => [`${new Date().toLocaleTimeString()} ${msg}`, ...prev].slice(0, 50));
+  // Browser online/offline detection for instant feedback
+  useEffect(() => {
+    // Set initial state
+    setIsOnline(navigator.onLine);
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      setLogs(prev => [`${new Date().toLocaleTimeString()} 🌐 Network: Back online`, ...prev].slice(0, 50));
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setLogs(prev => [`${new Date().toLocaleTimeString()} ⚠️ Network: Offline`, ...prev].slice(0, 50));
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const log = (msg: string) => {
+    setLogs(prev => [`${new Date().toLocaleTimeString()} ${msg}`, ...prev].slice(0, 50));
+  };
 
   const handleConnect = async () => {
     if (!instanceId || !apiKey) return;
@@ -103,8 +122,10 @@ export default function Home() {
     setCookie('mc_collab_instance_id', instanceId);
     setCookie('mc_collab_api_key', apiKey);
 
+    setConnectionState('connecting');
+    log('Initializing MindCache...');
+
     try {
-      log('Initializing MindCache...');
       const baseUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL || 'https://api.mindcache.dev';
 
       const mc = new MindCache({
@@ -115,29 +136,67 @@ export default function Home() {
         }
       });
 
-      log('Waiting for sync...');
+      log('Connecting to cloud...');
       await mc.waitForSync();
-      log('Connected and synced!');
+
+      setConnectionState('connected');
+      setLastSyncTime(new Date());
+      log('✓ Connected and synced!');
 
       // Initialize document if not exists
       if (!mc.get_document('shared_doc')) {
         log('Creating new shared document...');
-        mc.set_document('shared_doc', '# Welcome to MindCache Collaborative Document!\n\nType in either editor and watch changes appear in real-time across all connected clients.\n\n## Features\n- Character-level CRDT sync\n- Diff-based updates (minimal data transfer)\n- Conflict-free merging\n- Cloud persistence\n');
-      } else {
-        log(`Loaded existing document: ${mc.get_document_text('shared_doc')?.slice(0, 50)}...`);
+        mc.set_document('shared_doc', '# Welcome to MindCache Collaborative Document!\n\nThis document syncs in real-time across all connected clients.\n\n## Try it out\n1. Open this page in another browser window\n2. Use the same Instance ID and API Key\n3. Start typing and watch the magic!\n');
       }
 
+      // Get initial text
+      const initialText = mc.get_document_text('shared_doc') || '';
+      setText(initialText);
+      log(`Loaded document (${initialText.length} chars)`);
+
+      // Subscribe to document changes from OTHER clients
+      const yText = mc.get_document('shared_doc');
+      if (yText) {
+        yText.observe(() => {
+          setText(yText.toString());
+          setLastSyncTime(new Date());
+        });
+      }
+
+      // Subscribe to connection state changes
+      mc.subscribeToAll(() => {
+        setConnectionState(mc.connectionState as 'disconnected' | 'connecting' | 'connected' | 'error');
+        if (mc.connectionState === 'connected') {
+          setLastSyncTime(new Date());
+        }
+      });
+
       mindCacheRef.current = mc;
-      setConnected(true);
     } catch (e) {
-      log(`Error connecting: ${e}`);
+      setConnectionState('error');
+      log(`✗ Error connecting: ${e}`);
       console.error(e);
-      alert(`Failed to connect: ${e}`);
     }
   };
 
+  const handleTextChange = useCallback((newText: string) => {
+    if (!mindCacheRef.current) return;
+    mindCacheRef.current.replace_document_text('shared_doc', newText);
+    setText(newText);
+  }, []);
+
+  const handleDisconnect = () => {
+    if (mindCacheRef.current) {
+      mindCacheRef.current.disconnect();
+      mindCacheRef.current = null;
+    }
+    setConnectionState('disconnected');
+    setText('');
+    log('Disconnected from cloud');
+  };
+
   // Connection form (not connected yet)
-  if (!connected) {
+  if (connectionState === 'disconnected' || connectionState === 'error') {
     return (
       <div className="min-h-screen p-8 font-sans bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 flex items-center justify-center">
         <main className="w-full max-w-xl bg-gray-800/80 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-gray-700/50">
@@ -146,6 +205,9 @@ export default function Home() {
               MindCache Collaborative Document
             </h1>
             <p className="text-gray-400">Real-time document sync with Y.Text CRDT</p>
+            <div className="mt-4">
+              <ConnectionBadge state={connectionState} isOnline={isOnline} />
+            </div>
           </div>
 
           <div className="flex flex-col gap-5">
@@ -177,17 +239,23 @@ export default function Home() {
               disabled={!instanceId || !apiKey}
               className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white p-3.5 rounded-lg font-bold hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl mt-2"
             >
-              Connect & Start Editing
+              Connect to Cloud
             </button>
           </div>
 
+          {connectionState === 'error' && (
+            <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
+              Failed to connect. Check your credentials and try again.
+            </div>
+          )}
+
           <div className="mt-8 p-4 bg-gray-900/50 rounded-lg border border-gray-700/50">
-            <h3 className="text-sm font-semibold text-gray-300 mb-2">How it works</h3>
+            <h3 className="text-sm font-semibold text-gray-300 mb-2">🌐 Test Real-Time Collaboration</h3>
             <ul className="text-xs text-gray-400 space-y-1">
-              <li>• Enter your MindCache Cloud credentials</li>
-              <li>• Open this page in multiple browser windows</li>
-              <li>• Type in any editor - changes sync instantly!</li>
-              <li>• Document is persisted in the cloud</li>
+              <li>1. Connect with your MindCache Cloud credentials</li>
+              <li>2. Open this page in <strong className="text-white">another browser window</strong></li>
+              <li>3. Enter the same credentials in both windows</li>
+              <li>4. Type in one window - changes appear instantly in the other!</li>
             </ul>
           </div>
         </main>
@@ -195,53 +263,82 @@ export default function Home() {
     );
   }
 
-  // Connected state - show dual editors
+  // Connecting state
+  if (connectionState === 'connecting') {
+    return (
+      <div className="min-h-screen p-8 font-sans bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 flex items-center justify-center">
+        <main className="text-center">
+          <div className="mb-6">
+            <ConnectionBadge state="connecting" isOnline={isOnline} />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Connecting to MindCache Cloud...</h1>
+          <p className="text-gray-400">Establishing WebSocket connection</p>
+          <div className="mt-8 animate-spin text-4xl">◌</div>
+        </main>
+      </div>
+    );
+  }
+
+  // Connected state - show editor
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100">
-      <div className="max-w-6xl mx-auto">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            MindCache Collaborative Document
-          </h1>
-          <p className="text-gray-400">
-            Real-time document sync with Y.Text CRDT
-          </p>
-          <div className="mt-4 flex items-center justify-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-gray-400">Connected to Cloud</span>
+      <div className="max-w-4xl mx-auto">
+        {/* Header with prominent connection status */}
+        <header className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+              Collaborative Document
+            </h1>
+            <div className="flex items-center gap-4">
+              <ConnectionBadge state={connectionState} isOnline={isOnline} />
+              <button
+                onClick={handleDisconnect}
+                className="text-gray-400 text-sm hover:text-red-400 transition-colors"
+              >
+                Disconnect
+              </button>
             </div>
+          </div>
+
+          {/* Connection details bar */}
+          <div className="flex items-center gap-6 text-sm text-gray-400 bg-gray-800/50 px-4 py-2 rounded-lg">
+            <span>
+              Instance: <code className="text-blue-400">{instanceId}</code>
+            </span>
             <span className="text-gray-600">|</span>
-            <span className="text-gray-500">Instance: <code className="text-blue-400">{instanceId}</code></span>
-            <button
-              onClick={() => window.location.reload()}
-              className="text-gray-400 text-xs hover:text-gray-200 underline transition-colors ml-4"
-            >
-              Disconnect
-            </button>
+            <span>
+              Last sync: <span className="text-green-400">{lastSyncTime ? lastSyncTime.toLocaleTimeString() : 'Never'}</span>
+            </span>
+            <span className="text-gray-600">|</span>
+            <span>
+              {text.length} characters
+            </span>
           </div>
         </header>
 
-        <div className="mb-4 text-center text-sm text-gray-500">
-          Open this page in another browser window to see real-time collaboration in action!
+        {/* Collaboration tip */}
+        <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg text-blue-300 text-sm flex items-center gap-2">
+          <span className="text-lg">💡</span>
+          <span>
+            Open this page in <strong>another browser window</strong> with the same credentials to see real-time sync!
+          </span>
         </div>
 
-        <div className="flex gap-6">
-          <DocumentEditor
-            id="A"
-            mc={mindCacheRef.current}
-            color="border-blue-500/50"
-          />
-          <DocumentEditor
-            id="B"
-            mc={mindCacheRef.current}
-            color="border-purple-500/50"
+        {/* Main editor */}
+        <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 p-6">
+          <textarea
+            value={text}
+            onChange={(e) => handleTextChange(e.target.value)}
+            placeholder="Start typing... your changes sync to the cloud in real-time!"
+            className="w-full h-96 p-4 bg-gray-900 border border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-gray-200 placeholder-gray-500 text-sm leading-relaxed"
           />
         </div>
 
         {/* Activity Log */}
-        <div className="mt-8 bg-gray-900 text-green-400 p-4 rounded-xl h-32 overflow-auto text-xs font-mono border border-gray-700/50">
-          <div className="text-gray-500 mb-2 font-semibold">Activity Log</div>
+        <div className="mt-6 bg-gray-900 text-green-400 p-4 rounded-xl h-32 overflow-auto text-xs font-mono border border-gray-700/50">
+          <div className="text-gray-500 mb-2 font-semibold flex items-center gap-2">
+            <span>📡</span> Activity Log
+          </div>
           {logs.map((l, i) => (
             <div key={i} className="mb-1 opacity-80 hover:opacity-100 transition-opacity">
               <span className="text-gray-500 mr-2">{l.split(' ')[0]}</span>
@@ -250,15 +347,24 @@ export default function Home() {
           ))}
         </div>
 
-        <div className="mt-6 p-6 bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50">
-          <h3 className="text-lg font-semibold mb-4 text-white">How it works</h3>
-          <ul className="list-disc list-inside space-y-2 text-gray-300 text-sm">
-            <li>Both editors share the same <code className="text-green-400">MindCache</code> instance connected to cloud</li>
-            <li>The document uses <code className="text-green-400">Y.Text</code> CRDT for conflict-free merging</li>
-            <li>Changes are diff-based (small edits don&apos;t replace entire document)</li>
-            <li>Open in another browser/device with same credentials to see true real-time sync!</li>
-            <li>All changes are persisted to your MindCache Cloud instance</li>
-          </ul>
+        {/* Info section */}
+        <div className="mt-6 grid grid-cols-2 gap-4">
+          <div className="p-4 bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50">
+            <h3 className="font-semibold mb-2 text-white flex items-center gap-2">
+              <span>⚡</span> Real-Time Sync
+            </h3>
+            <p className="text-xs text-gray-400">
+              Changes sync instantly via WebSocket. The document is persisted in MindCache Cloud.
+            </p>
+          </div>
+          <div className="p-4 bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50">
+            <h3 className="font-semibold mb-2 text-white flex items-center gap-2">
+              <span>🔀</span> Conflict-Free
+            </h3>
+            <p className="text-xs text-gray-400">
+              Uses Y.Text CRDT - multiple users can edit simultaneously without conflicts.
+            </p>
+          </div>
         </div>
       </div>
     </main>

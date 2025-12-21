@@ -74,6 +74,7 @@ interface ICloudAdapter {
   on(event: string, listener: (...args: any[]) => void): void;
   off(event: string, listener: (...args: any[]) => void): void;
   state: ConnectionState;
+  isOnline: boolean;
 }
 
 export class MindCache {
@@ -544,6 +545,21 @@ export class MindCache {
 
   get isCloud(): boolean {
     return this._cloudConfig !== null;
+  }
+
+  /**
+   * Browser network status. Returns true if online or in local-only mode.
+   * In cloud mode, this updates instantly when network status changes.
+   */
+  get isOnline(): boolean {
+    if (!this._cloudAdapter) {
+      // Local mode - check navigator directly or assume online
+      if (typeof navigator !== 'undefined') {
+        return navigator.onLine;
+      }
+      return true;
+    }
+    return this._cloudAdapter.isOnline;
   }
 
   async waitForSync(): Promise<void> {

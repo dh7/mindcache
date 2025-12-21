@@ -20,13 +20,72 @@ export class CloudAdapter {
   private reconnectAttempts = 0;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private _state: ConnectionState = 'disconnected';
+  private _isOnline: boolean = true; // Browser network status
   private listeners: Partial<{ [K in keyof CloudAdapterEvents]: CloudAdapterEvents[K][] }> = {};
   private token: string | null = null;
+  private handleOnline: (() => void) | null = null;
+  private handleOffline: (() => void) | null = null;
 
   constructor(private config: CloudConfig) {
 
     if (!config.baseUrl) {
       throw new Error('MindCache Cloud: baseUrl is required. Please provide the cloud API URL in your configuration.');
+    }
+
+    // Setup browser online/offline detection
+    this.setupNetworkDetection();
+  }
+
+  /** Browser network status - instantly updated via navigator.onLine */
+  get isOnline(): boolean {
+    return this._isOnline;
+  }
+
+  private setupNetworkDetection(): void {
+    // Only run in browser environment
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      return;
+    }
+
+    // Set initial state
+    this._isOnline = navigator.onLine;
+
+    this.handleOnline = () => {
+      console.log('☁️ CloudAdapter: Network is back online');
+      this._isOnline = true;
+      this.emit('network_online');
+
+      // If we were connected or connecting before, try to reconnect
+      if (this._state === 'disconnected' || this._state === 'error') {
+        this.connect();
+      }
+    };
+
+    this.handleOffline = () => {
+      console.log('☁️ CloudAdapter: Network went offline');
+      this._isOnline = false;
+      this.emit('network_offline');
+
+      // Update state immediately instead of waiting for WS timeout
+      if (this._state === 'connected' || this._state === 'connecting') {
+        this._state = 'disconnected';
+        this.emit('disconnected');
+      }
+    };
+
+    window.addEventListener('online', this.handleOnline);
+    window.addEventListener('offline', this.handleOffline);
+  }
+
+  private cleanupNetworkDetection(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (this.handleOnline) {
+      window.removeEventListener('online', this.handleOnline);
+    }
+    if (this.handleOffline) {
+      window.removeEventListener('offline', this.handleOffline);
     }
   }
 
@@ -153,6 +212,9 @@ export class CloudAdapter {
       this.ws.close();
       this.ws = null;
     }
+
+    // Cleanup network detection listeners
+    this.cleanupNetworkDetection();
 
     this._state = 'disconnected';
     this.emit('disconnected');
