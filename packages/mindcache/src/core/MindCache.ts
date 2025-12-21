@@ -87,7 +87,7 @@ export class MindCache {
   private globalListeners: GlobalListener[] = [];
 
   // Metadata
-  public readonly version = '3.3.1';
+  public readonly version = '3.3.2';
 
   // Internal flag to prevent sync loops when receiving remote updates
   // (Less critical with Yjs but kept for API compat)
