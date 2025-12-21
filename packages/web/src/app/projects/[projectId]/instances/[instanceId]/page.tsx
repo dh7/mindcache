@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import { Instance, KeyEntry, SyncData, Permission, API_URL, WS_URL } from './types';
+import { Instance, Permission, API_URL } from './types';
 import { InstanceHeader, ActionButtons, TagFilter, KeyPropertiesPanel, EditableKeyName } from './components';
 import ChatInterface from './components/ChatInterface';
+import { MindCache, STMEntry as KeyEntry, STM as SyncData } from 'mindcache';
 
 export default function InstanceEditorPage() {
   const params = useParams();
@@ -25,7 +26,7 @@ export default function InstanceEditorPage() {
   const [showAddKey, setShowAddKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
-  const [newKeyType, setNewKeyType] = useState<'text' | 'json' | 'image' | 'file'>('text');
+  const [newKeyType, setNewKeyType] = useState<'text' | 'json' | 'image' | 'file' | 'document'>('text');
 
   // Track which keys have unsaved changes
   const [keyValues, setKeyValues] = useState<Record<string, string>>({});
@@ -78,7 +79,7 @@ export default function InstanceEditorPage() {
     }
   }, [isResizing]);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const mcRef = useRef<MindCache | null>(null);
   const saveTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   // Fetch instance metadata from list endpoint
@@ -129,132 +130,153 @@ export default function InstanceEditorPage() {
     }
     setEditingName(false);
   };
-
-  const connect = useCallback(async () => {
-    try {
-      // Get short-lived WS token from API
-      const jwtToken = await getToken();
-      const res = await fetch(`${API_URL}/api/ws-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
-        },
-        body: JSON.stringify({ instanceId })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Failed to get token' }));
-        setError(err.details || err.error || 'Failed to authenticate');
+  // Initialize MindCache SDK
+  useEffect(() => {
+    const initMindCache = async () => {
+      if (mcRef.current) {
         return;
       }
 
-      const { token: wsToken, permission: perm } = await res.json();
-
-      // Connect with token in URL (server validates before upgrade)
-      const ws = new WebSocket(`${WS_URL}/sync/${instanceId}?token=${wsToken}`);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        // Auth already verified by server, wait for sync message
-        setConnected(true);
-        setPermission(perm);
+      try {
         setError(null);
-      };
+        const mc = new MindCache({
+          cloud: {
+            instanceId,
+            baseUrl: API_URL,
+            tokenProvider: async () => {
+              const jwtToken = await getToken();
+              const res = await fetch(`${API_URL}/api/ws-token`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
+                },
+                body: JSON.stringify({ instanceId })
+              });
 
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        console.log('Received message:', msg);
-
-        switch (msg.type) {
-          case 'sync':
-            setKeys(msg.data || {});
-            break;
-          case 'key_updated':
-            setKeys(prev => ({
-              ...prev,
-              [msg.key]: {
-                value: msg.value,
-                attributes: msg.attributes,
-                updatedAt: msg.timestamp
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: 'Failed to get token' }));
+                setError(err.details || err.error || 'Failed to authenticate');
+                throw new Error('Failed to get token');
               }
-            }));
-            break;
-          case 'key_deleted':
-            setKeys(prev => {
-              const next = { ...prev };
-              delete next[msg.key];
-              return next;
-            });
-            break;
-          case 'cleared':
-            setKeys({});
-            break;
-          case 'error':
-            console.error('Server error:', msg.error);
-            break;
-        }
-      };
+              const { token, permission: perm } = await res.json();
+              setPermission(perm);
+              return token;
+            }
+          }
+        });
 
-      ws.onclose = () => {
-        setConnected(false);
-      };
+        // Subscribe to all changes
+        mc.subscribeToAll(() => {
+          setConnected(mc.connectionState === 'connected');
+          if (mc.connectionState === 'error') {
+            setError('Connection error');
+          } else if (mc.connectionState === 'connected') {
+            setError(null);
+          }
+          // Build keys from primitives (more stable API)
+          const keyList = mc.keys().filter(k => !k.startsWith('$'));
+          const entries: SyncData = {};
+          for (const key of keyList) {
+            const value = mc.get_value(key);
+            const attributes = mc.get_attributes(key);
+            if (attributes) {
+              entries[key] = { value, attributes };
+            }
+          }
+          setKeys(entries);
+        });
 
-      ws.onerror = () => {
-        setError('Connection error');
-      };
-    } catch (err) {
-      console.error('Failed to connect:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect');
-    }
+        mcRef.current = mc;
+        setConnected(true);
+      } catch (err) {
+        console.error('Failed to initialize MindCache:', err);
+        setError(err instanceof Error ? err.message : 'Failed to connect');
+      }
+    };
+
+    initMindCache();
+
+    return () => {
+      mcRef.current?.disconnect();
+      mcRef.current = null;
+    };
   }, [instanceId, getToken]);
 
-  useEffect(() => {
-    connect();
-    return () => {
-      wsRef.current?.close();
-    };
-  }, [connect]);
+  // Helper to send updates via MindCache SDK
+  const sendMessage = (msg: { type: string; key?: string; value?: unknown; attributes?: KeyEntry['attributes']; timestamp?: number }) => {
+    if (!mcRef.current) {
+      console.error('MindCache not initialized');
+      return;
+    }
 
-  const sendMessage = (msg: object) => {
-    console.log('Sending message:', msg, 'WebSocket state:', wsRef.current?.readyState);
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(msg));
-      console.log('Message sent successfully');
-    } else {
-      console.error('WebSocket not open, cannot send');
+    switch (msg.type) {
+      case 'set':
+        if (msg.key && msg.attributes) {
+          // Check if this is an existing document type key
+          const existingEntry = keys[msg.key];
+          const isExistingDocument = existingEntry?.attributes?.type === 'document';
+
+          if (msg.attributes.type === 'document' && !existingEntry) {
+            // Creating a new document
+            mcRef.current.set_document(msg.key, String(msg.value ?? ''));
+          } else if (isExistingDocument) {
+            // Updating an existing document - use set_attributes to not overwrite Y.Text
+            mcRef.current.set_attributes(msg.key, msg.attributes);
+          } else {
+            // Non-document type
+            mcRef.current.set_value(msg.key, msg.value, msg.attributes);
+          }
+        }
+        break;
+      case 'delete':
+        if (msg.key) {
+          mcRef.current.delete_key(msg.key);
+        }
+        break;
+      case 'clear':
+        mcRef.current.clear();
+        break;
     }
   };
 
   const handleAddKey = () => {
-    if (!newKeyName.trim()) {
+    if (!newKeyName.trim() || !mcRef.current) {
       return;
     }
 
-    let value: unknown = newKeyValue;
-    if (newKeyType === 'json') {
-      try {
-        value = JSON.parse(newKeyValue);
-      } catch {
-        alert('Invalid JSON');
-        return;
+    // For document type, use set_document directly
+    if (newKeyType === 'document') {
+      mcRef.current.set_document(newKeyName, newKeyValue);
+    } else {
+      let value: unknown = newKeyValue;
+      if (newKeyType === 'json') {
+        try {
+          value = JSON.parse(newKeyValue);
+        } catch {
+          alert('Invalid JSON');
+          return;
+        }
       }
-    }
 
-    sendMessage({
-      type: 'set',
-      key: newKeyName,
-      value,
-      attributes: {
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false,
-        type: newKeyType,
-        tags: []
-      },
-      timestamp: Date.now()
-    });
+      sendMessage({
+        type: 'set',
+        key: newKeyName,
+        value,
+        attributes: {
+          readonly: false,
+          visible: true,
+          hardcoded: false,
+          template: false,
+          type: newKeyType,
+          tags: [],
+          contentTags: [],
+          systemTags: [],
+          zIndex: 0
+        },
+        timestamp: Date.now()
+      });
+    }
 
     setNewKeyName('');
     setNewKeyValue('');
@@ -287,7 +309,7 @@ export default function InstanceEditorPage() {
     // Update available tags
     const allTags = new Set<string>();
     Object.values(keys).forEach(entry => {
-      entry.attributes.tags?.forEach(tag => allTags.add(tag));
+      entry?.attributes?.tags?.forEach(tag => allTags.add(tag));
     });
     setAvailableTags(Array.from(allTags).sort());
   }, [keys, editingKey]);
@@ -295,7 +317,16 @@ export default function InstanceEditorPage() {
   const handleKeyValueChange = (key: string, newValue: string) => {
     setKeyValues(prev => ({ ...prev, [key]: newValue }));
 
-    // Clear existing timeout for this key
+    const entry = keys[key];
+    const isDocument = entry?.attributes?.type === 'document';
+
+    // For document type, save immediately (real-time collab via Yjs)
+    if (isDocument && mcRef.current) {
+      mcRef.current.replace_document_text(key, newValue);
+      return;
+    }
+
+    // For other types, debounce saves
     if (saveTimeoutRef.current[key]) {
       clearTimeout(saveTimeoutRef.current[key]);
     }
@@ -393,14 +424,19 @@ export default function InstanceEditorPage() {
     // Update local state
     setKeyValues(prev => ({ ...prev, [key]: '' }));
 
-    // Send to server
-    sendMessage({
-      type: 'set',
-      key,
-      value: '',
-      attributes: entry.attributes,
-      timestamp: Date.now()
-    });
+    // For document type, use replace_document_text for RT sync
+    if (entry.attributes.type === 'document' && mcRef.current) {
+      mcRef.current.replace_document_text(key, '');
+    } else {
+      // Send to server via sendMessage for other types
+      sendMessage({
+        type: 'set',
+        key,
+        value: '',
+        attributes: entry.attributes,
+        timestamp: Date.now()
+      });
+    }
   };
 
   // Toggle the properties panel for a key
@@ -411,7 +447,7 @@ export default function InstanceEditorPage() {
   // Save attributes from the inline KeyPropertiesPanel component
   const handleSaveAttributes = (oldKey: string, newKeyName: string, attributes: KeyEntry['attributes']) => {
     const currentEntry = keys[oldKey];
-    if (!currentEntry) {
+    if (!currentEntry || !mcRef.current) {
       return;
     }
 
@@ -422,14 +458,22 @@ export default function InstanceEditorPage() {
         return;
       }
 
-      // Create new key with updated attributes
-      sendMessage({
-        type: 'set',
-        key: newKeyName,
-        value: currentEntry.value,
-        attributes,
-        timestamp: Date.now()
-      });
+      const isDocument = currentEntry.attributes?.type === 'document';
+
+      if (isDocument) {
+        // For documents, get the text content and create new document
+        const textContent = mcRef.current.get_document_text(oldKey) || '';
+        mcRef.current.set_document(newKeyName, textContent, attributes);
+      } else {
+        // Create new key with updated attributes
+        sendMessage({
+          type: 'set',
+          key: newKeyName,
+          value: currentEntry.value,
+          attributes,
+          timestamp: Date.now()
+        });
+      }
 
       // Delete old key
       sendMessage({
@@ -638,6 +682,8 @@ export default function InstanceEditorPage() {
               type: entry.attributes.type || 'text',
               contentType: entry.attributes.contentType,
               tags: entry.attributes.tags || [],
+              contentTags: entry.attributes.contentTags || [],
+              systemTags: entry.attributes.systemTags || [],
               zIndex: entry.attributes.zIndex ?? 0
             },
             timestamp: Date.now()
@@ -733,6 +779,8 @@ export default function InstanceEditorPage() {
                   template: false,
                   type: 'text',
                   tags: [],
+                  contentTags: [],
+                  systemTags: [],
                   zIndex: 0
                 }
               };
@@ -831,6 +879,8 @@ export default function InstanceEditorPage() {
                 type: entry.attributes.type || 'text',
                 contentType: entry.attributes.contentType,
                 tags: entry.attributes.tags || [],
+                contentTags: entry.attributes.contentTags || [],
+                systemTags: entry.attributes.systemTags || [],
                 zIndex: entry.attributes.zIndex ?? 0
               },
               timestamp: Date.now()
@@ -1077,7 +1127,7 @@ export default function InstanceEditorPage() {
                     <div
                       className="flex justify-between items-start cursor-pointer"
                       onClick={(e) => {
-                      // Toggle expand/collapse if click is not on an interactive element
+                        // Toggle expand/collapse if click is not on an interactive element
                         if (canEdit) {
                           const target = e.target as HTMLElement;
                           // Don't toggle if clicking on buttons or inputs
@@ -1106,7 +1156,7 @@ export default function InstanceEditorPage() {
                           <>
                             {indicators.length > 0 && (
                               <span className="text-xs text-yellow-400">
-                              [{indicators.join('')}]
+                                [{indicators.join('')}]
                               </span>
                             )}
                             {entry.attributes.tags && entry.attributes.tags.length > 0 && (
@@ -1123,7 +1173,7 @@ export default function InstanceEditorPage() {
                             )}
                             {entry.attributes.zIndex !== undefined && entry.attributes.zIndex !== 0 && (
                               <span className="text-xs text-zinc-500">
-                              z:{entry.attributes.zIndex}
+                                z:{entry.attributes.zIndex}
                               </span>
                             )}
                           </>
@@ -1195,7 +1245,7 @@ export default function InstanceEditorPage() {
                                 }}
                                 className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
                               >
-                              Replace Image
+                                Replace Image
                               </button>
                             )}
                           </div>
@@ -1219,7 +1269,7 @@ export default function InstanceEditorPage() {
                                 }}
                                 className="mt-2 px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-300"
                               >
-                              Replace File
+                                Replace File
                               </button>
                             )}
                           </div>
@@ -1232,19 +1282,25 @@ export default function InstanceEditorPage() {
                               onChange={(e) => handleKeyValueChange(key, e.target.value)}
                               onFocus={() => setEditingKey(key)}
                               onBlur={() => {
-                              // Delay clearing to allow real-time sync to respect our edit
+                                // Delay clearing to allow real-time sync to respect our edit
                                 setTimeout(() => setEditingKey(null), 100);
                               }}
                               placeholder="Enter value..."
                             />
-                            {(pendingSaves.has(key) || savedKeys.has(key) || editingKey === key) && (
+                            {/* For document type, show "Real-time sync" instead of save status */}
+                            {contentType === 'document' ? (
+                              <div className="text-xs text-green-400 mt-1 flex items-center gap-1">
+                                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                                Real-time sync
+                              </div>
+                            ) : (pendingSaves.has(key) || savedKeys.has(key) || editingKey === key) && (
                               <div className="flex items-center justify-end gap-2 text-xs mt-1">
                                 {pendingSaves.has(key) && (
                                   <span className="text-amber-400 flex items-center gap-1">
                                     <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
-                                  Saving...
+                                    Saving...
                                   </span>
                                 )}
                                 {savedKeys.has(key) && !pendingSaves.has(key) && (
@@ -1252,7 +1308,7 @@ export default function InstanceEditorPage() {
                                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                     </svg>
-                                  Saved
+                                    Saved
                                   </span>
                                 )}
                                 {!savedKeys.has(key) && !pendingSaves.has(key) && editingKey === key && (
@@ -1260,7 +1316,7 @@ export default function InstanceEditorPage() {
                                     onClick={() => handleManualSave(key)}
                                     className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs transition-colors"
                                   >
-                                  Save
+                                    Save
                                   </button>
                                 )}
                               </div>
@@ -1320,15 +1376,16 @@ export default function InstanceEditorPage() {
                     <select
                       className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
                       value={newKeyType}
-                      onChange={(e) => setNewKeyType(e.target.value as 'text' | 'json')}
+                      onChange={(e) => setNewKeyType(e.target.value as 'text' | 'json' | 'image' | 'file' | 'document')}
                     >
                       <option value="text">Text</option>
                       <option value="json">JSON</option>
+                      <option value="document">Document (Real-time)</option>
                       <option value="image">Image</option>
                       <option value="file">File</option>
                     </select>
                   </div>
-                  {(newKeyType === 'text' || newKeyType === 'json') && (
+                  {(newKeyType === 'text' || newKeyType === 'json' || newKeyType === 'document') && (
                     <div>
                       <label className="block text-xs text-gray-400 mb-1">Value</label>
                       <textarea
@@ -1361,7 +1418,7 @@ export default function InstanceEditorPage() {
                         }}
                         className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm"
                       >
-                      Upload {newKeyType === 'image' ? 'Image' : 'File'}
+                        Upload {newKeyType === 'image' ? 'Image' : 'File'}
                       </button>
                     </div>
                   )}
@@ -1371,15 +1428,15 @@ export default function InstanceEditorPage() {
                     onClick={() => setShowAddKey(false)}
                     className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-500 text-sm"
                   >
-                  Cancel
+                    Cancel
                   </button>
-                  {(newKeyType === 'text' || newKeyType === 'json') && (
+                  {(newKeyType === 'text' || newKeyType === 'json' || newKeyType === 'document') && (
                     <button
                       onClick={handleAddKey}
                       className="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 text-sm"
                       disabled={!newKeyName.trim()}
                     >
-                    Add Key
+                      Add Key
                     </button>
                   )}
                 </div>

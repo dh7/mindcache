@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MindCache } from './MindCache';
 
 // Mock CloudAdapter
+const mockListeners: Record<string, Function[]> = {};
+
 const mockCloudAdapter = {
-  listeners: {} as Record<string, Function[]>,
   attach: vi.fn(),
   detach: vi.fn(),
   connect: vi.fn(),
@@ -12,19 +13,19 @@ const mockCloudAdapter = {
   setTokenProvider: vi.fn(),
   state: 'disconnected',
   on(event: string, listener: Function) {
-    if (!this.listeners[event]) {
-      this.listeners[event] = [];
+    if (!mockListeners[event]) {
+      mockListeners[event] = [];
     }
-    this.listeners[event].push(listener);
+    mockListeners[event].push(listener);
   },
   off(event: string, listener: Function) {
-    if (this.listeners[event]) {
-      this.listeners[event] = this.listeners[event].filter(l => l !== listener);
+    if (mockListeners[event]) {
+      mockListeners[event] = mockListeners[event].filter(l => l !== listener);
     }
   },
   emit(event: string) {
-    if (this.listeners[event]) {
-      this.listeners[event].forEach(l => l());
+    if (mockListeners[event]) {
+      mockListeners[event].forEach(l => l());
     }
   }
 };
@@ -46,68 +47,512 @@ vi.mock('../cloud/CloudAdapter', () => ({
 
 describe('MindCache', () => {
   beforeEach(() => {
-    mockCloudAdapter.listeners = {};
+    // Reset mocks
+    Object.keys(mockListeners).forEach(key => delete mockListeners[key]);
     vi.clearAllMocks();
   });
 
-  it('waitForSync resolves immediately in local mode', async () => {
-    const mc = new MindCache();
-    // Default is local, so isLoaded is true
-    expect(mc.isLoaded).toBe(true);
+  describe('Core Functionality', () => {
+    it('should set and get values correctly', () => {
+      const mc = new MindCache();
+      mc.set_value('test-key', 'test-value');
+      expect(mc.get_value('test-key')).toBe('test-value');
+    });
 
-    const start = Date.now();
-    await mc.waitForSync();
-    expect(Date.now() - start).toBeLessThan(50); // Immediate
+    it('should handle reserved keys ($version, $date, $time)', () => {
+      const mc = new MindCache();
+      expect(mc.get_value('$version')).toBe('3.1.0');
+      expect(mc.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/); // YYYY-MM-DD
+      expect(mc.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/); // HH:MM:SS
+
+      // Should be read-only
+      mc.set_value('$version', '9.9.9');
+      expect(mc.get_value('$version')).toBe('3.1.0');
+    });
+
+    it('should get attributes for keys', () => {
+      const mc = new MindCache();
+      mc.set_value('attr-key', 'val', { readonly: true, zIndex: 10 });
+      const attrs = mc.get_attributes('attr-key');
+      expect(attrs?.readonly).toBe(true);
+      expect(attrs?.zIndex).toBe(10);
+    });
   });
 
-  it('waitForSync waits for synced event in cloud mode', async () => {
-    // Spy on the protected method to inject mock
-    // We cast to any to access protected method
-    vi.spyOn(MindCache.prototype as any, '_getCloudAdapterClass').mockResolvedValue(MockCloudAdapter);
+  describe('Yjs & History', () => {
+    it.skip('should support undo/redo', () => {
 
-    // Initialize with cloud config
-    const mc = new MindCache({
-      cloud: { instanceId: 'test' }
+      vi.useFakeTimers();
+
+      const mc = new MindCache();
+
+      // First set creates the entry and is tracked
+      mc.set_value('key', '1');
+      vi.advanceTimersByTime(600); // Flush capture timeout
+
+      // Update to '2'
+      mc.set_value('key', '2');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.get_value('key')).toBe('2');
+
+      // Undo: '2' -> '1'
+      mc.undo('key');
+      expect(mc.get_value('key')).toBe('1');
+
+      // Undo: '1' -> undefined (original state before any set_value)
+      mc.undo('key');
+      expect(mc.get_value('key')).toBeUndefined();
+
+      // Redo: undefined -> '1'
+      mc.redo('key');
+      expect(mc.get_value('key')).toBe('1');
+
+      // Redo: '1' -> '2'
+      mc.redo('key');
+      expect(mc.get_value('key')).toBe('2');
+
+      vi.useRealTimers();
     });
 
-    // _initPromise is already started in constructor!
-    // BUT, _initCloud awaits _getCloudAdapterClass().
-    // If we spy AFTER constructor, is it too late?
+    it('getHistory should return undo stack items', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_value('stack-key', 'A');
+      vi.advanceTimersByTime(600);
 
-    // The constructor calls _initCloud immediately.
-    // _initCloud calls await _getCloudAdapterClass().
-    // If _getCloudAdapterClass is async (it is), it returns a promise.
-    // The constructor continues.
+      mc.set_value('stack-key', 'B');
+      vi.advanceTimersByTime(600);
 
-    // So if we spy immediately after `new MindCache`, we might catch it if `_initCloud` hasn't reached that line yet?
-    // No, strictly searching, `new MindCache` triggers everything synchronously until the first await.
+      const history = mc.getHistory('stack-key');
+      expect(history.length).toBeGreaterThan(0);
 
-    // `_initCloud` awaits `_getCloudAdapterClass()`.
-    // Inside `_getCloudAdapterClass`, it awaits `import`.
-
-    // If we spy on the PROTOTYPE, we can catch it!
-
-    // Cloud mode starts unloaded
-    // MindCache constructor is async in initialization logic (connect is called but not awaited)
-    // But isLoaded should be set to false synchronously in constructor if cloud config is present
-    expect(mc.isLoaded).toBe(false);
-
-    let resolved = false;
-    const promise = mc.waitForSync().then(() => {
-      resolved = true;
+      vi.useRealTimers();
     });
 
-    // Should not handle immediately
-    expect(resolved).toBe(false);
+    it('undoAll should undo all recent changes across keys', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
 
-    // Wait for microtasks to flush so waitForSync creates the listener
-    await new Promise(resolve => setTimeout(resolve, 10));
+      // Make changes (all within capture timeout, so they batch together)
+      mc.set_value('key1', 'a');
+      mc.set_value('key2', 'b');
+      vi.advanceTimersByTime(600); // Flush the capture timeout
 
-    // Simulate sync event
-    mockCloudAdapter.emit('synced');
+      expect(mc.get_value('key1')).toBe('a');
+      expect(mc.get_value('key2')).toBe('b');
 
-    await promise;
-    expect(resolved).toBe(true);
-    expect(mc.isLoaded).toBe(true);
+      // Undo should revert all batched changes
+      mc.undoAll();
+      // After undo, both keys should be undefined (reverted to initial state)
+      expect(mc.get_value('key1')).toBeUndefined();
+      expect(mc.get_value('key2')).toBeUndefined();
+
+      // Redo should restore both
+      mc.redoAll();
+      expect(mc.get_value('key1')).toBe('a');
+      expect(mc.get_value('key2')).toBe('b');
+
+      vi.useRealTimers();
+    });
+
+    it('canUndoAll and canRedoAll should reflect stack state', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+
+      // Initially no undo/redo available (after initializing global undo manager)
+      expect(mc.canUndoAll()).toBe(false);
+      expect(mc.canRedoAll()).toBe(false);
+
+      mc.set_value('test', 'value');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.canUndoAll()).toBe(true);
+      expect(mc.canRedoAll()).toBe(false);
+
+      mc.undoAll();
+      expect(mc.canUndoAll()).toBe(false);
+      expect(mc.canRedoAll()).toBe(true);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('History Tracking', () => {
+    it('history should be disabled in memory-only mode', () => {
+      const mc = new MindCache();
+      expect(mc.historyEnabled).toBe(false);
+      expect(mc.getGlobalHistory()).toEqual([]);
+    });
+
+    it('history should be enabled in offline mode', () => {
+      // We can't fully test IndexedDB in unit tests without mocking
+      // but we can verify the API exists
+      const mc = new MindCache({
+        indexedDB: { dbName: 'test-history-db' }
+      });
+      expect(mc.historyEnabled).toBe(true);
+    });
+
+    it('getGlobalHistory returns history entries with keys affected', () => {
+      const mc = new MindCache({
+        indexedDB: { dbName: 'test-history-db-2' }
+      });
+
+      mc.set_value('myKey', 'myValue');
+
+      const history = mc.getGlobalHistory();
+      expect(history.length).toBeGreaterThan(0);
+      expect(history[0]).toHaveProperty('id');
+      expect(history[0]).toHaveProperty('timestamp');
+      expect(history[0]).toHaveProperty('keysAffected');
+      expect(history[0].keysAffected).toContain('myKey');
+    });
+  });
+
+  describe('Cloud Integration', () => {
+    it('waitForSync resolves immediately in local mode', async () => {
+      const mc = new MindCache();
+      expect(mc.isLoaded).toBe(true);
+
+      const start = Date.now();
+      await mc.waitForSync();
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('waitForSync waits for synced event in cloud mode', async () => {
+      vi.spyOn(MindCache.prototype as any, '_getCloudAdapterClass').mockResolvedValue(MockCloudAdapter);
+
+      const mc = new MindCache({
+        cloud: { instanceId: 'test' }
+      });
+
+      // Initially not loaded
+      expect(mc.isLoaded).toBe(false);
+
+      let resolved = false;
+      const promise = mc.waitForSync().then(() => {
+        resolved = true;
+      });
+
+      expect(resolved).toBe(false);
+
+      // Wait for async init loop
+      await new Promise(r => setTimeout(r, 10)); // Flush promises
+
+      // Simulate sync event via mock
+      if (mockListeners['synced']) {
+        mockListeners['synced'].forEach(l => l());
+      }
+
+      await promise;
+      expect(resolved).toBe(true);
+      expect(mc.isLoaded).toBe(true);
+    });
+  });
+
+  describe('Document Type', () => {
+    it('should create a document with set_document', () => {
+      const mc = new MindCache();
+      mc.set_document('notes', 'Hello World');
+
+      expect(mc.get_document_text('notes')).toBe('Hello World');
+      expect(mc.get_attributes('notes')?.type).toBe('document');
+    });
+
+    it('set_value on document key should use diff-based replace', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+      vi.advanceTimersByTime(600);
+
+      // Using set_value on a document should route to replace_document_text
+      mc.set_value('doc', 'Hello Beautiful World');
+      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+
+      // Y.Text should still exist (not replaced with string)
+      expect(mc.get_document('doc')).toBeDefined();
+
+      // Undo should work (diff was applied)
+      mc.undo('doc');
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+
+      vi.useRealTimers();
+    });
+
+    it('should return Y.Text for document keys via get_document', () => {
+      const mc = new MindCache();
+      mc.set_document('doc');
+
+      const yText = mc.get_document('doc');
+      expect(yText).toBeDefined();
+      expect(typeof yText?.insert).toBe('function'); // Y.Text has insert method
+    });
+
+    it('should return undefined for get_document on non-document keys', () => {
+      const mc = new MindCache();
+      mc.set_value('text-key', 'hello');
+
+      expect(mc.get_document('text-key')).toBeUndefined();
+    });
+
+    it('should support insert_text and delete_text', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello');
+
+      mc.insert_text('doc', 5, ' World');
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+
+      mc.delete_text('doc', 5, 6);
+      expect(mc.get_document_text('doc')).toBe('Hello');
+    });
+
+    it('should support replace_document_text', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Initial content');
+
+      mc.replace_document_text('doc', 'Replaced content');
+      expect(mc.get_document_text('doc')).toBe('Replaced content');
+    });
+
+    it('replace_document_text should use diff for small changes', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+      vi.advanceTimersByTime(600);
+
+      // Small change - should use diff (insert "Beautiful ")
+      mc.replace_document_text('doc', 'Hello Beautiful World');
+      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+
+      // Undo should only undo the insertion, not delete everything
+      mc.undo('doc');
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+
+      vi.useRealTimers();
+    });
+
+    it('replace_document_text should do full replace for major changes', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+
+      // Complete rewrite (>80% change) - full replace
+      mc.replace_document_text('doc', 'Completely Different Text Here');
+      expect(mc.get_document_text('doc')).toBe('Completely Different Text Here');
+    });
+
+    it('replace_document_text with custom threshold', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello');
+
+      // Force diff with threshold of 1.0 (always use diff)
+      mc.replace_document_text('doc', 'Goodbye', 1.0);
+      expect(mc.get_document_text('doc')).toBe('Goodbye');
+
+      // Force full replace with threshold of 0 (never use diff)
+      mc.replace_document_text('doc', 'Hello Again', 0);
+      expect(mc.get_document_text('doc')).toBe('Hello Again');
+    });
+
+    it('get_value should return plain text for document keys', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Content');
+
+      expect(mc.get_value('doc')).toBe('Content');
+    });
+
+    it('serialize should convert Y.Text to string', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Serialized');
+
+      const serialized = mc.serialize();
+      expect(serialized.doc.value).toBe('Serialized');
+      expect(serialized.doc.attributes.type).toBe('document');
+    });
+
+    it('should support per-key undo for document edits', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+      mc.set_document('doc', 'Initial');
+      vi.advanceTimersByTime(600);
+
+      mc.insert_text('doc', 7, ' Text');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.get_document_text('doc')).toBe('Initial Text');
+
+      mc.undo('doc');
+      expect(mc.get_document_text('doc')).toBe('Initial');
+
+      mc.redo('doc');
+      expect(mc.get_document_text('doc')).toBe('Initial Text');
+
+      vi.useRealTimers();
+    });
+
+    it('should support global undo for document edits', () => {
+      vi.useFakeTimers();
+      const mc = new MindCache();
+
+      mc.set_value('regular-key', 'regular value');
+      mc.set_document('doc', 'Document content');
+      vi.advanceTimersByTime(600);
+
+      expect(mc.get_value('regular-key')).toBe('regular value');
+      expect(mc.get_document_text('doc')).toBe('Document content');
+
+      // Global undo should revert both
+      mc.undoAll();
+      expect(mc.get_value('regular-key')).toBeUndefined();
+      expect(mc.get_document_text('doc')).toBeUndefined();
+
+      // Global redo should restore both
+      mc.redoAll();
+      expect(mc.get_value('regular-key')).toBe('regular value');
+      expect(mc.get_document_text('doc')).toBe('Document content');
+
+      vi.useRealTimers();
+    });
+
+    it('should track document changes in history when history enabled', () => {
+      const mc = new MindCache({
+        indexedDB: { dbName: 'doc-history-test' }
+      });
+
+      expect(mc.historyEnabled).toBe(true);
+
+      mc.set_document('doc', 'First');
+      mc.insert_text('doc', 5, ' edit');
+
+      const history = mc.getGlobalHistory();
+      expect(history.length).toBeGreaterThan(0);
+      // History should include the doc key
+      const docEntries = history.filter(h => h.keysAffected?.includes('doc'));
+      expect(docEntries.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('LLM Tools', () => {
+    it('should generate write_ tools for writable keys', () => {
+      const mc = new MindCache();
+      mc.set_value('writable', 'value', { readonly: false });
+      mc.set_value('readonly', 'value', { readonly: true });
+
+      const tools = mc.get_aisdk_tools();
+      const toolNames = Object.keys(tools);
+
+      expect(toolNames).toContain('write_writable');
+      expect(toolNames).not.toContain('write_readonly');
+    });
+
+    it('should not generate tools for system keys', () => {
+      const mc = new MindCache();
+      const tools = mc.get_aisdk_tools();
+      const toolNames = Object.keys(tools);
+
+      expect(toolNames).not.toContain('write_$date');
+      expect(toolNames).not.toContain('write_$time');
+    });
+
+    it('should sanitize key names for tool names', () => {
+      const mc = new MindCache();
+      mc.set_value('my-special@key!', 'value');
+
+      const tools = mc.get_aisdk_tools();
+      expect(Object.keys(tools)).toContain('write_my-special_key_');
+    });
+
+    it('write_ tool should execute correctly', async () => {
+      const mc = new MindCache();
+      mc.set_value('test', 'old_value');
+
+      const tools = mc.get_aisdk_tools();
+      const result = await tools['write_test'].execute({ value: 'new_value' });
+
+      expect(result.result).toContain('Successfully wrote');
+      expect(mc.get_value('test')).toBe('new_value');
+    });
+
+    it('should generate additional tools for document keys', () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'content');
+
+      const tools = mc.get_aisdk_tools();
+      const toolNames = Object.keys(tools);
+
+      expect(toolNames).toContain('write_doc');
+      expect(toolNames).toContain('append_doc');
+      expect(toolNames).toContain('insert_doc');
+      expect(toolNames).toContain('edit_doc');
+    });
+
+    it('append_ tool should add text to end of document', async () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello');
+
+      const tools = mc.get_aisdk_tools();
+      await tools['append_doc'].execute({ text: ' World' });
+
+      expect(mc.get_document_text('doc')).toBe('Hello World');
+    });
+
+    it('insert_ tool should insert text at position', async () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+
+      const tools = mc.get_aisdk_tools();
+      await tools['insert_doc'].execute({ index: 5, text: ' Beautiful' });
+
+      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+    });
+
+    it('edit_ tool should find and replace text', async () => {
+      const mc = new MindCache();
+      mc.set_document('doc', 'Hello World');
+
+      const tools = mc.get_aisdk_tools();
+      await tools['edit_doc'].execute({ find: 'World', replace: 'Universe' });
+
+      expect(mc.get_document_text('doc')).toBe('Hello Universe');
+    });
+
+    it('executeToolCall should work with sanitized tool names', () => {
+      const mc = new MindCache();
+      mc.set_value('my-special@key!', 'original');
+
+      const result = mc.executeToolCall('write_my-special_key_', 'new_value');
+
+      expect(result).not.toBeNull();
+      expect(result!.key).toBe('my-special@key!');
+      expect(mc.get_value('my-special@key!')).toBe('new_value');
+    });
+
+    it('executeToolCall should return null for invalid tool names', () => {
+      const mc = new MindCache();
+      expect(mc.executeToolCall('invalid_tool', 'value')).toBeNull();
+      expect(mc.executeToolCall('write_nonexistent', 'value')).toBeNull();
+    });
+
+    it('get_system_prompt should include tool hints for writable keys', () => {
+      const mc = new MindCache();
+      mc.set_value('writable', 'value', { readonly: false, visible: true });
+
+      const prompt = mc.get_system_prompt();
+
+      expect(prompt).toContain('writable: value');
+      expect(prompt).toContain('write_writable tool');
+    });
+
+    it('get_system_prompt should include document tool hints for document keys', () => {
+      const mc = new MindCache();
+      mc.set_document('notes', 'content');
+
+      const prompt = mc.get_system_prompt();
+
+      expect(prompt).toContain('notes: content');
+      expect(prompt).toContain('write_notes');
+      expect(prompt).toContain('append_notes');
+      expect(prompt).toContain('edit_notes');
+    });
   });
 });

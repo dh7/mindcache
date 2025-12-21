@@ -1,12 +1,9 @@
-/**
- * MindCacheInstance Durable Object
- *
- * Each MindCache Instance maps to one Durable Object.
- * Handles:
- * - Key-value storage (SQLite)
- * - WebSocket connections for real-time sync
- * - Broadcasting changes to all connected clients
- */
+import { DurableObject } from 'cloudflare:workers';
+import * as Y from 'yjs';
+import * as syncProtocol from 'y-protocols/sync';
+import * as encoding from 'lib0/encoding';
+import * as decoding from 'lib0/decoding';
+
 
 import type {
   ClientMessage,
@@ -17,21 +14,86 @@ import type {
 
 interface SessionData {
   userId: string;
-  permission: 'read' | 'write' | 'admin';  // Standardized to 'admin' everywhere
+  permission: 'read' | 'write' | 'admin';
 }
 
-export class MindCacheInstanceDO implements DurableObject {
-  private sql: SqlStorage;
+interface Env {
+  DB: D1Database;
+}
 
-  constructor(
-    private state: DurableObjectState,
-    private env: unknown
-  ) {
-    this.sql = state.storage.sql;
+const ENCODING_STATUS_KEY = 'yjs_encoded_state';
+
+export class MindCacheInstanceDO extends DurableObject {
+  private sql: SqlStorage;
+  private doc: Y.Doc;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.doc = new Y.Doc();
     this.initializeDatabase();
+
+    // Load Yjs state if exists, otherwise initialize from SQLite
+    ctx.blockConcurrencyWhile(async () => {
+      await this.loadState();
+    });
+
+    // Initialize Yjs Update Listener
+    this.doc.on('update', (update: Uint8Array, origin: any, _doc: Y.Doc, transaction: Y.Transaction) => {
+
+      // Broadcast to clients - wrap update in sync protocol format
+      if (origin !== this) {
+        const webSockets = this.ctx.getWebSockets();
+        for (const ws of webSockets) {
+          if (origin !== ws) {
+            // Wrap the update in a sync protocol message (messageYjsUpdate = 2)
+            const encoder = encoding.createEncoder();
+            syncProtocol.writeUpdate(encoder, update);
+            this.sendBinary(ws, encoding.toUint8Array(encoder));
+          }
+        }
+      }
+
+      // Update SQLite View (Materialized View)
+      const mindcacheMap = this.doc.getMap('mindcache');
+      const keysToUpdate = new Set<string>();
+
+      // Check for direct changes to the map (keys added/removed/replaced)
+      transaction.changed.forEach((events, type) => {
+        // Use string comparison to avoid TypeScript type overlap error
+        if (type === mindcacheMap as unknown) {
+          events.forEach((key) => {
+            if (key && typeof key === 'string') {
+              keysToUpdate.add(key);
+            }
+          });
+        }
+      });
+
+
+      // Check for deep changes (properties of entries changed)
+      transaction.changedParentTypes.forEach((events, type) => {
+        // If type is one of our entry maps, we need to find which key it belongs to.
+        // We iterate to find the key. This is acceptable for typical STM sizes.
+        if (type.parent === mindcacheMap) {
+          // @ts-ignore - internal Yjs property access if needed, or scan
+          // Scanning is safer public API usage
+          for (const [key, val] of mindcacheMap) {
+            if (val === type) {
+              keysToUpdate.add(key);
+              break;
+            }
+          }
+        }
+      });
+
+      if (keysToUpdate.size > 0) {
+        this.updateSQLiteFromDoc(Array.from(keysToUpdate));
+      }
+    });
   }
 
-  // Use WebSocket attachment for hibernation-safe session storage
+  // Persist session in WebSocket attachment for hibernation
   private getSession(ws: WebSocket): SessionData | null {
     return (ws as unknown as { deserializeAttachment(): SessionData | null }).deserializeAttachment();
   }
@@ -66,6 +128,79 @@ export class MindCacheInstanceDO implements DurableObject {
     }
   }
 
+  private async loadState(): Promise<void> {
+    // Attempt to load binary state from storage
+    const storedState = await this.ctx.storage.get(ENCODING_STATUS_KEY) as Uint8Array | undefined;
+
+    if (storedState) {
+      Y.applyUpdate(this.doc, storedState);
+    } else {
+      // If no Yjs state, hydrate from SQLite (migration path)
+      const keys = this.getAllKeys();
+      const rootMap = this.doc.getMap('mindcache');
+
+      this.doc.transact(() => {
+        Object.entries(keys).forEach(([key, entry]) => {
+          const entryMap = new Y.Map();
+          entryMap.set('value', entry.value);
+          entryMap.set('attributes', entry.attributes);
+          rootMap.set(key, entryMap);
+        });
+      });
+      await this.saveState();
+    }
+  }
+
+  private async saveState(): Promise<void> {
+    const update = Y.encodeStateAsUpdate(this.doc);
+    await this.ctx.storage.put(ENCODING_STATUS_KEY, update);
+  }
+
+  // Update SQLite from Yjs doc to maintain REST API view
+  private updateSQLiteFromDoc(keysUpdated: string[]): void {
+    const rootMap = this.doc.getMap('mindcache');
+    const now = Date.now();
+
+    // Note: Durable Objects SQLite doesn't support raw SQL transactions.
+    // Each exec call is atomic. For batch atomicity, use ctx.storage.transactionSync().
+    try {
+      keysUpdated.forEach(key => {
+        const entryMap = rootMap.get(key) as Y.Map<any> | undefined;
+        if (!entryMap || !entryMap.has('value')) { // Check if it's a valid entry
+          // Key deleted
+          this.sql.exec('DELETE FROM keys WHERE name = ?', key);
+        } else {
+          const value = entryMap.get('value');
+          const attributes = entryMap.get('attributes') as KeyAttributes;
+
+          // Safety check
+          if (!attributes) {
+            return;
+          }
+
+          this.sql.exec(`
+                    INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, z_index, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  `,
+          key,
+          JSON.stringify(value),
+          attributes.type,
+          attributes.contentType || null,
+          attributes.readonly ? 1 : 0,
+          attributes.visible ? 1 : 0,
+          attributes.hardcoded ? 1 : 0,
+          attributes.template ? 1 : 0,
+          attributes.tags ? JSON.stringify(attributes.tags) : null,
+          attributes.zIndex ?? 0,
+          now
+          );
+        }
+      });
+    } catch (e) {
+      console.error('Failed to update SQLite view', e);
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
@@ -82,7 +217,7 @@ export class MindCacheInstanceDO implements DurableObject {
       return Response.json(keys);
     }
 
-    // POST /keys - Set a key
+    // POST /keys - Set a key (Legacy bridge)
     if (url.pathname === '/keys' && request.method === 'POST') {
       const body = await request.json() as {
         key: string;
@@ -91,33 +226,16 @@ export class MindCacheInstanceDO implements DurableObject {
         userId?: string;
       };
 
-      const now = Date.now();
-      this.sql.exec(`
-        INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, z_index, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      body.key,
-      JSON.stringify(body.value),
-      body.attributes.type,
-      body.attributes.contentType || null,
-      body.attributes.readonly ? 1 : 0,
-      body.attributes.visible ? 1 : 0,
-      body.attributes.hardcoded ? 1 : 0,
-      body.attributes.template ? 1 : 0,
-      body.attributes.tags ? JSON.stringify(body.attributes.tags) : null,
-      body.attributes.zIndex ?? 0,
-      now
-      );
+      const rootMap = this.doc.getMap('mindcache');
+      this.doc.transact(() => {
+        const entryMap = new Y.Map();
+        entryMap.set('value', body.value);
+        entryMap.set('attributes', body.attributes);
+        rootMap.set(body.key, entryMap);
+      }, 'rest-api');
 
-      // Broadcast to connected WebSocket clients
-      this.broadcast({
-        type: 'key_updated',
-        key: body.key,
-        value: body.value,
-        attributes: body.attributes,
-        updatedBy: body.userId || 'system',
-        timestamp: now
-      });
+      await this.saveState();
+      // updateSQLiteFromDoc is triggered by update listener
 
       return Response.json({ success: true });
     }
@@ -125,17 +243,13 @@ export class MindCacheInstanceDO implements DurableObject {
     // DELETE /keys/:key - Delete a key
     if (url.pathname.startsWith('/keys/') && request.method === 'DELETE') {
       const key = decodeURIComponent(url.pathname.slice(6));
-      const now = Date.now();
 
-      this.sql.exec('DELETE FROM keys WHERE name = ?', key);
+      const rootMap = this.doc.getMap('mindcache');
+      this.doc.transact(() => {
+        rootMap.delete(key);
+      }, 'rest-api');
 
-      // Broadcast to connected WebSocket clients
-      this.broadcast({
-        type: 'key_deleted',
-        key,
-        deletedBy: 'system',
-        timestamp: now
-      });
+      await this.saveState();
 
       return Response.json({ success: true });
     }
@@ -143,7 +257,7 @@ export class MindCacheInstanceDO implements DurableObject {
     // DELETE /destroy - Delete all storage and close connections
     if (url.pathname === '/destroy' && request.method === 'DELETE') {
       // Close all WebSocket connections
-      const webSockets = this.state.getWebSockets();
+      const webSockets = this.ctx.getWebSockets();
       for (const ws of webSockets) {
         try {
           ws.close(1000, 'Instance deleted');
@@ -153,12 +267,14 @@ export class MindCacheInstanceDO implements DurableObject {
       }
 
       // Delete all storage
-      await this.state.storage.deleteAll();
+      await this.ctx.storage.deleteAll();
+      // Reset doc
+      this.doc = new Y.Doc();
 
       return Response.json({ success: true });
     }
 
-    return Response.json({ error: 'WebSocket required or invalid endpoint' }, { status: 400 });
+    return Response.json({ error: 'Endpoint not found or method not allowed' }, { status: 404 });
   }
 
   private handleWebSocket(request: Request): Response {
@@ -171,7 +287,7 @@ export class MindCacheInstanceDO implements DurableObject {
     const permission = (request.headers.get('X-MindCache-Permission') || 'read') as 'read' | 'write' | 'admin';
 
     // Accept the WebSocket
-    this.state.acceptWebSocket(server);
+    this.ctx.acceptWebSocket(server);
 
     // If pre-authenticated, set session and send sync immediately
     if (preAuth) {
@@ -181,18 +297,13 @@ export class MindCacheInstanceDO implements DurableObject {
       // Send auth success
       this.send(server, {
         type: 'auth_success',
-        instanceId: this.state.id.toString(),
+        instanceId: this.ctx.id.toString(),
         userId: session.userId,
         permission: session.permission
       });
 
-      // Send current state
-      const data = this.getAllKeys();
-      this.send(server, {
-        type: 'sync',
-        data,
-        instanceId: this.state.id.toString()
-      });
+      // Start Yjs Sync
+      this.startSync(server);
     }
 
     return new Response(null, {
@@ -201,13 +312,48 @@ export class MindCacheInstanceDO implements DurableObject {
     });
   }
 
+  private startSync(ws: WebSocket) {
+    const encoder = encoding.createEncoder();
+    syncProtocol.writeSyncStep1(encoder, this.doc);
+    this.sendBinary(ws, encoding.toUint8Array(encoder));
+  }
+
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    try {
-      const data = JSON.parse(message as string) as ClientMessage;
-      await this.handleMessage(ws, data);
-    } catch (error) {
-      console.error('WebSocket message error:', error);
-      this.sendError(ws, 'Invalid message format', 'PARSE_ERROR');
+
+    // Handle legacy JSON messages
+    if (typeof message === 'string') {
+      try {
+        const data = JSON.parse(message as string) as ClientMessage;
+        if (data.type === 'auth') {
+          // Mock auth
+          const session: SessionData = { userId: 'dev-user', permission: 'write' };
+          this.setSession(ws, session);
+          this.send(ws, { type: 'auth_success', instanceId: this.ctx.id.toString(), userId: 'dev', permission: 'write' });
+          this.startSync(ws);
+        }
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+        this.sendError(ws, 'Invalid message format', 'PARSE_ERROR');
+      }
+      return;
+    }
+
+    // Handle Yjs Binary messages
+    if (message instanceof ArrayBuffer) {
+      const update = new Uint8Array(message);
+      const encoder = encoding.createEncoder();
+      const decoder = decoding.createDecoder(update);
+
+      // This helper handles Sync Step 1, Step 2, and Update exchange automatically
+      // The doc.on('update') listener will broadcast changes to other clients
+      syncProtocol.readSyncMessage(decoder, encoder, this.doc, ws);
+
+      // If the encoder has content (response), send it back to the sender
+      if (encoding.length(encoder) > 0) {
+        this.sendBinary(ws, encoding.toUint8Array(encoder));
+      }
+
+      await this.saveState();
     }
   }
 
@@ -218,145 +364,6 @@ export class MindCacheInstanceDO implements DurableObject {
   async webSocketError(_ws: WebSocket, error: unknown): Promise<void> {
     console.error('WebSocket error:', error);
     // Session is attached to ws, cleaned up automatically
-  }
-
-  private async handleMessage(ws: WebSocket, message: ClientMessage): Promise<void> {
-    switch (message.type) {
-      case 'auth':
-        await this.handleAuth(ws, message.apiKey);
-        break;
-
-      case 'set':
-        await this.handleSet(ws, message.key, message.value, message.attributes);
-        break;
-
-      case 'delete':
-        await this.handleDelete(ws, message.key);
-        break;
-
-      case 'clear':
-        await this.handleClear(ws);
-        break;
-
-      case 'ping':
-        this.send(ws, { type: 'pong' });
-        break;
-    }
-  }
-
-  private async handleAuth(ws: WebSocket, _apiKey: string): Promise<void> {
-    // TODO: Verify API key against D1 database
-    // For now, accept all connections in development
-
-    const session: SessionData = {
-      userId: 'dev-user',
-      permission: 'write'
-    };
-
-    // Attach session to WebSocket (survives hibernation)
-    this.setSession(ws, session);
-
-    // Send auth success
-    this.send(ws, {
-      type: 'auth_success',
-      instanceId: this.state.id.toString(),
-      userId: session.userId,
-      permission: session.permission
-    });
-
-    // Send current state
-    const data = this.getAllKeys();
-    this.send(ws, {
-      type: 'sync',
-      data,
-      instanceId: this.state.id.toString()
-    });
-  }
-
-  private async handleSet(
-    ws: WebSocket,
-    key: string,
-    value: unknown,
-    attributes: KeyAttributes
-  ): Promise<void> {
-    const session = this.getSession(ws);
-    if (!session || session.permission === 'read') {
-      this.sendError(ws, 'Write permission required', 'NO_PERMISSION');
-      return;
-    }
-
-    const now = Date.now();
-
-    // Store in SQLite
-    this.sql.exec(`
-      INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, z_index, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    key,
-    JSON.stringify(value),
-    attributes.type,
-    attributes.contentType || null,
-    attributes.readonly ? 1 : 0,
-    attributes.visible ? 1 : 0,
-    attributes.hardcoded ? 1 : 0,
-    attributes.template ? 1 : 0,
-    attributes.tags ? JSON.stringify(attributes.tags) : null,
-    attributes.zIndex ?? 0,
-    now
-    );
-
-    // Broadcast to all connected clients
-    // Broadcast to ALL clients including sender for real-time sync
-    this.broadcast({
-      type: 'key_updated',
-      key,
-      value,
-      attributes,
-      updatedBy: session.userId,
-      timestamp: now
-    });
-  }
-
-  private async handleDelete(ws: WebSocket, key: string): Promise<void> {
-    const session = this.getSession(ws);
-    if (!session || session.permission === 'read') {
-      this.sendError(ws, 'Write permission required', 'NO_PERMISSION');
-      return;
-    }
-
-    const now = Date.now();
-
-    this.sql.exec('DELETE FROM keys WHERE name = ?', key);
-
-    // Broadcast to all connected clients
-    // Broadcast to ALL clients including sender
-    this.broadcast({
-      type: 'key_deleted',
-      key,
-      deletedBy: session.userId,
-      timestamp: now
-    });
-  }
-
-  private async handleClear(ws: WebSocket): Promise<void> {
-    const session = this.getSession(ws);
-    // 'admin' permission required for system operations
-    if (!session || session.permission !== 'admin') {
-      this.sendError(ws, 'System permission required', 'NO_PERMISSION');
-      return;
-    }
-
-    const now = Date.now();
-
-    this.sql.exec('DELETE FROM keys');
-
-    // Broadcast to all connected clients
-    // Broadcast to ALL clients including sender
-    this.broadcast({
-      type: 'cleared',
-      clearedBy: session.userId,
-      timestamp: now
-    });
   }
 
   private getAllKeys(): Record<string, KeyEntry> {
@@ -393,16 +400,32 @@ export class MindCacheInstanceDO implements DurableObject {
     }
   }
 
+  private sendBinary(ws: WebSocket, message: Uint8Array): void {
+    try {
+      ws.send(message);
+    } catch { /* Ignore send errors for disconnected clients */ }
+  }
+
+
   private sendError(ws: WebSocket, error: string, code: string): void {
     this.send(ws, { type: 'error', error, code });
   }
 
   private broadcast(message: ServerMessage): void {
     // Use state.getWebSockets() which survives hibernation
-    const webSockets = this.state.getWebSockets();
+    const webSockets = this.ctx.getWebSockets();
     for (const ws of webSockets) {
       this.send(ws, message);
     }
   }
-}
 
+  private broadcastBinary(message: Uint8Array, exclude?: WebSocket): void {
+    // Broadcast binary (Yjs) message to all clients except the sender
+    const webSockets = this.ctx.getWebSockets();
+    for (const ws of webSockets) {
+      if (ws !== exclude) {
+        this.sendBinary(ws, message);
+      }
+    }
+  }
+}

@@ -138,7 +138,7 @@ export class IndexedDBAdapter {
 
         request.onerror = () => {
           console.error('MindCache: Failed to load from IndexedDB:', request.error);
-          resolve(); // Resolve anyway to avoid blocking initialization
+          resolve();
         };
       } catch (error) {
         console.error('MindCache: Error accessing IndexedDB for load:', error);

@@ -10,7 +10,7 @@ export interface KeyAttributes {
   visible: boolean;
   hardcoded: boolean;
   template: boolean;
-  type: 'text' | 'image' | 'file' | 'json';
+  type: 'text' | 'image' | 'file' | 'json' | 'document';
   contentType?: string;
   tags?: string[];
   zIndex?: number;

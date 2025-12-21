@@ -53,7 +53,9 @@ export default function TweetWorkflowExample() {
 
   // Initialize STM with all fields
   useEffect(() => {
-    if (!isLoaded || !mindcache) return;
+    if (!isLoaded || !mindcache) {
+return;
+}
 
     const fields = [
       { key: 'topic', value: '', visible: true, readonly: false },

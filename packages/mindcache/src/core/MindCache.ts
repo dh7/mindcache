@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { z } from 'zod';
-import type { KeyAttributes, STM, STMEntry, Listener, GlobalListener, AccessLevel, SystemTag } from './types';
+import * as Y from 'yjs';
+import { IndexeddbPersistence } from 'y-indexeddb';
+import diff from 'fast-diff';
+import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
 
 // Browser environment type declarations
@@ -26,6 +28,8 @@ export interface MindCacheCloudOptions {
   projectId?: string;
   /** API endpoint to fetch WS token (recommended for browser) */
   tokenEndpoint?: string;
+  /** Function to fetch token dynamically (overrides tokenEndpoint) */
+  tokenProvider?: () => Promise<string>;
   /** Direct API key (server-side only, never expose in browser!) */
   apiKey?: string;
   /** WebSocket base URL (defaults to production) */
@@ -47,10 +51,12 @@ export interface MindCacheIndexedDBOptions {
  * Constructor options for MindCache
  */
 export interface MindCacheOptions {
-  /** Cloud sync configuration. If omitted, runs in local-only mode. */
+  /** Cloud sync configuration. If omitted, runs in local-only mode. IndexedDB auto-enabled for offline support. */
   cloud?: MindCacheCloudOptions;
-  /** IndexedDB configuration */
+  /** IndexedDB configuration. Ignored in cloud mode (auto-enabled). */
   indexedDB?: MindCacheIndexedDBOptions;
+  /** History tracking options (enabled in IndexedDB and Cloud modes) */
+  history?: HistoryOptions;
   /** Access level for tag operations. 'system' allows managing system tags. */
   accessLevel?: AccessLevel;
 }
@@ -71,18 +77,21 @@ interface ICloudAdapter {
 }
 
 export class MindCache {
-  private stm: STM = {};
+  // Public doc for adapter access
+  public doc: Y.Doc;
+  private rootMap: Y.Map<Y.Map<any>>; // Key -> EntryMap({value, attributes})
+
+  // Cache listeners
   private listeners: { [key: string]: Listener[] } = {};
   private globalListeners: GlobalListener[] = [];
 
+  // Metadata
+  public readonly version = '3.1.0';
+
   // Internal flag to prevent sync loops when receiving remote updates
+  // (Less critical with Yjs but kept for API compat)
   private _isRemoteUpdate = false;
 
-  /**
-   * Normalize system tags: migrate old tags to new ones
-   * - 'prompt' → 'SystemPrompt'
-   * - 'readonly' → remove 'LLMWrite' (or add if not readonly)
-   */
   private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
     let hasSystemPrompt = false;
@@ -115,41 +124,14 @@ export class MindCache {
       normalized.push('LLMRead');
     }
 
-    // LLMWrite logic: if readonly exists, NO LLMWrite; otherwise, add LLMWrite
-    // But if LLMWrite already exists, keep it (unless readonly also exists)
     if (hasReadonly) {
-      // Keep readonly tag for backward compatibility with web package
       normalized.push('readonly');
-      // Don't add LLMWrite (readonly = not writable)
     } else if (hasLLMWrite) {
       normalized.push('LLMWrite');
-    } else {
-      // Default: if neither readonly nor LLMWrite specified, default to LLMWrite (writable)
-      normalized.push('LLMWrite');
     }
+    // If neither readonly nor LLMWrite is set, that's fine - key is readable but not LLM-writable
 
     return normalized;
-  }
-
-  /**
-   * Check if key should be visible in system prompt
-   */
-  private hasSystemPrompt(tags: SystemTag[]): boolean {
-    return tags.includes('SystemPrompt') || tags.includes('prompt');
-  }
-
-  /**
-   * Check if key can be read by LLM (has LLMRead or SystemPrompt)
-   */
-  private hasLLMRead(tags: SystemTag[]): boolean {
-    return tags.includes('LLMRead') || tags.includes('SystemPrompt') || tags.includes('prompt');
-  }
-
-  /**
-   * Check if key can be written by LLM (has LLMWrite and not readonly)
-   */
-  private hasLLMWrite(tags: SystemTag[]): boolean {
-    return tags.includes('LLMWrite') && !tags.includes('readonly');
   }
 
   // Cloud sync state
@@ -163,18 +145,56 @@ export class MindCache {
 
   private _initPromise: Promise<void> | null = null;
 
+  // Y-IndexedDB provider
+  private _idbProvider: IndexeddbPersistence | null = null;
+
+  // Undo Managers Cache
+  private _undoManagers: Map<string, Y.UndoManager> = new Map();
+
+  // Global Undo Manager (watches entire rootMap)
+  private _globalUndoManager: Y.UndoManager | null = null;
+
+  // History tracking
+  private _history: HistoryEntry[] = [];
+  private _historyOptions: HistoryOptions = { maxEntries: 100, snapshotInterval: 10 };
+  private _historyEnabled = false;
+
   constructor(options?: MindCacheOptions) {
+    // Initialize Yjs
+    this.doc = new Y.Doc();
+    this.rootMap = this.doc.getMap('mindcache');
+
+    // Observers for local reactivity
+    this.rootMap.observe((event: Y.YMapEvent<any>) => {
+      // Iterate changes and trigger specific key listeners
+      event.keysChanged.forEach(key => {
+        const entryMap = this.rootMap.get(key);
+        if (entryMap) {
+          // Determine value
+          const value = entryMap.get('value');
+          // Trigger listener
+          if (this.listeners[key]) {
+            this.listeners[key].forEach(l => l(value));
+          }
+        } else {
+          // Deleted
+          if (this.listeners[key]) {
+            this.listeners[key].forEach(l => l(undefined));
+          }
+        }
+      });
+    });
+
+    // Deep observer for global listener (so UI updates on any change)
+    this.rootMap.observeDeep((_events: Y.YEvent<any>[]) => {
+      this.notifyGlobalListeners();
+    });
+
+    // Initialize global undo manager immediately to capture all changes from start
+    this.initGlobalUndoManager();
+
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
-    }
-
-    // Cloud and IndexedDB are mutually exclusive to avoid data conflicts
-    if (options?.cloud && options?.indexedDB) {
-      throw new Error(
-        'MindCache: Cannot use both cloud and indexedDB together. ' +
-        'Choose one persistence method to avoid data conflicts. ' +
-        'Use cloud for real-time sync, or indexedDB for local-only persistence.'
-      );
     }
 
     const initPromises: Promise<void>[] = [];
@@ -184,17 +204,33 @@ export class MindCache {
       this._isLoaded = false; // Wait for sync
       this._connectionState = 'disconnected';
       initPromises.push(this._initCloud());
+
+      // Auto-enable IndexedDB for offline support in cloud mode
+      if (typeof window !== 'undefined') {
+        const dbName = `mindcache_cloud_${options.cloud.instanceId}`;
+        initPromises.push(this._initYIndexedDB(dbName));
+      }
+
+      // Enable history tracking in cloud mode
+      this.enableHistory(options.history);
     }
 
-    if (options?.indexedDB) {
-      // IndexedDB is async, so we wait for it
+    // Only use explicit indexedDB config if NOT in cloud mode
+    if (options?.indexedDB && !options?.cloud) {
+      // Use y-indexeddb
       this._isLoaded = false;
-      initPromises.push(this._initIndexedDB(options.indexedDB));
+      initPromises.push(this._initYIndexedDB(options.indexedDB.dbName || 'mindcache_yjs_db'));
+
+      // Enable history tracking in offline mode
+      this.enableHistory(options.history);
     }
 
     if (initPromises.length > 0) {
       this._initPromise = Promise.all(initPromises).then(() => {
-        // If we are strictly local (no cloud), we are loaded when init finishes
+        // Only set loaded if not waiting for cloud or if cloud is effectively initialized?
+        // Actually, logic is: if local IDB is used, we wait for it.
+        // If cloud is used, we wait for 'synced' event or timeout/cache loaded.
+        // For simplicity, we mark loaded when initial hydration promises resolve.
         if (!this._cloudConfig) {
           this._isLoaded = true;
         }
@@ -202,18 +238,173 @@ export class MindCache {
     }
   }
 
+  // Helper: Get or Create UndoManager for a key
+  private getUndoManager(key: string): Y.UndoManager | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
 
+    if (!this._undoManagers.has(key)) {
+      const um = new Y.UndoManager(entryMap, {
+        captureTimeout: 500
+      });
+      this._undoManagers.set(key, um);
+    }
+    return this._undoManagers.get(key);
+  }
 
   /**
-   * Get the current access level
+   * Undo changes for a specific key
    */
+  undo(key: string): void {
+    const um = this.getUndoManager(key);
+    if (um) {
+      um.undo();
+    }
+  }
+
+  /**
+   * Redo changes for a specific key
+   */
+  redo(key: string): void {
+    const um = this.getUndoManager(key);
+    if (um) {
+      um.redo();
+    }
+  }
+
+  getHistory(key: string): any[] {
+    const um = this.getUndoManager(key);
+    if (!um) {
+      return [];
+    }
+    return um.undoStack;
+  }
+
+  // Initialize global undo manager (watches entire rootMap)
+  private initGlobalUndoManager(): void {
+    if (!this._globalUndoManager) {
+      this._globalUndoManager = new Y.UndoManager(this.rootMap, {
+        captureTimeout: 500
+      });
+    }
+  }
+
+  /**
+   * Undo all recent local changes (across all keys)
+   * Only undoes YOUR changes, not changes from other users in cloud mode
+   */
+  undoAll(): void {
+    this.initGlobalUndoManager();
+    this._globalUndoManager?.undo();
+  }
+
+  /**
+   * Redo previously undone local changes
+   */
+  redoAll(): void {
+    this.initGlobalUndoManager();
+    this._globalUndoManager?.redo();
+  }
+
+  /**
+   * Check if there are changes to undo globally
+   */
+  canUndoAll(): boolean {
+    this.initGlobalUndoManager();
+    return (this._globalUndoManager?.undoStack.length ?? 0) > 0;
+  }
+
+  /**
+   * Check if there are changes to redo globally
+   */
+  canRedoAll(): boolean {
+    this.initGlobalUndoManager();
+    return (this._globalUndoManager?.redoStack.length ?? 0) > 0;
+  }
+
+  // Enable history tracking (called for IndexedDB and Cloud modes)
+  private enableHistory(options?: HistoryOptions): void {
+    if (this._historyEnabled) {
+      return;
+    }
+
+    this._historyEnabled = true;
+    if (options) {
+      this._historyOptions = { ...this._historyOptions, ...options };
+    }
+
+    // Track changes to record history
+    this.rootMap.observeDeep((events: Y.YEvent<any>[]) => {
+      // Determine which keys were affected
+      const keysAffected = new Set<string>();
+      events.forEach(event => {
+        if (event.target === this.rootMap) {
+          // Direct changes to rootMap
+          const mapEvent = event as Y.YMapEvent<any>;
+          mapEvent.keysChanged.forEach(key => keysAffected.add(key));
+        } else if (event.target.parent === this.rootMap) {
+          // Changes to entry maps
+          for (const [key, val] of this.rootMap) {
+            if (val === event.target) {
+              keysAffected.add(key);
+              break;
+            }
+          }
+        }
+      });
+
+      if (keysAffected.size > 0) {
+        const entry: HistoryEntry = {
+          id: this.generateId(),
+          timestamp: Date.now(),
+          keysAffected: Array.from(keysAffected)
+        };
+
+        this._history.push(entry);
+
+        // Trim old entries
+        const max = this._historyOptions.maxEntries || 100;
+        if (this._history.length > max) {
+          this._history = this._history.slice(-max);
+        }
+      }
+    });
+  }
+
+  private generateId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  /**
+   * Get global history of all changes (available in IndexedDB and Cloud modes)
+   */
+  getGlobalHistory(): HistoryEntry[] {
+    return [...this._history];
+  }
+
+  /**
+   * Check if history tracking is enabled
+   */
+  get historyEnabled(): boolean {
+    return this._historyEnabled;
+  }
+
+  /**
+   * Restore to a specific version (time travel)
+   * Note: Full implementation requires storing update binaries, which is not yet implemented.
+   * @returns false - not yet fully implemented
+   */
+  restoreToVersion(_versionId: string): boolean {
+    console.warn('restoreToVersion: Full implementation requires storing update binaries. Not yet implemented.');
+    return false;
+  }
+
   get accessLevel(): AccessLevel {
     return this._accessLevel;
   }
 
-  /**
-   * Check if this instance has system-level access
-   */
   get hasSystemAccess(): boolean {
     return this._accessLevel === 'system';
   }
@@ -223,181 +414,150 @@ export class MindCache {
       return;
     }
 
-    try {
+    // Dynamic import to avoid bundling CloudAdapter in small builds if technically possible (though explicit import used here)
+    const CloudAdapter = await this._getCloudAdapterClass();
 
-      // Load adapter class (extracted for testing)
-      const CloudAdapter = await this._getCloudAdapterClass();
-
-      // Require baseUrl for cloud mode
-      if (!this._cloudConfig.baseUrl) {
-        throw new Error('MindCache Cloud: baseUrl is required. Please provide the cloud API URL in your configuration.');
-      }
-
-      // Convert HTTP URL to WebSocket URL
-      const baseUrl = this._cloudConfig.baseUrl
-        .replace('https://', 'wss://')
-        .replace('http://', 'ws://');
-
-      const adapter = new CloudAdapter({
-        instanceId: this._cloudConfig.instanceId,
-        projectId: this._cloudConfig.projectId || 'default',
-        baseUrl,
-        apiKey: this._cloudConfig.apiKey
-      });
-
-      // Set up token provider if tokenEndpoint is provided
-      if (this._cloudConfig.tokenEndpoint) {
-        const tokenEndpoint = this._cloudConfig.tokenEndpoint;
-        const instanceId = this._cloudConfig.instanceId;
-
-        // Capture origin at setup time (when window is available) for use during reconnects
-        let resolvedBaseUrl: string;
-        if (tokenEndpoint.startsWith('http://') || tokenEndpoint.startsWith('https://')) {
-          resolvedBaseUrl = tokenEndpoint;
-        } else if (typeof window !== 'undefined' && window.location?.origin) {
-          resolvedBaseUrl = `${window.location.origin}${tokenEndpoint.startsWith('/') ? '' : '/'}${tokenEndpoint}`;
-        } else {
-          // This shouldn't happen in normal browser usage, but fail gracefully
-          console.warn('MindCache: Cannot resolve tokenEndpoint to absolute URL - window.location not available');
-          resolvedBaseUrl = tokenEndpoint;
-        }
-
-        adapter.setTokenProvider(async () => {
-          const url = resolvedBaseUrl.includes('?')
-            ? `${resolvedBaseUrl}&instanceId=${instanceId}`
-            : `${resolvedBaseUrl}?instanceId=${instanceId}`;
-
-          const response = await fetch(url);
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({ error: 'Failed to get token' }));
-            throw new Error(error.error || 'Failed to get token');
-          }
-
-          const data = await response.json();
-          return data.token;
-        });
-      }
-
-      // Set up event handlers
-      adapter.on('connected', () => {
-        this._connectionState = 'connected';
-        this.notifyGlobalListeners();
-      });
-
-      adapter.on('disconnected', () => {
-        this._connectionState = 'disconnected';
-        this.notifyGlobalListeners();
-      });
-
-      adapter.on('error', () => {
-        this._connectionState = 'error';
-        this.notifyGlobalListeners();
-      });
-
-      adapter.on('synced', () => {
-        this._isLoaded = true;
-        this.notifyGlobalListeners();
-      });
-
-      // Attach and connect
-      adapter.attach(this);
-      this._cloudAdapter = adapter;
-      this._connectionState = 'connecting';
-
-      adapter.connect();
-    } catch (error) {
-      console.error('MindCache: Failed to initialize cloud connection:', error);
-      this._connectionState = 'error';
-      this._isLoaded = true; // Allow usage even if cloud fails
+    if (!this._cloudConfig.baseUrl) {
+      // Warning or error?
+      // throw new Error('MindCache Cloud: baseUrl is required.');
     }
+
+    // Ensure baseUrl is set or fallback to production
+    const baseUrl = (this._cloudConfig.baseUrl || 'https://api.mindcache.dev')
+      .replace('https://', 'wss://')
+      .replace('http://', 'ws://');
+
+    const adapter = new CloudAdapter({
+      instanceId: this._cloudConfig.instanceId,
+      projectId: this._cloudConfig.projectId || 'default',
+      baseUrl,
+      apiKey: this._cloudConfig.apiKey
+    });
+
+    if (this._cloudConfig.tokenProvider) {
+      adapter.setTokenProvider(this._cloudConfig.tokenProvider);
+    } else if (this._cloudConfig.tokenEndpoint) {
+      const tokenEndpoint = this._cloudConfig.tokenEndpoint;
+      const instanceId = this._cloudConfig.instanceId;
+      let resolvedBaseUrl: string;
+      if (tokenEndpoint.startsWith('http://') || tokenEndpoint.startsWith('https://')) {
+        resolvedBaseUrl = tokenEndpoint;
+      } else if (typeof window !== 'undefined' && window.location?.origin) {
+        resolvedBaseUrl = `${window.location.origin}${tokenEndpoint.startsWith('/') ? '' : '/'}${tokenEndpoint}`;
+      } else {
+        resolvedBaseUrl = tokenEndpoint;
+      }
+      adapter.setTokenProvider(async () => {
+        const url = resolvedBaseUrl.includes('?')
+          ? `${resolvedBaseUrl}&instanceId=${instanceId}`
+          : `${resolvedBaseUrl}?instanceId=${instanceId}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to get token');
+        }
+        const data = await response.json();
+        return data.token;
+      });
+    }
+
+    adapter.on('connected', () => {
+      this._connectionState = 'connected';
+      this.notifyGlobalListeners();
+    });
+
+    adapter.on('disconnected', () => {
+      this._connectionState = 'disconnected';
+      this.notifyGlobalListeners();
+    });
+
+    adapter.on('error', () => {
+      this._connectionState = 'error';
+      this.notifyGlobalListeners();
+    });
+
+    adapter.on('synced', () => {
+      this._isLoaded = true;
+      this.notifyGlobalListeners();
+    });
+
+    adapter.attach(this);
+    this._cloudAdapter = adapter;
+    this._connectionState = 'connecting';
+    adapter.connect();
   }
 
-  private async _initIndexedDB(config: MindCacheIndexedDBOptions): Promise<void> {
-    try {
-      const IndexedDBAdapter = await this._getIndexedDBAdapterClass();
-      const adapter = new IndexedDBAdapter(config);
-      await adapter.attach(this);
-    } catch (error) {
-      console.error('MindCache: Failed to initialize IndexedDB:', error);
+  private async _initYIndexedDB(dbName: string): Promise<void> {
+    if (typeof window === 'undefined') {
+      return;
     }
+
+    this._idbProvider = new IndexeddbPersistence(dbName, this.doc);
+    return new Promise<void>(resolve => {
+      if (!this._idbProvider) {
+        return resolve();
+      }
+      this._idbProvider.on('synced', () => {
+        this._isLoaded = true;
+        resolve();
+      });
+    });
+  }
+
+  // Legacy IndexedDB method stub
+  private async _initIndexedDB(_config: MindCacheIndexedDBOptions): Promise<void> {
+    // Replaced by Y-IndexedDB in constructor
   }
 
   protected async _getIndexedDBAdapterClass(): Promise<any> {
+    // Legacy support
     const { IndexedDBAdapter } = await import('../local/IndexedDBAdapter');
     return IndexedDBAdapter;
   }
 
-  /**
-   * Get the current cloud connection state
-   */
   get connectionState(): ConnectionState {
     return this._connectionState;
   }
 
-  /**
-   * Check if data is loaded (true for local, true after sync for cloud)
-   */
   get isLoaded(): boolean {
     return this._isLoaded;
   }
 
-  /**
-   * Protected method to load CloudAdapter class.
-   * Can be overridden/mocked for testing.
-   */
   protected async _getCloudAdapterClass(): Promise<any> {
     const { CloudAdapter } = await import('../cloud/CloudAdapter');
     return CloudAdapter;
   }
 
-  /**
-   * Check if this instance is connected to cloud
-   */
   get isCloud(): boolean {
     return this._cloudConfig !== null;
   }
 
-  /**
-   * Wait for initial sync to complete (or resolve immediately if already synced/local).
-   * Useful for scripts or linear execution flows.
-   */
-
   async waitForSync(): Promise<void> {
-
     if (this._isLoaded) {
       return;
     }
-
-    // If initialization is in progress, wait for it first
     if (this._initPromise) {
       await this._initPromise;
     }
-
-    // Check again after initialization
     if (this._isLoaded) {
       return;
     }
 
+    // Poll or wait for event?
+    // Simple version:
     return new Promise<void>((resolve) => {
-      // If we are here, we must have a cloud adapter (otherwise isLoaded would be true)
-      // but double check to be safe
-      if (!this._cloudAdapter) {
-        resolve();
-        return;
+      if (this._isLoaded) {
+        return resolve();
       }
-
-      const handler = () => {
-        this._cloudAdapter?.off('synced', handler);
-        resolve();
-      };
-
-      this._cloudAdapter.on('synced', handler);
+      // A bit hacky, but robust enough for now
+      const interval = setInterval(() => {
+        if (this._isLoaded) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 100);
     });
   }
 
-  /**
-   * Disconnect from cloud (if connected)
-   */
   disconnect(): void {
     if (this._cloudAdapter) {
       this._cloudAdapter.disconnect();
@@ -405,9 +565,76 @@ export class MindCache {
       this._cloudAdapter = null;
       this._connectionState = 'disconnected';
     }
+    if (this._idbProvider) {
+      this._idbProvider.destroy();
+      this._idbProvider = null;
+    }
   }
 
-  // Helper method to encode file to base64
+  // Legacy bridge
+  isRemoteUpdate(): boolean {
+    return false;
+  }
+
+  // Serialize state
+  serialize(): STM {
+    const json: STM = {};
+    for (const [key, val] of this.rootMap) {
+      const entryMap = val as Y.Map<any>;
+      const attrs = entryMap.get('attributes') as KeyAttributes;
+      let value = entryMap.get('value');
+
+      // Convert Y.Text to string for serialization
+      if (attrs?.type === 'document' && value instanceof Y.Text) {
+        value = value.toString();
+      }
+
+      json[key] = {
+        value,
+        attributes: attrs
+      };
+    }
+    return json;
+  }
+
+  // Deserialize state (for IndexedDBAdapter compatibility)
+  deserialize(data: STM): void {
+    if (!data || typeof data !== 'object') {
+      return; // Handle null/undefined gracefully
+    }
+    this.doc.transact(() => {
+      // Clear existing data first
+      for (const key of this.rootMap.keys()) {
+        this.rootMap.delete(key);
+      }
+      // Then load new data
+      for (const [key, entry] of Object.entries(data)) {
+        if (key.startsWith('$')) {
+          continue;
+        } // Skip reserved keys
+        const entryMap = new Y.Map();
+        this.rootMap.set(key, entryMap);
+        entryMap.set('value', entry.value);
+        // Normalize attributes (fill in missing fields with defaults)
+        const attrs = entry.attributes || {};
+        const normalizedAttrs: KeyAttributes = {
+          type: attrs.type || 'text',
+          contentTags: attrs.contentTags || [],
+          systemTags: attrs.systemTags || this.normalizeSystemTags(attrs.visible !== false ? ['prompt'] : []),
+          zIndex: attrs.zIndex ?? 0,
+          // Legacy fields
+          readonly: attrs.readonly ?? false,
+          visible: attrs.visible ?? true,
+          hardcoded: attrs.hardcoded ?? false,
+          template: attrs.template ?? false,
+          tags: attrs.tags || [],
+          contentType: attrs.contentType
+        };
+        entryMap.set('attributes', normalizedAttrs);
+      }
+    });
+  }
+
   private encodeFileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       if (typeof FileReader !== 'undefined') {
@@ -425,12 +652,10 @@ export class MindCache {
     });
   }
 
-  // Helper method to create data URL from base64 and content type
   private createDataUrl(base64Data: string, contentType: string): string {
     return `data:${contentType};base64,${base64Data}`;
   }
 
-  // Helper method to validate content type for different STM types
   private validateContentType(type: KeyAttributes['type'], contentType?: string): boolean {
     if (type === 'text' || type === 'json') {
       return true;
@@ -447,12 +672,53 @@ export class MindCache {
     return false;
   }
 
-  /** @deprecated Use get_value instead */
-  get(key: string): any {
-    return this.get_value(key);
+  // InjectSTM replacement (private helper)
+  private _injectSTMInternal(template: string, _processingStack: Set<string>): string {
+    return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+      const val = this.get_value(key.trim(), _processingStack);
+      return val !== undefined ? String(val) : `{{${key}}}`;
+    });
   }
 
-  // Get a value from the STM with template processing if enabled
+  /**
+   * Replace {{key}} placeholders in a template string with values from MindCache.
+   * @param template The template string with {{key}} placeholders
+   * @returns The template with placeholders replaced by values
+   */
+  injectSTM(template: string): string {
+    return this._injectSTMInternal(template, new Set());
+  }
+
+  // Public API Methods
+
+  getAll(): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [key] of this.rootMap) {
+      result[key] = this.get_value(key);
+    }
+    // Add temporal keys
+    result['$date'] = this.get_value('$date');
+    result['$time'] = this.get_value('$time');
+    return result;
+  }
+
+  /**
+   * Get all entries with their full structure (value + attributes).
+   * Use this for UI/admin interfaces that need to display key properties.
+   * Unlike serialize(), this format is stable and won't change.
+   */
+  getAllEntries(): STM {
+    const result: STM = {};
+    for (const [key] of this.rootMap) {
+      const value = this.get_value(key);
+      const attributes = this.get_attributes(key);
+      if (attributes) {
+        result[key] = { value, attributes };
+      }
+    }
+    return result;
+  }
+
   get_value(key: string, _processingStack?: Set<string>): any {
     if (key === '$date') {
       const today = new Date();
@@ -462,35 +728,46 @@ export class MindCache {
       const now = new Date();
       return now.toTimeString().split(' ')[0];
     }
+    if (key === '$version') {
+      return this.version;
+    }
 
-    const entry = this.stm[key];
-    if (!entry) {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
       return undefined;
     }
 
-    if (entry.attributes.systemTags?.includes('ApplyTemplate') || entry.attributes.systemTags?.includes('template') || entry.attributes.template) {
-      const processingStack = _processingStack || new Set<string>();
-      if (processingStack.has(key)) {
-        return entry.value;
-      }
-      processingStack.add(key);
-      const result = this.injectSTM(entry.value as string, processingStack);
-      processingStack.delete(key);
-      return result;
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const value = entryMap.get('value');
+
+    // For document type, return plain text representation
+    if (attributes?.type === 'document' && value instanceof Y.Text) {
+      return value.toString();
     }
 
-    return entry.value;
+    // Recursion check for templates
+    if (_processingStack && _processingStack.has(key)) {
+      return `{{${key}}}`; // Break cycle
+    }
+
+    // Apply Template Logic
+    if (attributes?.systemTags?.includes('ApplyTemplate') || attributes?.systemTags?.includes('template') || attributes?.template) {
+      if (typeof value === 'string') {
+        const stack = _processingStack || new Set();
+        stack.add(key);
+        return this._injectSTMInternal(value, stack);
+      }
+    }
+    return value;
   }
 
-  // Get attributes for a key
   get_attributes(key: string): KeyAttributes | undefined {
-    if (key === '$date' || key === '$time') {
+    if (key === '$date' || key === '$time' || key === '$version') {
       return {
         type: 'text',
         contentTags: [],
         systemTags: ['prompt', 'readonly', 'protected'],
-        zIndex: 999999, // System keys appear last
-        // Legacy attributes
+        zIndex: 999999,
         readonly: true,
         visible: true,
         hardcoded: true,
@@ -498,702 +775,589 @@ export class MindCache {
         tags: []
       };
     }
-
-    const entry = this.stm[key];
-    return entry ? entry.attributes : undefined;
+    const entryMap = this.rootMap.get(key);
+    return entryMap ? entryMap.get('attributes') : undefined;
   }
 
-  // Set a value in the STM with default attributes
+  /**
+   * Update only the attributes of a key without modifying the value.
+   * Useful for updating tags, permissions etc. on document type keys.
+   */
+  set_attributes(key: string, attributes: Partial<KeyAttributes>): void {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return; // Key doesn't exist
+    }
+
+    this.doc.transact(() => {
+      const existingAttrs = entryMap.get('attributes') as KeyAttributes;
+      const mergedAttrs = { ...existingAttrs, ...attributes };
+
+      // Normalize system tags
+      if (mergedAttrs.systemTags) {
+        mergedAttrs.systemTags = this.normalizeSystemTags(mergedAttrs.systemTags);
+      }
+
+      entryMap.set('attributes', mergedAttrs);
+    });
+  }
+
   set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time') {
+    if (key === '$date' || key === '$time' || key === '$version') {
       return;
     }
 
-    const existingEntry = this.stm[key];
-    // Preserve hardcoded status - if entry is hardcoded, it must remain hardcoded
-    const wasHardcoded = existingEntry?.attributes.hardcoded || existingEntry?.attributes.systemTags?.includes('protected');
-
-    // Deep copy arrays to avoid shared references
-    const baseAttributes: KeyAttributes = existingEntry
-      ? {
-        ...existingEntry.attributes,
-        contentTags: [...(existingEntry.attributes.contentTags || [])],
-        systemTags: [...(existingEntry.attributes.systemTags || [])] as SystemTag[],
-        tags: [...(existingEntry.attributes.tags || [])],
-        zIndex: existingEntry.attributes.zIndex ?? 0
-      }
-      : {
-        ...DEFAULT_KEY_ATTRIBUTES,
-        contentTags: [],  // Fresh array
-        systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[],  // Fresh array with default
-        tags: [],  // Fresh array
-        zIndex: 0
-      };
-
-    const finalAttributes = attributes ? { ...baseAttributes, ...attributes } : baseAttributes;
-
-    // Normalize system tags first (migrate old tags to new ones)
-    let systemTags = this.normalizeSystemTags(finalAttributes.systemTags || []);
-
-    // If legacy boolean attributes were explicitly provided, sync them TO systemTags
-    if (attributes) {
-      // Handle readonly → LLMWrite mapping
-      if ('readonly' in attributes) {
-        if (attributes.readonly) {
-          // readonly=true means remove LLMWrite and add readonly tag (for backward compat)
-          systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
-          if (!systemTags.includes('readonly')) {
-            systemTags.push('readonly');
-          }
-        } else if (!wasHardcoded) {
-          // readonly=false means add LLMWrite and remove readonly tag
-          if (!systemTags.includes('LLMWrite')) {
-            systemTags.push('LLMWrite');
-          }
-          systemTags = systemTags.filter(t => t !== 'readonly') as SystemTag[];
+    // For existing document type keys, use diff-based replace
+    const existingEntry = this.rootMap.get(key);
+    if (existingEntry) {
+      const existingAttrs = existingEntry.get('attributes') as KeyAttributes;
+      if (existingAttrs?.type === 'document') {
+        // Route to replace_document_text for smart diff handling
+        if (typeof value === 'string') {
+          this.replace_document_text(key, value);
         }
+        return;
       }
-
-      // Handle visible → SystemPrompt mapping
-      if ('visible' in attributes) {
-        if (attributes.visible) {
-          if (!systemTags.includes('SystemPrompt')) {
-            systemTags.push('SystemPrompt');
-          }
-          // Remove old 'prompt' tag if present
-          systemTags = systemTags.filter(t => t !== 'prompt') as SystemTag[];
-        } else {
-          systemTags = systemTags.filter(t => t !== 'SystemPrompt' && t !== 'prompt') as SystemTag[];
-        }
-      }
-
-      // Handle systemTags array directly (new API)
-      if ('systemTags' in attributes && Array.isArray(attributes.systemTags)) {
-        systemTags = this.normalizeSystemTags(attributes.systemTags);
-      }
-      if ('hardcoded' in attributes) {
-        if (attributes.hardcoded && !systemTags.includes('protected')) {
-          systemTags.push('protected');
-        } else if (!attributes.hardcoded && !wasHardcoded) {
-          // Can't remove protected if entry was already hardcoded
-          systemTags = systemTags.filter(t => t !== 'protected') as SystemTag[];
-        }
-        // If wasHardcoded, always keep protected
-        if (wasHardcoded && !systemTags.includes('protected')) {
-          systemTags.push('protected');
-        }
-      } else if (wasHardcoded) {
-        // If no hardcoded attribute provided but entry was hardcoded, preserve it
-        if (!systemTags.includes('protected')) {
-          systemTags.push('protected');
-        }
-      }
-      if ('template' in attributes) {
-        if (attributes.template && !wasHardcoded && !systemTags.includes('ApplyTemplate') && !systemTags.includes('template')) {
-          systemTags.push('ApplyTemplate');
-        } else if (!attributes.template || wasHardcoded) {
-          // Can't set template if hardcoded
-          systemTags = systemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template') as SystemTag[];
-        }
-      }
-    } else if (wasHardcoded) {
-      // If no attributes provided but entry was hardcoded, preserve protected tag
-      if (!systemTags.includes('protected')) {
-        systemTags.push('protected');
-      }
-      // Protected means readonly (remove LLMWrite, add readonly for backward compat)
-      systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
-      if (!systemTags.includes('readonly')) {
-        systemTags.push('readonly');
-      }
-      systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
     }
 
-    // Enforce: protected (hardcoded) implies readonly (no LLMWrite) and NOT template
-    // Always preserve hardcoded status if entry was hardcoded
-    if (wasHardcoded && !systemTags.includes('protected')) {
-      systemTags.push('protected');
+    // Check if we need to create a new entry (outside transaction for UndoManager setup)
+    let entryMap = this.rootMap.get(key);
+    const isNewEntry = !entryMap;
+
+    if (isNewEntry) {
+      // Create and attach to rootMap first (so UndoManager can be attached)
+      entryMap = new Y.Map();
+      this.rootMap.set(key, entryMap);
     }
-    if (systemTags.includes('protected')) {
-      // Protected means readonly (remove LLMWrite, add readonly for backward compat)
-      systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
-      if (!systemTags.includes('readonly')) {
-        systemTags.push('readonly');
+
+    // Ensure UndoManager exists BEFORE making changes
+    this.getUndoManager(key);
+
+    // Now make changes inside a transaction (these will be tracked)
+    this.doc.transact(() => {
+      const oldAttributes = isNewEntry
+        ? {
+          ...DEFAULT_KEY_ATTRIBUTES,
+          contentTags: [],
+          systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[],
+          tags: [],
+          zIndex: 0
+        }
+        : entryMap!.get('attributes');
+
+      const finalAttributes = attributes ? { ...oldAttributes, ...attributes } : oldAttributes;
+
+      let normalizedAttributes = { ...finalAttributes };
+      if (finalAttributes.systemTags) {
+        normalizedAttributes.systemTags = this.normalizeSystemTags(finalAttributes.systemTags);
       }
-      systemTags = systemTags.filter(t => t !== 'template') as SystemTag[];
-    }
+      if (finalAttributes.template) {
+        if (!normalizedAttributes.systemTags.includes('template')) {
+          normalizedAttributes.systemTags.push('template');
+        }
+      }
 
-    // Store normalized tags
-    finalAttributes.systemTags = systemTags;
-
-    // Sync legacy attributes FROM systemTags (canonical source)
-    // readonly = NOT LLMWrite (if LLMWrite not present, or if readonly tag present)
-    finalAttributes.readonly = systemTags.includes('readonly') || !systemTags.includes('LLMWrite');
-    // visible = SystemPrompt (or prompt for backward compat)
-    finalAttributes.visible = this.hasSystemPrompt(systemTags);
-    // Always preserve hardcoded status if entry was hardcoded
-    finalAttributes.hardcoded = wasHardcoded || systemTags.includes('protected');
-    finalAttributes.template = systemTags.includes('ApplyTemplate') || systemTags.includes('template');
-
-    // Sync tags <-> contentTags bidirectionally
-    // If tags was explicitly provided, use it as source for contentTags
-    if (attributes && 'tags' in attributes && attributes.tags) {
-      finalAttributes.contentTags = [...attributes.tags];
-    }
-    // Always sync tags FROM contentTags (canonical source)
-    finalAttributes.tags = [...(finalAttributes.contentTags || [])];
-
-    this.stm[key] = {
-      value,
-      attributes: finalAttributes
-    };
-
-    if (this.listeners[key]) {
-      this.listeners[key].forEach(listener => listener(value));
-    }
-    this.notifyGlobalListeners();
+      entryMap!.set('value', value);
+      entryMap!.set('attributes', normalizedAttributes);
+    });
   }
 
-  // Internal method for setting values from remote (cloud sync)
-  // This doesn't trigger the global listener to prevent sync loops
-  _setFromRemote(key: string, value: any, attributes: KeyAttributes): void {
+  delete_key(key: string): void {
     if (key === '$date' || key === '$time') {
       return;
     }
-
-    this._isRemoteUpdate = true;
-
-    // Ensure new tag arrays exist and sync legacy attributes
-    let systemTags: SystemTag[] = attributes.systemTags || [];
-    if (!attributes.systemTags || systemTags.length === 0) {
-      systemTags = [];
-      if (attributes.visible !== false) {
-        systemTags.push('prompt'); // Will be normalized to SystemPrompt
-      }
-      if (attributes.readonly) {
-        systemTags.push('readonly'); // Will be normalized (removes LLMWrite)
-      } else {
-        systemTags.push('LLMWrite'); // Default: writable
-      }
-      if (attributes.hardcoded) {
-        systemTags.push('protected');
-      }
-      if (attributes.template) {
-        systemTags.push('ApplyTemplate');
-      }
-    }
-
-    // Normalize tags (migrate old tags to new ones)
-    systemTags = this.normalizeSystemTags(systemTags);
-
-    const contentTags = attributes.contentTags || attributes.tags || [];
-
-    this.stm[key] = {
-      value,
-      attributes: {
-        ...attributes,
-        contentTags,
-        systemTags,
-        zIndex: attributes.zIndex ?? 0,
-        tags: contentTags,
-        // Sync legacy attributes FROM normalized systemTags
-        readonly: systemTags.includes('readonly') || !systemTags.includes('LLMWrite'),
-        visible: this.hasSystemPrompt(systemTags),
-        hardcoded: systemTags.includes('protected'),
-        template: systemTags.includes('ApplyTemplate') || systemTags.includes('template')
-      }
-    };
-
-    if (this.listeners[key]) {
-      this.listeners[key].forEach(listener => listener(value));
-    }
-
-    // Still notify global listeners for UI updates, but adapter should check _isRemoteUpdate
-    this.notifyGlobalListeners();
-
-    this._isRemoteUpdate = false;
+    this.rootMap.delete(key);
   }
 
-  // Check if current update is from remote
-  isRemoteUpdate(): boolean {
-    return this._isRemoteUpdate;
+  clear(): void {
+    const keys = Array.from(this.rootMap.keys());
+    this.doc.transact(() => {
+      keys.forEach(k => this.rootMap.delete(k));
+    });
   }
 
-  // Internal method for deleting from remote (cloud sync)
-  _deleteFromRemote(key: string): void {
-    if (key === '$date' || key === '$time') {
-      return;
+  // ============================================
+  // Restored Methods (from v2.x)
+  // ============================================
+
+  /**
+   * Check if a key exists in MindCache.
+   */
+  has(key: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return true;
     }
-
-    this._isRemoteUpdate = true;
-
-    if (key in this.stm) {
-      delete this.stm[key];
-      if (this.listeners[key]) {
-        this.listeners[key].forEach(listener => listener(undefined)); // Pass undefined for deleted keys
-      }
-      this.notifyGlobalListeners();
-    }
-
-    this._isRemoteUpdate = false;
+    return this.rootMap.has(key);
   }
 
-  // Internal method for clearing from remote (cloud sync)
-  _clearFromRemote(): void {
-    this._isRemoteUpdate = true;
-    this.stm = {};
-    this.notifyGlobalListeners();
-    this._isRemoteUpdate = false;
-  }
-
-  // Set attributes for an existing key
-  set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
-    if (key === '$date' || key === '$time') {
+  /**
+   * Delete a key from MindCache.
+   * @returns true if the key existed and was deleted
+   */
+  delete(key: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
       return false;
     }
-
-    const entry = this.stm[key];
-    if (!entry) {
+    if (!this.rootMap.has(key)) {
       return false;
     }
-
-    // Preserve hardcoded status - if entry is hardcoded, it must remain hardcoded
-    const wasHardcoded = entry.attributes.hardcoded || entry.attributes.systemTags?.includes('protected');
-
-    // Don't allow direct modification of hardcoded or systemTags without system access
-    const { hardcoded: _hardcoded, systemTags: _systemTags, ...allowedAttributes } = attributes;
-
-    // If entry is hardcoded (protected), don't allow changing readonly to false or template to true
-    if (wasHardcoded) {
-      if ('readonly' in allowedAttributes) {
-        delete (allowedAttributes as any).readonly; // Can't change readonly on hardcoded
-      }
-      if ('template' in allowedAttributes) {
-        delete (allowedAttributes as any).template; // Can't change ApplyTemplate on hardcoded
-      }
-    }
-
-    entry.attributes = { ...entry.attributes, ...allowedAttributes };
-
-    // Sync legacy boolean to systemTags if legacy props are set
-    if ('readonly' in attributes || 'visible' in attributes || 'template' in attributes || 'systemTags' in attributes) {
-      // Start with existing tags or derive from legacy attributes
-      let newSystemTags: SystemTag[] = entry.attributes.systemTags || [];
-
-      // If systemTags was explicitly provided, use it and normalize
-      if ('systemTags' in attributes && Array.isArray(attributes.systemTags)) {
-        newSystemTags = this.normalizeSystemTags(attributes.systemTags);
-      } else {
-        // Otherwise, derive from legacy attributes
-        newSystemTags = [];
-        if (!entry.attributes.readonly) {
-          newSystemTags.push('LLMWrite');
-        } else {
-          newSystemTags.push('readonly');
-        }
-        if (entry.attributes.visible) {
-          newSystemTags.push('SystemPrompt');
-        }
-        if (entry.attributes.template) {
-          newSystemTags.push('ApplyTemplate');
-        }
-        // Always preserve hardcoded status if it was hardcoded
-        if (wasHardcoded || entry.attributes.hardcoded) {
-          newSystemTags.push('protected');
-        }
-        newSystemTags = this.normalizeSystemTags(newSystemTags);
-      }
-
-      // Enforce: protected implies readonly (no LLMWrite) and NOT ApplyTemplate
-      if (newSystemTags.includes('protected')) {
-        newSystemTags = newSystemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
-        if (!newSystemTags.includes('readonly')) {
-          newSystemTags.push('readonly');
-        }
-        newSystemTags = newSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template') as SystemTag[];
-        entry.attributes.readonly = true;
-        entry.attributes.template = false;
-      }
-
-      entry.attributes.systemTags = newSystemTags;
-
-      // Sync legacy attributes FROM normalized systemTags
-      entry.attributes.readonly = newSystemTags.includes('readonly') || !newSystemTags.includes('LLMWrite');
-      entry.attributes.visible = this.hasSystemPrompt(newSystemTags);
-      entry.attributes.template = newSystemTags.includes('ApplyTemplate') || newSystemTags.includes('template');
-    } else if (wasHardcoded) {
-      // If no legacy props were set but entry was hardcoded, ensure protected tag is preserved
-      let systemTags = this.normalizeSystemTags(entry.attributes.systemTags || []);
-      if (!systemTags.includes('protected')) {
-        systemTags.push('protected');
-      }
-      // Protected means readonly (remove LLMWrite, add readonly for backward compat)
-      systemTags = systemTags.filter(t => t !== 'LLMWrite') as SystemTag[];
-      if (!systemTags.includes('readonly')) {
-        systemTags.push('readonly');
-      }
-      systemTags = systemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template') as SystemTag[];
-      entry.attributes.systemTags = systemTags;
-
-      // Sync legacy attributes
-      entry.attributes.readonly = true;
-      entry.attributes.visible = this.hasSystemPrompt(systemTags);
-      entry.attributes.template = false;
-    }
-
-    // Always ensure hardcoded status is preserved and synced
-    if (wasHardcoded) {
-      entry.attributes.hardcoded = true;
-      if (!entry.attributes.systemTags?.includes('protected')) {
-        entry.attributes.systemTags = [...(entry.attributes.systemTags || []), 'protected'] as SystemTag[];
-      }
-      entry.attributes.readonly = true;
-      entry.attributes.template = false;
-    }
-
-    // Sync contentTags to legacy tags
-    if ('contentTags' in attributes) {
-      entry.attributes.tags = [...(entry.attributes.contentTags || [])];
-    }
-
+    this.rootMap.delete(key);
     this.notifyGlobalListeners();
+    if (this.listeners[key]) {
+      this.listeners[key].forEach(listener => listener(undefined));
+    }
     return true;
   }
 
+  /** @deprecated Use get_value instead */
+  get(key: string): any {
+    return this.get_value(key);
+  }
+
+  /** @deprecated Use set_value instead */
   set(key: string, value: any): void {
     this.set_value(key, value);
   }
 
-  async set_file(key: string, file: File, attributes?: Partial<KeyAttributes>): Promise<void> {
-    const base64Data = await this.encodeFileToBase64(file);
-    const contentType = file.type;
-
-    const fileAttributes: Partial<KeyAttributes> = {
-      type: contentType.startsWith('image/') ? 'image' : 'file',
-      contentType,
-      ...attributes
-    };
-
-    this.set_value(key, base64Data, fileAttributes);
-  }
-
-  set_base64(key: string, base64Data: string, contentType: string, type: 'image' | 'file' = 'file', attributes?: Partial<KeyAttributes>): void {
-    if (!this.validateContentType(type, contentType)) {
-      throw new Error(`Invalid content type ${contentType} for type ${type}`);
-    }
-
-    const fileAttributes: Partial<KeyAttributes> = {
-      type,
-      contentType,
-      ...attributes
-    };
-
-    this.set_value(key, base64Data, fileAttributes);
-  }
-
-  add_image(key: string, base64Data: string, contentType: string = 'image/jpeg', attributes?: Partial<KeyAttributes>): void {
-    if (!contentType.startsWith('image/')) {
-      throw new Error(`Invalid image content type: ${contentType}. Must start with 'image/'`);
-    }
-
-    this.set_base64(key, base64Data, contentType, 'image', attributes);
-    this.set_attributes(key, {
-      type: 'image',
-      contentType: contentType
-    });
-  }
-
-  get_data_url(key: string): string | undefined {
-    const entry = this.stm[key];
-    if (!entry || (entry.attributes.type !== 'image' && entry.attributes.type !== 'file')) {
-      return undefined;
-    }
-
-    if (!entry.attributes.contentType) {
-      return undefined;
-    }
-
-    return this.createDataUrl(entry.value as string, entry.attributes.contentType);
-  }
-
-  get_base64(key: string): string | undefined {
-    const entry = this.stm[key];
-    if (!entry || (entry.attributes.type !== 'image' && entry.attributes.type !== 'file')) {
-      return undefined;
-    }
-
-    return entry.value as string;
-  }
-
-  has(key: string): boolean {
-    if (key === '$date' || key === '$time') {
-      return true;
-    }
-    return key in this.stm;
-  }
-
-  delete(key: string): boolean {
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-    if (!(key in this.stm)) {
-      return false;
-    }
-    const deleted = delete this.stm[key];
-    if (deleted) {
-      this.notifyGlobalListeners();
-      if (this.listeners[key]) {
-        this.listeners[key].forEach(listener => listener(undefined)); // Pass undefined for deleted keys
+  /**
+   * Update multiple values at once from an object.
+   * @deprecated Use set_value for individual keys
+   */
+  update(data: Record<string, any>): void {
+    this.doc.transact(() => {
+      for (const [key, value] of Object.entries(data)) {
+        if (key !== '$date' && key !== '$time' && key !== '$version') {
+          this.set_value(key, value);
+        }
       }
-    }
-    return deleted;
-  }
-
-  clear(): void {
-    this.stm = {};
+    });
     this.notifyGlobalListeners();
   }
 
   /**
-   * Get keys sorted by zIndex (ascending), then by key name
+   * Get the number of keys in MindCache.
    */
-  private getSortedKeys(): string[] {
-    return Object.entries(this.stm)
-      .sort(([keyA, entryA], [keyB, entryB]) => {
-        const zIndexA = entryA.attributes.zIndex ?? 0;
-        const zIndexB = entryB.attributes.zIndex ?? 0;
-        if (zIndexA !== zIndexB) {
-          return zIndexA - zIndexB;
-        }
-        return keyA.localeCompare(keyB);
-      })
-      .map(([key]) => key);
-  }
-
-  keys(): string[] {
-    return [...this.getSortedKeys(), '$date', '$time'];
-  }
-
-  values(): any[] {
-    const now = new Date();
-    const sortedKeys = this.getSortedKeys();
-    const stmValues = sortedKeys.map(key => this.stm[key].value);
-    return [
-      ...stmValues,
-      now.toISOString().split('T')[0],
-      now.toTimeString().split(' ')[0]
-    ];
-  }
-
-  entries(): [string, any][] {
-    const now = new Date();
-    const sortedKeys = this.getSortedKeys();
-    const stmEntries = sortedKeys.map(key =>
-      [key, this.stm[key].value] as [string, any]
-    );
-    return [
-      ...stmEntries,
-      ['$date', now.toISOString().split('T')[0]],
-      ['$time', now.toTimeString().split(' ')[0]]
-    ];
-  }
-
   size(): number {
-    return Object.keys(this.stm).length + 2;
+    // Include temporal keys in count
+    return this.rootMap.size + 2; // +2 for $date and $time
   }
 
-  getAll(): Record<string, any> {
-    const now = new Date();
-    const result: Record<string, any> = {};
+  /**
+   * Get all keys in MindCache (including temporal keys).
+   */
+  keys(): string[] {
+    const keys = Array.from(this.rootMap.keys());
+    keys.push('$date', '$time');
+    return keys;
+  }
 
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      result[key] = this.stm[key].value;
-    });
-
-    result['$date'] = now.toISOString().split('T')[0];
-    result['$time'] = now.toTimeString().split(' ')[0];
-
+  /**
+   * Get all values in MindCache (including temporal values).
+   */
+  values(): any[] {
+    const result: any[] = [];
+    for (const [key] of this.rootMap) {
+      result.push(this.get_value(key));
+    }
+    // Add temporal values
+    result.push(this.get_value('$date'));
+    result.push(this.get_value('$time'));
     return result;
   }
 
-  update(newValues: Record<string, any>): void {
-    Object.entries(newValues).forEach(([key, value]) => {
-      if (key !== '$date' && key !== '$time') {
-        this.stm[key] = {
-          value,
-          attributes: { ...DEFAULT_KEY_ATTRIBUTES }
-        };
-
-        if (this.listeners[key]) {
-          this.listeners[key].forEach(listener => listener(this.stm[key]?.value));
-        }
-      }
-    });
-    this.notifyGlobalListeners();
-  }
-
-  subscribe(key: string, listener: Listener): void {
-    if (!this.listeners[key]) {
-      this.listeners[key] = [];
+  /**
+   * Get all key-value entries (including temporal entries).
+   */
+  entries(): Array<[string, any]> {
+    const result: Array<[string, any]> = [];
+    for (const [key] of this.rootMap) {
+      result.push([key, this.get_value(key)]);
     }
-    this.listeners[key].push(listener);
+    // Add temporal entries
+    result.push(['$date', this.get_value('$date')]);
+    result.push(['$time', this.get_value('$time')]);
+    return result;
   }
 
+  /**
+   * Unsubscribe from key changes.
+   * @deprecated Use the cleanup function returned by subscribe() instead
+   */
   unsubscribe(key: string, listener: Listener): void {
     if (this.listeners[key]) {
       this.listeners[key] = this.listeners[key].filter(l => l !== listener);
     }
   }
 
-  subscribeToAll(listener: GlobalListener): void {
-    this.globalListeners.push(listener);
-  }
-
-  unsubscribeFromAll(listener: GlobalListener): void {
-    this.globalListeners = this.globalListeners.filter(l => l !== listener);
-  }
-
-  private notifyGlobalListeners(): void {
-    this.globalListeners.forEach(listener => listener());
-  }
-
-  injectSTM(template: string, _processingStack?: Set<string>): string {
-    if (template === null || template === undefined) {
-      return String(template);
-    }
-
-    const templateStr = String(template);
-    const keys = templateStr.match(/\{\{([$\w]+)\}\}/g);
-
-    if (!keys) {
-      return templateStr;
-    }
-
-    const cleanKeys = keys.map(key => key.replace(/[{}]/g, ''));
-
-    const inputValues: Record<string, string> = cleanKeys.reduce((acc, key) => {
-      if (key === '$date' || key === '$time') {
-        return {
-          ...acc,
-          [key]: this.get_value(key, _processingStack)
-        };
-      }
-
-      const attributes = this.get_attributes(key);
-      if (_processingStack || (attributes && attributes.visible)) {
-        if (attributes && (attributes.type === 'image' || attributes.type === 'file')) {
-          return acc;
-        }
-
-        return {
-          ...acc,
-          [key]: this.get_value(key, _processingStack)
-        };
-      }
-
-      return acc;
-    }, {});
-
-    return templateStr.replace(/\{\{([$\w]+)\}\}/g, (match, key) => {
-      if (inputValues[key] !== undefined) {
-        return inputValues[key];
-      }
-
-      const attributes = this.get_attributes(key);
-      if (attributes && (attributes.type === 'image' || attributes.type === 'file')) {
-        return match;
-      }
-
-      return '';
-    });
-  }
-
+  /**
+   * Get the STM as a formatted string for LLM context.
+   * @deprecated Use get_system_prompt() instead
+   */
   getSTM(): string {
-    const now = new Date();
+    return this.get_system_prompt();
+  }
+
+  /**
+   * Get the STM as an object with values directly (no attributes).
+   * Includes system keys ($date, $time).
+   * @deprecated Use getAll() for full STM format
+   */
+  getSTMObject(): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [key] of this.rootMap) {
+      result[key] = this.get_value(key);
+    }
+    // Add system keys
+    result['$date'] = this.get_value('$date');
+    result['$time'] = this.get_value('$time');
+    return result;
+  }
+
+  /**
+   * Add a content tag to a key.
+   * @returns true if the tag was added, false if key doesn't exist or tag already exists
+   */
+  addTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const contentTags = attributes?.contentTags || [];
+
+    if (contentTags.includes(tag)) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newContentTags = [...contentTags, tag];
+      entryMap.set('attributes', {
+        ...attributes,
+        contentTags: newContentTags,
+        tags: newContentTags // Sync legacy tags array
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Remove a content tag from a key.
+   * @returns true if the tag was removed
+   */
+  removeTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const contentTags = attributes?.contentTags || [];
+    const tagIndex = contentTags.indexOf(tag);
+
+    if (tagIndex === -1) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newContentTags = contentTags.filter((t: string) => t !== tag);
+      entryMap.set('attributes', {
+        ...attributes,
+        contentTags: newContentTags,
+        tags: newContentTags // Sync legacy tags array
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Get all content tags for a key.
+   */
+  getTags(key: string): string[] {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return [];
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return [];
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.contentTags || [];
+  }
+
+  /**
+   * Get all unique content tags across all keys.
+   */
+  getAllTags(): string[] {
+    const allTags = new Set<string>();
+
+    for (const [, val] of this.rootMap) {
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      if (attributes?.contentTags) {
+        attributes.contentTags.forEach((tag: string) => allTags.add(tag));
+      }
+    }
+
+    return Array.from(allTags);
+  }
+
+  /**
+   * Check if a key has a specific content tag.
+   */
+  hasTag(key: string, tag: string): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.contentTags?.includes(tag) || false;
+  }
+
+  /**
+   * Get all keys with a specific content tag as formatted string.
+   */
+  getTagged(tag: string): string {
     const entries: Array<[string, any]> = [];
 
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      if (entry.attributes.visible) {
+    const keys = this.getSortedKeys();
+    keys.forEach(key => {
+      if (this.hasTag(key, tag)) {
         entries.push([key, this.get_value(key)]);
       }
     });
-
-    entries.push(['$date', now.toISOString().split('T')[0]]);
-    entries.push(['$time', now.toTimeString().split(' ')[0]]);
 
     return entries
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
   }
 
-  getSTMObject(): Record<string, any> {
-    return this.getAll();
+  /**
+   * Get array of keys with a specific content tag.
+   */
+  getKeysByTag(tag: string): string[] {
+    const keys = this.getSortedKeys();
+    return keys.filter(key => this.hasTag(key, tag));
   }
 
-  getSTMForAPI(): Array<{ key: string, value: any, type: string, contentType?: string }> {
-    const now = new Date();
-    const apiData: Array<{ key: string, value: any, type: string, contentType?: string }> = [];
+  // ============================================
+  // System Tag Methods (requires system access level)
+  // ============================================
 
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      // Check for LLMRead or SystemPrompt tag (or visible for backward compat)
-      if (this.hasLLMRead(entry.attributes.systemTags) || entry.attributes.visible) {
-        const hasTemplate = entry.attributes.systemTags?.includes('ApplyTemplate') || entry.attributes.systemTags?.includes('template') || entry.attributes.template;
-        const processedValue = hasTemplate ? this.get_value(key) : entry.value;
+  /**
+   * Add a system tag to a key (requires system access).
+   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'readonly', 'protected', 'ApplyTemplate'
+   */
+  systemAddTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemAddTag requires system access level');
+      return false;
+    }
 
-        apiData.push({
-          key,
-          value: processedValue,
-          type: entry.attributes.type,
-          contentType: entry.attributes.contentType
-        });
-      }
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const systemTags = attributes?.systemTags || [];
+
+    if (systemTags.includes(tag)) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newSystemTags = [...systemTags, tag];
+      const normalizedTags = this.normalizeSystemTags(newSystemTags);
+      entryMap.set('attributes', {
+        ...attributes,
+        systemTags: normalizedTags
+      });
     });
 
-    apiData.push({
-      key: '$date',
-      value: now.toISOString().split('T')[0],
-      type: 'text'
-    });
-
-    apiData.push({
-      key: '$time',
-      value: now.toTimeString().split(' ')[0],
-      type: 'text'
-    });
-
-    return apiData;
+    this.notifyGlobalListeners();
+    return true;
   }
 
-  getVisibleImages(): Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> {
-    const imageParts: Array<{ type: 'file'; mediaType: string; url: string; filename?: string }> = [];
+  /**
+   * Remove a system tag from a key (requires system access).
+   */
+  systemRemoveTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemRemoveTag requires system access level');
+      return false;
+    }
 
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      // Check for LLMRead or SystemPrompt tag (or visible for backward compat)
-      if ((this.hasLLMRead(entry.attributes.systemTags) || entry.attributes.visible) && entry.attributes.type === 'image' && entry.attributes.contentType) {
-        const dataUrl = this.createDataUrl(entry.value as string, entry.attributes.contentType);
-        imageParts.push({
-          type: 'file' as const,
-          mediaType: entry.attributes.contentType,
-          url: dataUrl,
-          filename: key
-        });
-      }
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    const systemTags = attributes?.systemTags || [];
+    const tagIndex = systemTags.indexOf(tag);
+
+    if (tagIndex === -1) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const newSystemTags = systemTags.filter((t: SystemTag) => t !== tag);
+      entryMap.set('attributes', {
+        ...attributes,
+        systemTags: newSystemTags
+      });
     });
 
-    return imageParts;
+    this.notifyGlobalListeners();
+    return true;
   }
 
+  /**
+   * Get all system tags for a key (requires system access).
+   */
+  systemGetTags(key: string): SystemTag[] {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemGetTags requires system access level');
+      return [];
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return [];
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return [];
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.systemTags || [];
+  }
+
+  /**
+   * Check if a key has a specific system tag (requires system access).
+   */
+  systemHasTag(key: string, tag: SystemTag): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemHasTag requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    return attributes?.systemTags?.includes(tag) || false;
+  }
+
+  /**
+   * Set all system tags for a key at once (requires system access).
+   */
+  systemSetTags(key: string, tags: SystemTag[]): boolean {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemSetTags requires system access level');
+      return false;
+    }
+
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      entryMap.set('attributes', {
+        ...attributes,
+        systemTags: [...tags]
+      });
+    });
+
+    this.notifyGlobalListeners();
+    return true;
+  }
+
+  /**
+   * Get all keys with a specific system tag (requires system access).
+   */
+  systemGetKeysByTag(tag: SystemTag): string[] {
+    if (!this.hasSystemAccess) {
+      console.warn('MindCache: systemGetKeysByTag requires system access level');
+      return [];
+    }
+
+    const keys = this.getSortedKeys();
+    return keys.filter(key => this.systemHasTag(key, tag));
+  }
+
+  /**
+   * Helper to get sorted keys (by zIndex).
+   */
+  private getSortedKeys(): string[] {
+    const entries: Array<{ key: string; zIndex: number }> = [];
+
+    for (const [key, val] of this.rootMap) {
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      entries.push({ key, zIndex: attributes?.zIndex ?? 0 });
+    }
+
+    return entries
+      .sort((a, b) => a.zIndex - b.zIndex)
+      .map(e => e.key);
+  }
+
+  /**
+   * Serialize to JSON string.
+   */
   toJSON(): string {
     return JSON.stringify(this.serialize());
   }
 
+  /**
+   * Deserialize from JSON string.
+   */
   fromJSON(jsonString: string): void {
     try {
       const data = JSON.parse(jsonString);
@@ -1203,558 +1367,9 @@ export class MindCache {
     }
   }
 
-  serialize(): Record<string, STMEntry> {
-    const result: Record<string, STMEntry> = {};
-
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      if (!entry.attributes.hardcoded) {
-        result[key] = {
-          value: entry.value,
-          attributes: { ...entry.attributes }
-        };
-      }
-    });
-
-    return result;
-  }
-
-  deserialize(data: Record<string, STMEntry>): void {
-    if (typeof data === 'object' && data !== null) {
-      // Set flag to prevent adapters from saving data we just loaded
-      this._isRemoteUpdate = true;
-
-      this.clear();
-
-      Object.entries(data).forEach(([key, entry]) => {
-        if (entry && typeof entry === 'object' && 'value' in entry && 'attributes' in entry) {
-          const attrs = entry.attributes;
-
-          // Skip hardcoded keys during deserialization
-          if (attrs.hardcoded === true || attrs.systemTags?.includes('protected')) {
-            return;
-          }
-
-          // Migrate from legacy format: derive systemTags from boolean flags if missing
-          let systemTags: SystemTag[] = attrs.systemTags || [];
-          if (!attrs.systemTags || systemTags.length === 0) {
-            systemTags = [];
-            if (attrs.visible !== false) {
-              systemTags.push('prompt'); // Will be normalized to SystemPrompt
-            } // visible true by default
-            if (attrs.readonly) {
-              systemTags.push('readonly'); // Will be normalized (removes LLMWrite)
-            } else {
-              systemTags.push('LLMWrite'); // Default: writable
-            }
-            if (attrs.hardcoded) {
-              systemTags.push('protected');
-            }
-            if (attrs.template) {
-              systemTags.push('ApplyTemplate');
-            }
-          }
-
-          // Normalize tags (migrate old tags to new ones)
-          systemTags = this.normalizeSystemTags(systemTags);
-
-          // Migrate contentTags from legacy tags if missing
-          const contentTags = attrs.contentTags || attrs.tags || [];
-
-          this.stm[key] = {
-            value: entry.value,
-            attributes: {
-              ...attrs,
-              contentTags,
-              systemTags,
-              zIndex: attrs.zIndex ?? 0,
-              // Sync legacy attributes FROM normalized systemTags
-              tags: contentTags,
-              readonly: systemTags.includes('readonly') || !systemTags.includes('LLMWrite'),
-              visible: this.hasSystemPrompt(systemTags),
-              hardcoded: systemTags.includes('protected'),
-              template: systemTags.includes('ApplyTemplate') || systemTags.includes('template')
-            }
-          };
-        }
-      });
-
-      this.notifyGlobalListeners();
-
-      // Reset flag after notify
-      this._isRemoteUpdate = false;
-    }
-  }
-
-  get_system_prompt(): string {
-    const now = new Date();
-    const promptLines: string[] = [];
-
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      // Check for LLMRead or SystemPrompt tag (or visible for backward compat)
-      if (this.hasLLMRead(entry.attributes.systemTags) || entry.attributes.visible) {
-        if (entry.attributes.type === 'image') {
-          promptLines.push(`image ${key} available`);
-          return;
-        }
-        if (entry.attributes.type === 'file') {
-          // Check if LLM can write (has LLMWrite tag and not readonly)
-          const canWrite = this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly'));
-          if (!canWrite) {
-            promptLines.push(`${key}: [${entry.attributes.type.toUpperCase()}] - ${entry.attributes.contentType || 'unknown format'}`);
-          } else {
-            const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
-            promptLines.push(`${key}: [${entry.attributes.type.toUpperCase()}] - ${entry.attributes.contentType || 'unknown format'}. You can update this ${entry.attributes.type} using the write_${sanitizedKey} tool.`);
-          }
-          return;
-        }
-
-        const value = this.get_value(key);
-        const formattedValue = typeof value === 'object' && value !== null
-          ? JSON.stringify(value)
-          : String(value);
-
-        // Check if LLM can write (has LLMWrite tag and not readonly)
-        const canWrite = this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly'));
-        if (!canWrite) {
-          promptLines.push(`${key}: ${formattedValue}`);
-        } else {
-          const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
-          const toolInstruction =
-            `You can rewrite "${key}" by using the write_${sanitizedKey} tool. ` +
-            'This tool DOES NOT append — start your response with the old value ' +
-            `(${formattedValue})`;
-          promptLines.push(`${key}: ${formattedValue}. ${toolInstruction}`);
-        }
-      }
-    });
-
-    promptLines.push(`$date: ${now.toISOString().split('T')[0]}`);
-    promptLines.push(`$time: ${now.toTimeString().split(' ')[0]}`);
-
-    return promptLines.join('\n');
-  }
-
-  private findKeyFromToolName(toolName: string): string | undefined {
-    if (!toolName.startsWith('write_')) {
-      return undefined;
-    }
-
-    const sanitizedKey = toolName.replace('write_', '');
-    const sortedKeys = this.getSortedKeys();
-    return sortedKeys.find(k =>
-      k.replace(/[^a-zA-Z0-9_-]/g, '_') === sanitizedKey
-    );
-  }
-
-  get_aisdk_tools(): Record<string, any> {
-    const tools: Record<string, any> = {};
-
-    const sortedKeys = this.getSortedKeys();
-    const writableKeys = sortedKeys.filter(key => {
-      const entry = this.stm[key];
-      // Include if has LLMWrite tag (and not readonly), or if legacy readonly is false
-      return this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly'));
-    });
-
-    writableKeys.forEach(key => {
-      const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const toolName = `write_${sanitizedKey}`;
-
-      const entry = this.stm[key];
-      const keyType = entry?.attributes.type || 'text';
-
-      let inputSchema;
-      let description = `Write a value to the STM key: ${key}`;
-
-      if (keyType === 'image' || keyType === 'file') {
-        description += ' (expects base64 encoded data)';
-        inputSchema = z.object({
-          value: z.string().describe(`Base64 encoded data for ${key}`),
-          contentType: z.string().optional().describe(`MIME type for the ${keyType}`)
-        });
-      } else if (keyType === 'json') {
-        description += ' (expects JSON string)';
-        inputSchema = z.object({
-          value: z.string().describe(`JSON string value for ${key}`)
-        });
-      } else {
-        inputSchema = z.object({
-          value: z.string().describe(`The text value to write to ${key}`)
-        });
-      }
-
-      tools[toolName] = {
-        description,
-        inputSchema,
-        execute: async (input: { value: any; contentType?: string }) => {
-          if (keyType === 'image' || keyType === 'file') {
-            if (input.contentType) {
-              this.set_base64(key, input.value, input.contentType, keyType);
-            } else {
-              const existingContentType = entry?.attributes.contentType;
-              if (existingContentType) {
-                this.set_base64(key, input.value, existingContentType, keyType);
-              } else {
-                throw new Error(`Content type required for ${keyType} data`);
-              }
-            }
-          } else {
-            this.set_value(key, input.value);
-          }
-
-          let resultMessage: string;
-          if (keyType === 'image') {
-            resultMessage = `Successfully saved image to ${key}`;
-          } else if (keyType === 'file') {
-            resultMessage = `Successfully saved file to ${key}`;
-          } else if (keyType === 'json') {
-            resultMessage = `Successfully saved JSON data to ${key}`;
-          } else {
-            resultMessage = `Successfully wrote "${input.value}" to ${key}`;
-          }
-
-          return {
-            result: resultMessage,
-            key: key,
-            value: input.value,
-            type: keyType,
-            contentType: input.contentType,
-            sanitizedKey: sanitizedKey
-          };
-        }
-      };
-    });
-
-    if (writableKeys.length === 0) {
-      return {};
-    }
-
-    return tools;
-  }
-
-  executeToolCall(
-    toolName: string,
-    value: any
-  ): { result: string; key: string; value: any } | null {
-    const originalKey = this.findKeyFromToolName(toolName);
-    if (!originalKey) {
-      return null;
-    }
-
-    const entry = this.stm[originalKey];
-    // Check if LLM can write (has LLMWrite tag and not readonly)
-    const canWrite = entry && (this.hasLLMWrite(entry.attributes.systemTags) || (!entry.attributes.readonly && !entry.attributes.systemTags.includes('readonly')));
-    if (!canWrite) {
-      return null;
-    }
-
-    this.set_value(originalKey, value);
-    return {
-      result: `Successfully wrote "${value}" to ${originalKey}`,
-      key: originalKey,
-      value: value
-    };
-  }
-
-  // ============================================
-  // Content Tag Methods (available to all access levels)
-  // ============================================
-
   /**
-   * Add a content tag to a key (user-level organization)
+   * Export to Markdown format.
    */
-  addTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    if (!entry) {
-      return false;
-    }
-
-    if (!entry.attributes.contentTags) {
-      entry.attributes.contentTags = [];
-    }
-
-    if (!entry.attributes.contentTags.includes(tag)) {
-      entry.attributes.contentTags.push(tag);
-      // Sync legacy tags array
-      entry.attributes.tags = [...entry.attributes.contentTags];
-      this.notifyGlobalListeners();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Remove a content tag from a key
-   */
-  removeTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    if (!entry || !entry.attributes.contentTags) {
-      return false;
-    }
-
-    const tagIndex = entry.attributes.contentTags.indexOf(tag);
-    if (tagIndex > -1) {
-      entry.attributes.contentTags.splice(tagIndex, 1);
-      // Sync legacy tags array
-      entry.attributes.tags = [...entry.attributes.contentTags];
-      this.notifyGlobalListeners();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Get all content tags for a key
-   */
-  getTags(key: string): string[] {
-    if (key === '$date' || key === '$time') {
-      return [];
-    }
-
-    const entry = this.stm[key];
-    return entry?.attributes.contentTags || [];
-  }
-
-  /**
-   * Get all unique content tags across all keys
-   */
-  getAllTags(): string[] {
-    const allTags = new Set<string>();
-
-    Object.values(this.stm).forEach(entry => {
-      if (entry.attributes.contentTags) {
-        entry.attributes.contentTags.forEach(tag => allTags.add(tag));
-      }
-    });
-
-    return Array.from(allTags);
-  }
-
-  /**
-   * Check if a key has a specific content tag
-   */
-  hasTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    return entry?.attributes.contentTags?.includes(tag) || false;
-  }
-
-  /**
-   * Get all keys with a specific content tag as formatted string
-   */
-  getTagged(tag: string): string {
-    const entries: Array<[string, any]> = [];
-
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      if (entry.attributes.contentTags?.includes(tag)) {
-        entries.push([key, this.get_value(key)]);
-      }
-    });
-
-    return entries
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ');
-  }
-
-  /**
-   * Get all keys with a specific content tag
-   */
-  getKeysByTag(tag: string): string[] {
-    const sortedKeys = this.getSortedKeys();
-    return sortedKeys.filter(key => {
-      const entry = this.stm[key];
-      return entry.attributes.contentTags?.includes(tag);
-    });
-  }
-
-  // ============================================
-  // System Tag Methods (requires system access level)
-  // ============================================
-
-  /**
-   * Add a system tag to a key (requires system access)
-   * System tags: 'prompt', 'readonly', 'protected', 'template'
-   */
-  systemAddTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemAddTag requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    if (!entry) {
-      return false;
-    }
-
-    if (!entry.attributes.systemTags) {
-      entry.attributes.systemTags = [];
-    }
-
-    if (!entry.attributes.systemTags.includes(tag)) {
-      entry.attributes.systemTags.push(tag);
-      // Sync legacy boolean attributes
-      this.syncLegacyFromSystemTags(entry);
-      this.notifyGlobalListeners();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Remove a system tag from a key (requires system access)
-   */
-  systemRemoveTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemRemoveTag requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    if (!entry || !entry.attributes.systemTags) {
-      return false;
-    }
-
-    // Prevent removing 'protected' tag from hardcoded keys
-    const isHardcoded = entry.attributes.hardcoded || entry.attributes.systemTags.includes('protected');
-    if (tag === 'protected' && isHardcoded) {
-      return false; // Cannot remove protected tag from hardcoded keys
-    }
-
-    const tagIndex = entry.attributes.systemTags.indexOf(tag);
-    if (tagIndex > -1) {
-      entry.attributes.systemTags.splice(tagIndex, 1);
-      // Sync legacy boolean attributes
-      this.syncLegacyFromSystemTags(entry);
-      // Ensure hardcoded status is preserved
-      if (isHardcoded) {
-        if (!entry.attributes.systemTags.includes('protected')) {
-          entry.attributes.systemTags.push('protected');
-        }
-        entry.attributes.hardcoded = true;
-        entry.attributes.readonly = true;
-        entry.attributes.template = false;
-      }
-      this.notifyGlobalListeners();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Get all system tags for a key (requires system access)
-   */
-  systemGetTags(key: string): SystemTag[] {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemGetTags requires system access level');
-      return [];
-    }
-
-    if (key === '$date' || key === '$time') {
-      return [];
-    }
-
-    const entry = this.stm[key];
-    return entry?.attributes.systemTags || [];
-  }
-
-  /**
-   * Check if a key has a specific system tag (requires system access)
-   */
-  systemHasTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemHasTag requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    return entry?.attributes.systemTags?.includes(tag) || false;
-  }
-
-  /**
-   * Set all system tags for a key at once (requires system access)
-   */
-  systemSetTags(key: string, tags: SystemTag[]): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemSetTags requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time') {
-      return false;
-    }
-
-    const entry = this.stm[key];
-    if (!entry) {
-      return false;
-    }
-
-    entry.attributes.systemTags = [...tags];
-    // Sync legacy boolean attributes
-    this.syncLegacyFromSystemTags(entry);
-    this.notifyGlobalListeners();
-    return true;
-  }
-
-  /**
-   * Get all keys with a specific system tag (requires system access)
-   */
-  systemGetKeysByTag(tag: SystemTag): string[] {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemGetKeysByTag requires system access level');
-      return [];
-    }
-
-    const sortedKeys = this.getSortedKeys();
-    return sortedKeys.filter(key => {
-      const entry = this.stm[key];
-      return entry.attributes.systemTags?.includes(tag);
-    });
-  }
-
-  /**
-   * Helper to sync legacy boolean attributes from system tags
-   */
-  private syncLegacyFromSystemTags(entry: STMEntry): void {
-    const tags = entry.attributes.systemTags || [];
-    entry.attributes.readonly = tags.includes('readonly');
-    entry.attributes.visible = tags.includes('prompt');
-    entry.attributes.hardcoded = tags.includes('protected');
-    entry.attributes.template = tags.includes('ApplyTemplate') || tags.includes('template');
-  }
-
   toMarkdown(): string {
     const now = new Date();
     const lines: string[] = [];
@@ -1778,25 +1393,32 @@ export class MindCache {
 
     const sortedKeys = this.getSortedKeys();
     sortedKeys.forEach(key => {
-      const entry = this.stm[key];
-      if (entry.attributes.hardcoded) {
+      const entryMap = this.rootMap.get(key);
+      if (!entryMap) {
+        return;
+      }
+
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+      const value = entryMap.get('value');
+
+      if (attributes?.hardcoded) {
         return;
       }
 
       lines.push(`### ${key}`);
-      const entryType = (entry.attributes.type && (entry.attributes.type as any) !== 'undefined') ? entry.attributes.type : 'text';
+      const entryType = attributes?.type || 'text';
       lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **Readonly**: \`${entry.attributes.readonly}\``);
-      lines.push(`- **Visible**: \`${entry.attributes.visible}\``);
-      lines.push(`- **Template**: \`${entry.attributes.template}\``);
-      lines.push(`- **Z-Index**: \`${entry.attributes.zIndex ?? 0}\``);
+      lines.push(`- **Readonly**: \`${attributes?.readonly ?? false}\``);
+      lines.push(`- **Visible**: \`${attributes?.visible ?? true}\``);
+      lines.push(`- **Template**: \`${attributes?.template ?? false}\``);
+      lines.push(`- **Z-Index**: \`${attributes?.zIndex ?? 0}\``);
 
-      if (entry.attributes.tags && entry.attributes.tags.length > 0) {
-        lines.push(`- **Tags**: \`${entry.attributes.tags.join('`, `')}\``);
+      if (attributes?.contentTags && attributes.contentTags.length > 0) {
+        lines.push(`- **Tags**: \`${attributes.contentTags.join('`, `')}\``);
       }
 
-      if (entry.attributes.contentType) {
-        lines.push(`- **Content Type**: \`${entry.attributes.contentType}\``);
+      if (attributes?.contentType) {
+        lines.push(`- **Content Type**: \`${attributes.contentType}\``);
       }
 
       if (entryType === 'image' || entryType === 'file') {
@@ -1807,275 +1429,747 @@ export class MindCache {
         appendixEntries.push({
           key,
           type: entryType,
-          contentType: entry.attributes.contentType || 'application/octet-stream',
-          base64: entry.value as string,
+          contentType: attributes?.contentType || 'application/octet-stream',
+          base64: value as string,
           label
         });
       } else if (entryType === 'json') {
         lines.push('- **Value**:');
         lines.push('```json');
         try {
-          const jsonValue = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value, null, 2);
+          const jsonValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
           lines.push(jsonValue);
         } catch {
-          lines.push(String(entry.value));
+          lines.push(String(value));
         }
         lines.push('```');
       } else {
-        const valueStr = String(entry.value);
-        lines.push('- **Value**:');
-        lines.push('```');
-        lines.push(valueStr);
-        lines.push('```');
+        lines.push(`- **Value**: ${value}`);
       }
 
       lines.push('');
-      lines.push('---');
-      lines.push('');
     });
 
+    // Add appendix for binary data
     if (appendixEntries.length > 0) {
+      lines.push('---');
+      lines.push('');
       lines.push('## Appendix: Binary Data');
       lines.push('');
 
-      appendixEntries.forEach(({ key, contentType, base64, label }) => {
-        lines.push(`### Appendix ${label}: ${key}`);
-        lines.push(`**Type**: ${contentType}`);
-        lines.push('');
+      appendixEntries.forEach(entry => {
+        lines.push(`### Appendix ${entry.label}: ${entry.key}`);
+        lines.push(`- **Type**: \`${entry.type}\``);
+        lines.push(`- **Content Type**: \`${entry.contentType}\``);
+        lines.push('- **Base64 Data**:');
         lines.push('```');
-        lines.push(base64);
+        lines.push(entry.base64);
         lines.push('```');
-        lines.push('');
-        lines.push('---');
         lines.push('');
       });
     }
 
-    lines.push('*End of MindCache Export*');
-
     return lines.join('\n');
   }
 
+  /**
+   * Import from Markdown format.
+   */
   fromMarkdown(markdown: string): void {
     const lines = markdown.split('\n');
-    let currentSection: 'header' | 'entries' | 'appendix' = 'header';
     let currentKey: string | null = null;
-    let currentEntry: Partial<STMEntry> | null = null;
+    let currentAttributes: Partial<KeyAttributes> = {};
+    let currentValue: string | null = null;
     let inCodeBlock = false;
     let codeBlockContent: string[] = [];
-    let codeBlockType: 'value' | 'json' | 'base64' | 'default' | null = null;
-    const appendixData: Record<string, { contentType: string; base64: string }> = {};
-    let currentAppendixKey: string | null = null;
-    const pendingEntries: Record<string, Partial<STMEntry> & { appendixLabel?: string }> = {};
+    const _appendixData: Record<string, string> = {};
 
-    this.clear();
+    for (const line of lines) {
+      // Parse key headers
+      if (line.startsWith('### ') && !line.startsWith('### Appendix')) {
+        // Save previous entry
+        if (currentKey && currentValue !== null) {
+          this.set_value(currentKey, currentValue, currentAttributes);
+        }
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      if (trimmed === '## STM Entries') {
-        currentSection = 'entries';
-        continue;
-      }
-      if (trimmed === '## Appendix: Binary Data') {
-        currentSection = 'appendix';
+        currentKey = line.substring(4).trim();
+        currentAttributes = {};
+        currentValue = null;
         continue;
       }
 
-      if (trimmed === '```' || trimmed === '```json') {
-        if (!inCodeBlock) {
-          inCodeBlock = true;
-          codeBlockContent = [];
-          codeBlockType = currentSection === 'appendix' ? 'base64' : (trimmed === '```json' ? 'json' : 'value');
-        } else {
+      // Parse appendix
+      if (line.startsWith('### Appendix ')) {
+        const match = line.match(/### Appendix ([A-Z]): (.+)/);
+        if (match) {
+          currentKey = match[2];
+        }
+        continue;
+      }
+
+      // Parse attributes
+      if (line.startsWith('- **Type**:')) {
+        const type = line.match(/`(.+)`/)?.[1] as KeyAttributes['type'];
+        if (type) {
+          currentAttributes.type = type;
+        }
+        continue;
+      }
+      if (line.startsWith('- **Readonly**:')) {
+        currentAttributes.readonly = line.includes('`true`');
+        continue;
+      }
+      if (line.startsWith('- **Visible**:')) {
+        currentAttributes.visible = line.includes('`true`');
+        continue;
+      }
+      if (line.startsWith('- **Template**:')) {
+        currentAttributes.template = line.includes('`true`');
+        continue;
+      }
+      if (line.startsWith('- **Z-Index**:')) {
+        const zIndex = parseInt(line.match(/`(\d+)`/)?.[1] || '0', 10);
+        currentAttributes.zIndex = zIndex;
+        continue;
+      }
+      if (line.startsWith('- **Tags**:')) {
+        const tags = line.match(/`([^`]+)`/g)?.map(t => t.slice(1, -1)) || [];
+        currentAttributes.contentTags = tags;
+        currentAttributes.tags = tags;
+        continue;
+      }
+      if (line.startsWith('- **Content Type**:')) {
+        currentAttributes.contentType = line.match(/`(.+)`/)?.[1];
+        continue;
+      }
+      if (line.startsWith('- **Value**:') && !line.includes('[See Appendix')) {
+        currentValue = line.substring(12).trim();
+        continue;
+      }
+
+      // Handle code blocks
+      if (line === '```json' || line === '```') {
+        if (inCodeBlock) {
+          // End of code block
           inCodeBlock = false;
-          const content = codeBlockContent.join('\n');
-
-          if (currentSection === 'appendix' && currentAppendixKey) {
-            appendixData[currentAppendixKey].base64 = content;
-          } else if (currentEntry && codeBlockType === 'json') {
-            currentEntry.value = content;
-          } else if (currentEntry && codeBlockType === 'value') {
-            currentEntry.value = content;
+          if (currentKey && codeBlockContent.length > 0) {
+            currentValue = codeBlockContent.join('\n');
           }
-
           codeBlockContent = [];
-          codeBlockType = null;
+        } else {
+          inCodeBlock = true;
         }
         continue;
       }
 
       if (inCodeBlock) {
         codeBlockContent.push(line);
+      }
+    }
+
+    // Save last entry
+    if (currentKey && currentValue !== null) {
+      this.set_value(currentKey, currentValue, currentAttributes);
+    }
+  }
+
+  /**
+   * Set base64 binary data.
+   */
+  set_base64(key: string, base64Data: string, contentType: string, type: 'image' | 'file' = 'file', attributes?: Partial<KeyAttributes>): void {
+    if (!this.validateContentType(type, contentType)) {
+      throw new Error(`Invalid content type ${contentType} for type ${type}`);
+    }
+
+    const fileAttributes: Partial<KeyAttributes> = {
+      type,
+      contentType,
+      ...attributes
+    };
+
+    this.set_value(key, base64Data, fileAttributes);
+  }
+
+  /**
+   * Add an image from base64 data.
+   */
+  add_image(key: string, base64Data: string, contentType: string = 'image/jpeg', attributes?: Partial<KeyAttributes>): void {
+    if (!contentType.startsWith('image/')) {
+      throw new Error(`Invalid image content type: ${contentType}. Must start with 'image/'`);
+    }
+
+    this.set_base64(key, base64Data, contentType, 'image', attributes);
+  }
+
+  /**
+   * Get the data URL for an image or file key.
+   */
+  get_data_url(key: string): string | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    if (attributes?.type !== 'image' && attributes?.type !== 'file') {
+      return undefined;
+    }
+
+    if (!attributes?.contentType) {
+      return undefined;
+    }
+
+    const value = entryMap.get('value') as string;
+    return this.createDataUrl(value, attributes.contentType);
+  }
+
+  /**
+   * Get the base64 data for an image or file key.
+   */
+  get_base64(key: string): string | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+    if (attributes?.type !== 'image' && attributes?.type !== 'file') {
+      return undefined;
+    }
+
+    return entryMap.get('value') as string;
+  }
+
+  // File methods
+  async set_file(key: string, file: File, attributes?: Partial<KeyAttributes>): Promise<void> {
+    const base64 = await this.encodeFileToBase64(file);
+    const dataUrl = this.createDataUrl(base64, file.type);
+
+    this.set_value(key, dataUrl, {
+      ...attributes,
+      type: 'file',
+      contentType: file.type
+    });
+  }
+
+  set_image(key: string, file: File, attributes?: Partial<KeyAttributes>): Promise<void> {
+    return this.set_file(key, file, {
+      ...attributes,
+      type: 'image' // Override to image
+    });
+  }
+
+  // Document methods for collaborative editing
+
+  /**
+   * Create or get a collaborative document key.
+   * Uses Y.Text for character-level concurrent editing.
+   *
+   * Note: This exposes Yjs Y.Text directly for editor bindings (y-quill, y-codemirror, etc.)
+   */
+  set_document(key: string, initialText?: string, attributes?: Partial<KeyAttributes>): void {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return;
+    }
+
+    let entryMap = this.rootMap.get(key);
+
+    if (!entryMap) {
+      entryMap = new Y.Map();
+      this.rootMap.set(key, entryMap);
+
+      // Create Y.Text for collaborative editing
+      const yText = new Y.Text(initialText || '');
+      entryMap.set('value', yText);
+      entryMap.set('attributes', {
+        ...DEFAULT_KEY_ATTRIBUTES,
+        type: 'document',
+        contentTags: [],
+        systemTags: ['SystemPrompt', 'LLMWrite'],
+        tags: [],
+        zIndex: 0,
+        ...attributes
+      });
+    }
+
+    // Ensure UndoManager for this key
+    this.getUndoManager(key);
+  }
+
+  /**
+   * Get the Y.Text object for a document key.
+   * Use this to bind to editors (Quill, CodeMirror, Monaco, etc.)
+   *
+   * @returns Y.Text or undefined if key doesn't exist or isn't a document
+   */
+  get_document(key: string): Y.Text | undefined {
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return undefined;
+    }
+
+    const attrs = entryMap.get('attributes') as KeyAttributes;
+    if (attrs?.type !== 'document') {
+      return undefined;
+    }
+
+    const value = entryMap.get('value');
+    if (value instanceof Y.Text) {
+      return value;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get plain text content of a document key.
+   * For collaborative editing, use get_document() and bind to an editor.
+   */
+  get_document_text(key: string): string | undefined {
+    const yText = this.get_document(key);
+    return yText?.toString();
+  }
+
+  /**
+   * Insert text at a position in a document key.
+   */
+  insert_text(key: string, index: number, text: string): void {
+    const yText = this.get_document(key);
+    if (yText) {
+      yText.insert(index, text);
+    }
+  }
+
+  /**
+   * Delete text from a document key.
+   */
+  delete_text(key: string, index: number, length: number): void {
+    const yText = this.get_document(key);
+    if (yText) {
+      yText.delete(index, length);
+    }
+  }
+
+  /**
+   * Replace all text in a document key.
+   * Uses diff-based updates when changes are < diffThreshold (default 80%).
+   * This preserves concurrent edits and provides better undo granularity.
+   *
+   * @param key - The document key
+   * @param newText - The new text content
+   * @param diffThreshold - Percentage (0-1) of change above which full replace is used (default: 0.8)
+   */
+  replace_document_text(key: string, newText: string, diffThreshold = 0.8): void {
+    const yText = this.get_document(key);
+    if (!yText) {
+      return;
+    }
+
+    const oldText = yText.toString();
+
+    // If same content, do nothing
+    if (oldText === newText) {
+      return;
+    }
+
+    // If empty, just insert
+    if (oldText.length === 0) {
+      yText.insert(0, newText);
+      return;
+    }
+
+    // Compute diff
+    const diffs = diff(oldText, newText);
+
+    // Calculate change ratio
+    let changedChars = 0;
+    for (const [op, text] of diffs) {
+      if (op !== 0) {
+        changedChars += text.length;
+      }
+    }
+    const changeRatio = changedChars / Math.max(oldText.length, newText.length);
+
+    // If too many changes, do full replace (more efficient)
+    if (changeRatio > diffThreshold) {
+      this.doc.transact(() => {
+        yText.delete(0, yText.length);
+        yText.insert(0, newText);
+      });
+      return;
+    }
+
+    // Apply incremental diff operations
+    this.doc.transact(() => {
+      let cursor = 0;
+      for (const [op, text] of diffs) {
+        if (op === 0) {
+          // Equal - move cursor
+          cursor += text.length;
+        } else if (op === -1) {
+          // Delete
+          yText.delete(cursor, text.length);
+        } else if (op === 1) {
+          // Insert
+          yText.insert(cursor, text);
+          cursor += text.length;
+        }
+      }
+    });
+  }
+
+  // ... (subscribe methods)
+  subscribe(key: string, listener: Listener): () => void {
+    if (!this.listeners[key]) {
+      this.listeners[key] = [];
+    }
+    this.listeners[key].push(listener);
+    return () => {
+      this.listeners[key] = this.listeners[key].filter(l => l !== listener);
+    };
+  }
+
+  subscribeToAll(listener: GlobalListener): () => void {
+    this.globalListeners.push(listener);
+    return () => {
+      this.globalListeners = this.globalListeners.filter(l => l !== listener);
+    };
+  }
+
+  unsubscribeFromAll(listener: GlobalListener): void {
+    this.globalListeners = this.globalListeners.filter(l => l !== listener);
+  }
+
+  private notifyGlobalListeners(): void {
+    this.globalListeners.forEach(l => l());
+  }
+
+  // Sanitize key name for use in tool names
+  private sanitizeKeyForTool(key: string): string {
+    return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  // Find original key from sanitized tool name
+  private findKeyFromSanitizedTool(sanitizedKey: string): string | undefined {
+    for (const [key] of this.rootMap) {
+      if (this.sanitizeKeyForTool(key) === sanitizedKey) {
+        return key;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Generate Vercel AI SDK compatible tools for writable keys.
+   * For document type keys, generates additional tools: append_, insert_, edit_
+   */
+  get_aisdk_tools(): Record<string, any> {
+    const tools: Record<string, any> = {};
+
+    for (const [key, val] of this.rootMap) {
+      // Skip system keys
+      if (key.startsWith('$')) {
         continue;
       }
 
-      if (currentSection === 'entries') {
-        if (trimmed.startsWith('### ')) {
-          if (currentKey && currentEntry && currentEntry.attributes) {
-            pendingEntries[currentKey] = currentEntry as STMEntry & { appendixLabel?: string };
-          }
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
 
-          currentKey = trimmed.substring(4);
-          currentEntry = {
-            value: undefined,
-            attributes: {
-              ...DEFAULT_KEY_ATTRIBUTES,
-              contentTags: [],
-              systemTags: ['prompt'] as SystemTag[],
-              tags: []
-            }
-          };
-        } else if (trimmed.startsWith('- **Type**: `')) {
-          const type = trimmed.match(/`([^`]+)`/)?.[1] as KeyAttributes['type'];
-          if (currentEntry && type && (type as any) !== 'undefined') {
-            currentEntry.attributes!.type = type;
-          }
-        } else if (trimmed.startsWith('- **Readonly**: `')) {
-          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-          if (currentEntry) {
-            currentEntry.attributes!.readonly = value;
-          }
-        } else if (trimmed.startsWith('- **Visible**: `')) {
-          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-          if (currentEntry) {
-            currentEntry.attributes!.visible = value;
-          }
-        } else if (trimmed.startsWith('- **Template**: `')) {
-          const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-          if (currentEntry) {
-            currentEntry.attributes!.template = value;
-          }
-        } else if (trimmed.startsWith('- **Z-Index**: `')) {
-          const zIndexStr = trimmed.match(/`([^`]+)`/)?.[1];
-          if (currentEntry && zIndexStr) {
-            const zIndex = parseInt(zIndexStr, 10);
-            if (!isNaN(zIndex)) {
-              currentEntry.attributes!.zIndex = zIndex;
-            }
-          }
-        } else if (trimmed.startsWith('- **Tags**: `')) {
-          const tagsStr = trimmed.substring(13, trimmed.length - 1);
-          if (currentEntry) {
-            currentEntry.attributes!.tags = tagsStr.split('`, `');
-          }
-        } else if (trimmed.startsWith('- **Content Type**: `')) {
-          const contentType = trimmed.match(/`([^`]+)`/)?.[1];
-          if (currentEntry && contentType) {
-            currentEntry.attributes!.contentType = contentType;
-          }
-        } else if (trimmed.startsWith('- **Value**: `')) {
-          const value = trimmed.substring(14, trimmed.length - 1);
-          if (currentEntry) {
-            currentEntry.value = value;
-          }
-        } else if (trimmed.startsWith('- **Value**: [See Appendix ')) {
-          const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
-          if (currentEntry && labelMatch && currentKey) {
-            (currentEntry as any).appendixLabel = labelMatch[1];
-            currentEntry.value = '';
-          }
-        }
+      // Check if key has LLMWrite access (writable by LLM)
+      const isWritable = !attributes?.readonly &&
+        (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+
+      if (!isWritable) {
+        continue;
       }
 
-      if (currentSection === 'appendix') {
-        if (trimmed.startsWith('### Appendix ')) {
-          const match = trimmed.match(/### Appendix ([A-Z]): (.+)/);
-          if (match) {
-            const label = match[1];
-            const key = match[2];
-            currentAppendixKey = `${label}:${key}`;
-            appendixData[currentAppendixKey] = { contentType: '', base64: '' };
-          }
-        } else if (trimmed.startsWith('**Type**: ')) {
-          const contentType = trimmed.substring(10);
-          if (currentAppendixKey) {
-            appendixData[currentAppendixKey].contentType = contentType;
-          }
-        }
-      }
-    }
+      const sanitizedKey = this.sanitizeKeyForTool(key);
+      const isDocument = attributes?.type === 'document';
 
-    if (currentKey && currentEntry && currentEntry.attributes) {
-      pendingEntries[currentKey] = currentEntry as STMEntry & { appendixLabel?: string };
-    }
-
-    Object.entries(pendingEntries).forEach(([key, entry]) => {
-      const appendixLabel = (entry as any).appendixLabel;
-      if (appendixLabel) {
-        const appendixKey = `${appendixLabel}:${key}`;
-        const appendixInfo = appendixData[appendixKey];
-        if (appendixInfo && appendixInfo.base64) {
-          entry.value = appendixInfo.base64;
-          if (!entry.attributes!.contentType && appendixInfo.contentType) {
-            entry.attributes!.contentType = appendixInfo.contentType;
-          }
-        }
-      }
-
-      if (entry.value !== undefined && entry.attributes) {
-        const attrs = entry.attributes;
-
-        // Sync tags to contentTags if tags was parsed from markdown
-        if (
-          attrs.tags &&
-          attrs.tags.length > 0 &&
-          (!attrs.contentTags || attrs.contentTags.length === 0)
-        ) {
-          attrs.contentTags = [...attrs.tags];
-        }
-
-        // Derive systemTags from legacy booleans if not present
-        if (!attrs.systemTags || attrs.systemTags.length === 0) {
-          const systemTags: SystemTag[] = [];
-          if (attrs.visible !== false) {
-            systemTags.push('prompt'); // Will be normalized to SystemPrompt
-          }
-          if (attrs.readonly) {
-            systemTags.push('readonly'); // Will be normalized (removes LLMWrite)
+      // 1. write_ tool (for all writable keys)
+      tools[`write_${sanitizedKey}`] = {
+        description: isDocument
+          ? `Rewrite the entire "${key}" document`
+          : `Write a value to the STM key: ${key}`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            value: { type: 'string', description: isDocument ? 'New document content' : 'The value to write' }
+          },
+          required: ['value']
+        },
+        execute: async ({ value }: { value: any }) => {
+          if (isDocument) {
+            this.replace_document_text(key, value);
           } else {
-            systemTags.push('LLMWrite'); // Default: writable
+            this.set_value(key, value);
           }
-          if (attrs.hardcoded) {
-            systemTags.push('protected');
+          return {
+            result: `Successfully wrote "${value}" to ${key}`,
+            key,
+            value
+          };
+        }
+      };
+
+      // For document type, add additional tools
+      if (isDocument) {
+        // 2. append_ tool
+        tools[`append_${sanitizedKey}`] = {
+          description: `Append text to the end of "${key}" document`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'Text to append' }
+            },
+            required: ['text']
+          },
+          execute: async ({ text }: { text: string }) => {
+            const yText = this.get_document(key);
+            if (yText) {
+              yText.insert(yText.length, text);
+              return {
+                result: `Successfully appended to ${key}`,
+                key,
+                appended: text
+              };
+            }
+            return { result: `Document ${key} not found`, key };
           }
-          if (attrs.template) {
-            systemTags.push('template');
+        };
+
+        // 3. insert_ tool
+        tools[`insert_${sanitizedKey}`] = {
+          description: `Insert text at a position in "${key}" document`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              index: { type: 'number', description: 'Position to insert at (0 = start)' },
+              text: { type: 'string', description: 'Text to insert' }
+            },
+            required: ['index', 'text']
+          },
+          execute: async ({ index, text }: { index: number; text: string }) => {
+            this.insert_text(key, index, text);
+            return {
+              result: `Successfully inserted text at position ${index} in ${key}`,
+              key,
+              index,
+              inserted: text
+            };
           }
-          // Normalize tags (migrate old tags to new ones)
-          attrs.systemTags = this.normalizeSystemTags(systemTags);
-        } else {
-          // Normalize existing tags
-          attrs.systemTags = this.normalizeSystemTags(attrs.systemTags);
-        }
+        };
 
-        // Ensure all required fields exist
-        if (!attrs.contentTags) {
-          attrs.contentTags = [];
-        }
-        if (!attrs.tags) {
-          attrs.tags = [...attrs.contentTags];
-        }
-
-        // Sync legacy attributes FROM normalized systemTags
-        const normalizedTags = attrs.systemTags || [];
-        attrs.readonly = normalizedTags.includes('readonly') || !normalizedTags.includes('LLMWrite');
-        attrs.visible = this.hasSystemPrompt(normalizedTags);
-        attrs.hardcoded = normalizedTags.includes('protected');
-        attrs.template = normalizedTags.includes('ApplyTemplate') || normalizedTags.includes('template');
-
-        this.stm[key] = {
-          value: entry.value,
-          attributes: attrs as KeyAttributes
+        // 4. edit_ tool (find and replace)
+        tools[`edit_${sanitizedKey}`] = {
+          description: `Find and replace text in "${key}" document`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              find: { type: 'string', description: 'Text to find' },
+              replace: { type: 'string', description: 'Replacement text' }
+            },
+            required: ['find', 'replace']
+          },
+          execute: async ({ find, replace }: { find: string; replace: string }) => {
+            const yText = this.get_document(key);
+            if (yText) {
+              const text = yText.toString();
+              const idx = text.indexOf(find);
+              if (idx !== -1) {
+                yText.delete(idx, find.length);
+                yText.insert(idx, replace);
+                return {
+                  result: `Successfully replaced "${find}" with "${replace}" in ${key}`,
+                  key,
+                  find,
+                  replace,
+                  index: idx
+                };
+              }
+              return { result: `Text "${find}" not found in ${key}`, key };
+            }
+            return { result: `Document ${key} not found`, key };
+          }
         };
       }
-    });
+    }
 
-    this.notifyGlobalListeners();
+    return tools;
+  }
+
+  /**
+   * Generate a system prompt containing all visible STM keys and their values.
+   * Indicates which tools can be used to modify writable keys.
+   */
+  get_system_prompt(): string {
+    const lines: string[] = [];
+
+    for (const [key, val] of this.rootMap) {
+      // Skip system keys for now, add them at the end
+      if (key.startsWith('$')) {
+        continue;
+      }
+
+      const entryMap = val as Y.Map<any>;
+      const attributes = entryMap.get('attributes') as KeyAttributes;
+
+      // Check visibility
+      const isVisible = attributes?.visible !== false &&
+        (attributes?.systemTags?.includes('prompt') ||
+          attributes?.systemTags?.includes('SystemPrompt') ||
+          !attributes?.systemTags);
+
+      if (!isVisible) {
+        continue;
+      }
+
+      const value = this.get_value(key);
+      const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
+
+      // Check if writable
+      const isWritable = !attributes?.readonly &&
+        (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+
+      const isDocument = attributes?.type === 'document';
+      const sanitizedKey = this.sanitizeKeyForTool(key);
+
+      if (isWritable) {
+        if (isDocument) {
+          lines.push(
+            `${key}: ${displayValue}. ` +
+            `Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`
+          );
+        } else {
+          const oldValueHint = displayValue
+            ? ' This tool DOES NOT append — start your response ' +
+            `with the old value (${displayValue})`
+            : '';
+          lines.push(
+            `${key}: ${displayValue}. ` +
+            `You can rewrite "${key}" by using the write_${sanitizedKey} tool.${oldValueHint}`
+          );
+        }
+      } else {
+        lines.push(`${key}: ${displayValue}`);
+      }
+    }
+
+    // Add temporal keys
+    lines.push(`$date: ${this.get_value('$date')}`);
+    lines.push(`$time: ${this.get_value('$time')}`);
+
+    return lines.join(', ');
+  }
+
+  /**
+   * Execute a tool call by name with the given value.
+   * Returns the result or null if tool not found.
+   */
+  executeToolCall(
+    toolName: string,
+    value: any
+  ): { result: string; key: string; value?: any } | null {
+    // Parse tool name (format: action_keyname)
+    const match = toolName.match(/^(write|append|insert|edit)_(.+)$/);
+    if (!match) {
+      return null;
+    }
+
+    const [, action, sanitizedKey] = match;
+    const key = this.findKeyFromSanitizedTool(sanitizedKey);
+
+    if (!key) {
+      return null;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return null;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+
+    // Check if writable
+    const isWritable = !attributes?.readonly &&
+      (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+
+    if (!isWritable) {
+      return null;
+    }
+
+    const isDocument = attributes?.type === 'document';
+
+    switch (action) {
+      case 'write':
+        if (isDocument) {
+          this.replace_document_text(key, value);
+        } else {
+          this.set_value(key, value);
+        }
+        return {
+          result: `Successfully wrote "${value}" to ${key}`,
+          key,
+          value
+        };
+
+      case 'append':
+        if (isDocument) {
+          const yText = this.get_document(key);
+          if (yText) {
+            yText.insert(yText.length, value);
+            return {
+              result: `Successfully appended to ${key}`,
+              key,
+              value
+            };
+          }
+        }
+        return null;
+
+      case 'insert':
+        if (isDocument && typeof value === 'object' && value.index !== undefined && value.text) {
+          this.insert_text(key, value.index, value.text);
+          return {
+            result: `Successfully inserted at position ${value.index} in ${key}`,
+            key,
+            value: value.text
+          };
+        }
+        return null;
+
+      case 'edit':
+        if (isDocument && typeof value === 'object' && value.find && value.replace !== undefined) {
+          const yText = this.get_document(key);
+          if (yText) {
+            const text = yText.toString();
+            const idx = text.indexOf(value.find);
+            if (idx !== -1) {
+              yText.delete(idx, value.find.length);
+              yText.insert(idx, value.replace);
+              return {
+                result: `Successfully replaced "${value.find}" with "${value.replace}" in ${key}`,
+                key,
+                value: value.replace
+              };
+            }
+          }
+        }
+        return null;
+
+      default:
+        return null;
+    }
+  }
+
+  // Internal method stub for legacy compatibility
+  _setFromRemote(_key: string, _value: any, _attributes: KeyAttributes): void {
+    // Legacy - no op as Yjs handles it
+  }
+  _deleteFromRemote(_key: string): void {
+    // Legacy - no op as Yjs handles it
+  }
+  _clearFromRemote(): void {
+    // Legacy - no op as Yjs handles it
   }
 }
-
-// Create and export a single instance of MindCache
-export const mindcache = new MindCache();
-

@@ -1,20 +1,20 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { KeyEntry } from '../types';
+import { STMEntry as KeyEntry } from 'mindcache';
 
 interface KeyPropertiesPanelProps {
-    keyName: string;
-    entry: KeyEntry;
-    availableTags: string[];
-    isExpanded: boolean;
-    onToggle: () => void;
-    onSave: (newKeyName: string, attributes: KeyEntry['attributes']) => void;
-    onFileUpload: (key: string, file: File) => void;
-    onValueChange: (key: string, value: string) => void;
-    onClearValue: (key: string) => void;
-    currentValue: string;
-    canEdit: boolean;
+  keyName: string;
+  entry: KeyEntry;
+  availableTags: string[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  onSave: (newKeyName: string, attributes: KeyEntry['attributes']) => void;
+  onFileUpload: (key: string, file: File) => void;
+  onValueChange: (key: string, value: string) => void;
+  onClearValue: (key: string) => void;
+  currentValue: string;
+  canEdit: boolean;
 }
 
 export function KeyPropertiesPanel({
@@ -37,7 +37,8 @@ export function KeyPropertiesPanel({
     type: entry.attributes.type,
     contentType: entry.attributes.contentType || '',
     tags: entry.attributes.tags || [],
-    systemTags: entry.attributes.systemTags || [],
+    contentTags: entry.attributes.contentTags || [],
+    systemTags: (entry.attributes.systemTags || []) as any[], // Loose typing for internal state to avoid overly complex array casting
     zIndex: entry.attributes.zIndex ?? 0
   });
   const [zIndexInput, setZIndexInput] = useState(String(entry.attributes.zIndex ?? 0));
@@ -56,6 +57,7 @@ export function KeyPropertiesPanel({
       type: entry.attributes.type,
       contentType: entry.attributes.contentType || '',
       tags: entry.attributes.tags || [],
+      contentTags: entry.attributes.contentTags || [],
       systemTags: entry.attributes.systemTags || [],
       zIndex: entry.attributes.zIndex ?? 0
     });
@@ -76,10 +78,14 @@ export function KeyPropertiesPanel({
     field: T,
     value: (typeof attributesForm)[T]
   ) => {
-    const newForm = { ...attributesForm, [field]: value };
+    // If updating tags, also update contentTags
+    let newForm = { ...attributesForm, [field]: value };
+    if (field === 'tags') {
+      newForm = { ...newForm, contentTags: value as string[] };
+    }
     setAttributesForm(newForm);
     // Auto-save on change
-    onSave(keyName, newForm);
+    onSave(keyName, newForm as any); // Cast to any to avoid strict KeyAttributes mismatch on partial update if any
   };
 
   const handleZIndexSave = () => {
@@ -106,7 +112,7 @@ export function KeyPropertiesPanel({
     if (value.trim()) {
       const filtered = availableTags.filter(tag =>
         tag.toLowerCase().includes(value.toLowerCase()) &&
-                !attributesForm.tags.includes(tag)
+        !attributesForm.tags.includes(tag)
       );
       setTagSuggestions(filtered);
     } else {
@@ -157,7 +163,7 @@ export function KeyPropertiesPanel({
   }
 
   const contentType = attributesForm.type;
-  const isTextType = contentType === 'text' || contentType === 'json';
+  const isTextType = contentType === 'text' || contentType === 'json' || contentType === 'document';
   const isImageType = contentType === 'image';
   const isFileType = contentType === 'file';
 
@@ -181,7 +187,7 @@ export function KeyPropertiesPanel({
                       className="text-cyan-400 hover:text-red-400 leading-none"
                       title="Remove tag"
                     >
-                                            ×
+                      ×
                     </button>
                   )}
                 </span>
@@ -227,7 +233,7 @@ export function KeyPropertiesPanel({
                 onClick={() => onClearValue(keyName)}
                 className="text-xs text-red-400 hover:text-red-300 transition-colors"
               >
-                                clear
+                clear
               </button>
             )}
           </div>
@@ -273,14 +279,14 @@ export function KeyPropertiesPanel({
                 onClick={handleFileUploadClick}
                 className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
               >
-                                upload image
+                upload image
               </button>
               {currentValue && (
                 <button
                   onClick={() => onClearValue(keyName)}
                   className="text-xs text-red-400 hover:text-red-300 transition-colors"
                 >
-                                    clear
+                  clear
                 </button>
               )}
             </div>
@@ -306,14 +312,14 @@ export function KeyPropertiesPanel({
                 onClick={handleFileUploadClick}
                 className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
               >
-                                upload file
+                upload file
               </button>
               {currentValue && (
                 <button
                   onClick={() => onClearValue(keyName)}
                   className="text-xs text-red-400 hover:text-red-300 transition-colors"
                 >
-                                    clear
+                  clear
                 </button>
               )}
             </div>
@@ -327,21 +333,22 @@ export function KeyPropertiesPanel({
         <select
           value={attributesForm.type}
           onChange={(e) => {
-            const newType = e.target.value as 'text' | 'image' | 'file' | 'json';
+            const newType = e.target.value as 'text' | 'image' | 'file' | 'json' | 'document';
             // Update type and contentType together to avoid race condition
             const newForm = {
               ...attributesForm,
               type: newType,
-              contentType: (newType === 'text' || newType === 'json') ? '' : attributesForm.contentType
+              contentType: (newType === 'text' || newType === 'json' || newType === 'document') ? '' : attributesForm.contentType
             };
             setAttributesForm(newForm);
-            onSave(keyName, newForm);
+            onSave(keyName, newForm as any);
           }}
           disabled={!canEdit}
           className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-1 focus:outline-none focus:border-cyan-600 disabled:opacity-50 transition-colors"
         >
           <option value="text">text</option>
           <option value="json">json</option>
+          <option value="document">document</option>
           <option value="image">image</option>
           <option value="file">file</option>
         </select>
@@ -362,7 +369,7 @@ export function KeyPropertiesPanel({
               // Update both at once to avoid async state issues
               const newForm = { ...attributesForm, systemTags: newSystemTags, visible: !hasSystemPrompt };
               setAttributesForm(newForm);
-              onSave(keyName, newForm);
+              onSave(keyName, newForm as any);
             }}
             disabled={!canEdit}
             className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
@@ -384,7 +391,7 @@ export function KeyPropertiesPanel({
                 : [...currentSystemTags.filter(t => t !== 'LLMRead'), 'LLMRead'];
               const newForm = { ...attributesForm, systemTags: newSystemTags };
               setAttributesForm(newForm);
-              onSave(keyName, newForm);
+              onSave(keyName, newForm as any);
             }}
             disabled={!canEdit}
             className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
@@ -409,7 +416,7 @@ export function KeyPropertiesPanel({
                   : [...currentSystemTags.filter(t => t !== 'LLMWrite' && t !== 'readonly'), 'LLMWrite'];
                 const newForm = { ...attributesForm, systemTags: newSystemTags, readonly: hasLW };
                 setAttributesForm(newForm);
-                onSave(keyName, newForm);
+                onSave(keyName, newForm as any);
               }}
               disabled={!canEdit}
               className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
@@ -435,7 +442,7 @@ export function KeyPropertiesPanel({
                   : [...currentSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template'), 'ApplyTemplate'];
                 const newForm = { ...attributesForm, systemTags: newSystemTags, template: !hasAT };
                 setAttributesForm(newForm);
-                onSave(keyName, newForm);
+                onSave(keyName, newForm as any);
               }}
               disabled={!canEdit}
               className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"

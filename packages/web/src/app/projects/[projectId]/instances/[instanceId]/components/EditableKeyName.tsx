@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 
 interface EditableKeyNameProps {
-    keyName: string;
-    onSave: (newName: string) => void;
+  keyName: string;
+  onSave: (newName: string) => void;
 }
 
 export function EditableKeyName({ keyName, onSave }: EditableKeyNameProps) {
@@ -58,7 +58,10 @@ export function EditableKeyName({ keyName, onSave }: EditableKeyNameProps) {
   return (
     <div
       className="flex items-center gap-1.5 cursor-pointer group"
-      onClick={() => setIsEditing(true)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setIsEditing(true);
+      }}
     >
       <span className="font-mono text-blue-400">{keyName}</span>
       <svg

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { MindCache } from 'mindcache';
+import { MindCache, KeyType } from 'mindcache';
 
 interface CloudSTMEditorProps {
   onSTMChange?: () => void;
@@ -19,7 +19,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
     visible: true,
     hardcoded: false,
     template: false,
-    type: 'text' as 'text' | 'image' | 'file' | 'json',
+    type: 'text' as KeyType,
     contentType: '',
     tags: [] as string[]
   });
@@ -50,7 +50,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
   };
 
   const deleteSTMKey = (key: string) => {
-    mindcacheInstance.delete(key);
+    mindcacheInstance.delete_key(key);
   };
 
   const startEditing = (key: string, currentValue: unknown) => {
@@ -89,7 +89,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
         visible: attributes.visible,
         hardcoded: attributes.hardcoded,
         template: attributes.template,
-        type: attributes.type,
+        type: attributes.type || 'text',
         contentType: attributes.contentType || '',
         tags: mindcacheInstance.getTags(key)
       });
@@ -116,31 +116,31 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
       if (pendingTag && !finalTags.includes(pendingTag)) {
         finalTags.push(pendingTag);
       }
-      
+
       const oldKey = editingAttributes;
       const newKey = editingKeyName.trim();
-      
+
       if (newKey && newKey !== oldKey) {
         if (mindcacheInstance.has(newKey) || newKey.startsWith('$')) {
           alert(`Key "${newKey}" already exists or is a system key`);
           return;
         }
-        
+
         const currentValue = mindcacheInstance.get_value(oldKey);
         const { tags: _, ...attributesWithoutTags } = attributesForm;
         void _;
         mindcacheInstance.set_value(newKey, currentValue, attributesWithoutTags);
-        
+
         finalTags.forEach(tag => {
           mindcacheInstance.addTag(newKey, tag);
         });
-        
+
         mindcacheInstance.delete(oldKey);
       } else {
         const { tags: _, ...attributesWithoutTags } = attributesForm;
         void _;
         mindcacheInstance.set_attributes(oldKey, attributesWithoutTags);
-        
+
         const existingTags = mindcacheInstance.getTags(oldKey);
         existingTags.forEach(tag => {
           mindcacheInstance.removeTag(oldKey, tag);
@@ -149,7 +149,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
           mindcacheInstance.addTag(oldKey, tag);
         });
       }
-      
+
       setEditingAttributes(null);
       setEditingKeyName('');
       setNewTagInput('');
@@ -183,10 +183,10 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
 
   const handleTagInputChange = (value: string) => {
     setNewTagInput(value);
-    
+
     if (value.trim()) {
       const allTags = mindcacheInstance.getAllTags();
-      const filtered = allTags.filter((tag: string) => 
+      const filtered = allTags.filter((tag: string) =>
         tag.toLowerCase().includes(value.toLowerCase()) &&
         !attributesForm.tags.includes(tag)
       );
@@ -231,15 +231,15 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                 const keyTags = mindcacheInstance.getTags(key);
                 return selectedTags.some(selectedTag => keyTags.includes(selectedTag));
               })
-              .map(([key, value]) => {
-                const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
+              .map(([key, value]: [string, unknown]) => {
+                const isEmpty = !value || (typeof value === 'string' && (value as string).trim() === '');
                 const attributes = mindcacheInstance.get_attributes(key);
                 const isSystemKey = key.startsWith('$');
                 const contentType = attributes?.type || 'text';
-                
+
                 let displayValue = '';
                 let isPreviewable = false;
-                
+
                 if (isEmpty) {
                   displayValue = '_______';
                 } else if (contentType === 'image') {
@@ -258,7 +258,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                 } else {
                   displayValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
                 }
-                
+
                 const indicators = [];
                 const tags = mindcacheInstance.getTags(key);
                 if (attributes) {
@@ -268,7 +268,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                   if (attributes.template) indicators.push('T');
                   if (attributes.hardcoded || isSystemKey) indicators.push('H');
                 }
-                
+
                 return (
                   <div key={key} className="relative">
                     <div className="flex items-start justify-between">
@@ -282,7 +282,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                         {tags.length > 0 && (
                           <div className="flex gap-1 flex-wrap">
                             {tags.map(tag => (
-                              <span 
+                              <span
                                 key={tag}
                                 className="text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 px-2 py-0.5 rounded font-mono border border-cyan-600"
                               >
@@ -309,7 +309,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                         </button>
                       </div>
                     </div>
-                    
+
                     {editingKey === key ? (
                       <div className="mt-1">
                         <textarea
@@ -330,7 +330,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                       </div>
                     ) : (
                       <div className="mt-1">
-                        <div 
+                        <div
                           className={`break-words whitespace-pre-wrap cursor-pointer hover:bg-cyan-900 hover:bg-opacity-20 p-1 -m-1 font-mono text-sm ${isEmpty ? 'text-gray-500' : 'text-cyan-400'}`}
                           onClick={() => {
                             if (contentType === 'image' || contentType === 'file') {
@@ -350,18 +350,18 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                         >
                           <span className="text-gray-400">{'>'}</span> {displayValue}
                         </div>
-                        
+
                         {contentType === 'image' && isPreviewable && (
                           <div className="mt-2 max-w-xs">
-                            <img 
-                              src={mindcacheInstance.get_data_url(key)} 
+                            <img
+                              src={mindcacheInstance.get_data_url(key)}
                               alt={`Preview of ${key}`}
                               className="max-w-full h-auto border border-gray-600 rounded"
                               style={{ maxHeight: '200px' }}
                             />
                           </div>
                         )}
-                        
+
                         {(contentType === 'file' || contentType === 'image') && attributes?.contentType && (
                           <div className="mt-1 text-xs text-gray-500">
                             Type: {attributes.contentType}
@@ -379,7 +379,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
       {/* Attributes Editor Popup */}
       {editingAttributes && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
-          <div 
+          <div
             className="bg-black border-2 border-cyan-400 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancelAttributes();
@@ -391,7 +391,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
               <h3 className="text-cyan-300 font-mono text-sm">Key Properties</h3>
               <button onClick={cancelAttributes} className="text-cyan-600 hover:text-red-400 font-mono text-sm leading-none">×</button>
             </div>
-            
+
             <div className="space-y-2">
               {/* Key Name */}
               <div className="flex flex-col space-y-2">
@@ -410,9 +410,9 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                 <label className="text-gray-400 font-mono text-sm">type:</label>
                 <select
                   value={attributesForm.type}
-                  onChange={(e) => setAttributesForm({ 
-                    ...attributesForm, 
-                    type: e.target.value as 'text' | 'image' | 'file' | 'json',
+                  onChange={(e) => setAttributesForm({
+                    ...attributesForm,
+                    type: e.target.value as KeyType,
                     contentType: (e.target.value === 'text' || e.target.value === 'json') ? '' : attributesForm.contentType
                   })}
                   className="bg-black text-cyan-400 font-mono text-sm border border-cyan-400 rounded px-2 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-400"
@@ -437,8 +437,8 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                         const file = (e.target as HTMLInputElement).files?.[0];
                         if (file && editingKeyName) {
                           try {
-                            setAttributesForm({ 
-                              ...attributesForm, 
+                            setAttributesForm({
+                              ...attributesForm,
                               contentType: file.type,
                               type: file.type.startsWith('image/') ? 'image' : 'file'
                             });
@@ -520,12 +520,12 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
               {/* Tags */}
               <div className="flex flex-col space-y-2">
                 <div className="text-gray-400 font-mono text-sm">tags:</div>
-                
+
                 <div className="relative">
                   <div className="bg-black border border-cyan-400 rounded px-2 py-2 focus-within:ring-1 focus-within:ring-cyan-400">
                     <div className="flex flex-wrap gap-1 items-center">
                       {attributesForm.tags.map((tag, index) => (
-                        <span 
+                        <span
                           key={index}
                           className="inline-flex items-center gap-1 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 px-2 py-1 rounded font-mono border border-cyan-600 group hover:bg-cyan-800 hover:bg-opacity-50 transition-colors"
                         >
@@ -539,7 +539,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                           </button>
                         </span>
                       ))}
-                      
+
                       <input
                         type="text"
                         value={newTagInput}
@@ -551,7 +551,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                       />
                     </div>
                   </div>
-                  
+
                   {tagSuggestions.length > 0 && (
                     <div className="absolute z-10 w-full mt-1 bg-black border border-cyan-400 rounded shadow-lg max-h-40 overflow-y-auto">
                       {tagSuggestions.map((tag, index) => (
@@ -566,7 +566,7 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                     </div>
                   )}
                 </div>
-                
+
                 {attributesForm.tags.length > 0 && (
                   <div className="text-xs text-gray-500">
                     Use getTagged(&quot;{attributesForm.tags[0]}&quot;)

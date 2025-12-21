@@ -381,7 +381,7 @@ describe('MindCache', () => {
 
       // Should have migrated to new tag format
       expect(cache.get_attributes('name')?.contentTags).toEqual([]);
-      expect(cache.get_attributes('name')?.systemTags).toContain('prompt');
+      expect(cache.get_attributes('name')?.systemTags).toContain('SystemPrompt');
     });
 
     test('should clear existing data before deserializing', () => {

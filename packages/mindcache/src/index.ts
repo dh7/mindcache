@@ -1,6 +1,26 @@
 // Core exports (MindCache 1.0 compatible)
-export { MindCache, mindcache } from './core';
-export type { KeyAttributes, STM, STMEntry, Listener, MindCacheOptions, MindCacheCloudOptions, MindCacheIndexedDBOptions } from './core';
+import { MindCache } from './core';
+export { MindCache } from './core';
+
+// Singleton instance for backwards compatibility
+export const mindcache = new MindCache();
+
+// Types - import like: import { KeyAttributes, KeyType, SystemTag } from 'mindcache'
+export type {
+  KeyAttributes,
+  KeyType,
+  SystemTag,
+  AccessLevel,
+  STM,
+  STMEntry,
+  Listener,
+  GlobalListener,
+  HistoryEntry,
+  HistoryOptions,
+  MindCacheOptions,
+  MindCacheCloudOptions,
+  MindCacheIndexedDBOptions
+} from './core';
 export { DEFAULT_KEY_ATTRIBUTES } from './core';
 
 // Cloud exports (for advanced usage)
