@@ -77,6 +77,7 @@ export default function Home() {
   const [text, setText] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0); // For triggering re-renders on history change
   const mindCacheRef = useRef<MindCache | null>(null);
 
   // Load saved credentials from cookies on mount
@@ -183,7 +184,40 @@ export default function Home() {
     if (!mindCacheRef.current) return;
     mindCacheRef.current.replace_document_text('shared_doc', newText);
     setText(newText);
+    // Force history update after change
+    setHistoryVersion(v => v + 1);
   }, []);
+
+  // Undo using MindCache's built-in undo for the document key
+  const handleUndo = useCallback(() => {
+    if (!mindCacheRef.current) return;
+    mindCacheRef.current.undo('shared_doc');
+    // Update text from document after undo
+    const newText = mindCacheRef.current.get_document_text('shared_doc') || '';
+    setText(newText);
+    setHistoryVersion(v => v + 1);
+    log('↩️ Undo');
+  }, []);
+
+  // Redo using MindCache's built-in redo for the document key
+  const handleRedo = useCallback(() => {
+    if (!mindCacheRef.current) return;
+    mindCacheRef.current.redo('shared_doc');
+    // Update text from document after redo
+    const newText = mindCacheRef.current.get_document_text('shared_doc') || '';
+    setText(newText);
+    setHistoryVersion(v => v + 1);
+    log('↪️ Redo');
+  }, []);
+
+  // Get history entries from MindCache
+  const historyEntries = mindCacheRef.current?.getGlobalHistory() || [];
+
+  // Check if undo/redo is available (use historyVersion to ensure re-render)
+  void historyVersion; // Reference to trigger re-render
+  const canUndo = (mindCacheRef.current?.getHistory('shared_doc')?.length ?? 0) > 0;
+  // Note: canRedo requires checking the key's undo manager redo stack
+  // For simplicity, we'll just enable the button and let it be a no-op if nothing to redo
 
   const handleDisconnect = () => {
     if (mindCacheRef.current) {
@@ -326,6 +360,61 @@ export default function Home() {
 
         {/* Main editor */}
         <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 p-6">
+          {/* Toolbar with Undo/Redo and History */}
+          <div className="flex items-center justify-between mb-4">
+            {/* Undo/Redo Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-sm rounded-lg transition-colors"
+                title="Undo (uses MindCache.undo)"
+              >
+                <span>↩️</span>
+                <span>Undo</span>
+              </button>
+              <button
+                onClick={handleRedo}
+                className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                title="Redo (uses MindCache.redo)"
+              >
+                <span>↪️</span>
+                <span>Redo</span>
+              </button>
+            </div>
+
+            {/* History Dropdown (View Only) */}
+            <div className="relative group">
+              <select
+                className="appearance-none bg-gray-700 text-white text-sm px-3 py-1.5 pr-8 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                value=""
+                onChange={(e) => {
+                  const idx = parseInt(e.target.value);
+                  const entry = historyEntries[idx];
+                  if (!isNaN(idx) && entry) {
+                    log(`📜 Viewing history: ${new Date(entry.timestamp).toLocaleTimeString()} - ${entry.keysAffected?.join(', ') || 'changes'}`);
+                    log(`💡 Use Undo button to go back (history is view-only)`);
+                  }
+                }}
+              >
+                <option value="" disabled>📜 History Log ({historyEntries.length})</option>
+                {historyEntries.slice().reverse().map((entry, i) => (
+                  <option key={entry.id} value={historyEntries.length - 1 - i}>
+                    {new Date(entry.timestamp).toLocaleTimeString()} - {entry.keysAffected?.join(', ') || 'changes'}
+                  </option>
+                ))}
+                {historyEntries.length === 0 && (
+                  <option disabled>No history yet</option>
+                )}
+              </select>
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</span>
+              {/* Tooltip */}
+              <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-xs text-gray-300 whitespace-nowrap z-10">
+                View-only log • Use Undo to go back
+              </div>
+            </div>
+          </div>
+
           <textarea
             value={text}
             onChange={(e) => handleTextChange(e.target.value)}

@@ -357,16 +357,25 @@ export class MindCache {
       const keysAffected = new Set<string>();
       events.forEach(event => {
         if (event.target === this.rootMap) {
-          // Direct changes to rootMap
+          // Direct changes to rootMap (key added/removed)
           const mapEvent = event as Y.YMapEvent<any>;
           mapEvent.keysChanged.forEach(key => keysAffected.add(key));
-        } else if (event.target.parent === this.rootMap) {
-          // Changes to entry maps
-          for (const [key, val] of this.rootMap) {
-            if (val === event.target) {
-              keysAffected.add(key);
+        } else {
+          // Changes to nested structures (entry maps or Y.Text inside them)
+          // Walk up the parent chain to find which root key was affected
+          let current = event.target;
+          while (current && current.parent) {
+            if (current.parent === this.rootMap) {
+              // Found the entry map - now find which key it belongs to
+              for (const [key, val] of this.rootMap) {
+                if (val === current) {
+                  keysAffected.add(key);
+                  break;
+                }
+              }
               break;
             }
+            current = current.parent;
           }
         }
       });
