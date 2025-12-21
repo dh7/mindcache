@@ -174,15 +174,17 @@ export default function InstanceEditorPage() {
           } else if (mc.connectionState === 'connected') {
             setError(null);
           }
-          // Update keys from MindCache, filtering incomplete entries
-          const allKeys = mc.getAll();
-          const filteredKeys: SyncData = {};
-          for (const [key, entry] of Object.entries(allKeys)) {
-            if (entry && entry.attributes) {
-              filteredKeys[key] = entry;
+          // Build keys from primitives (more stable API)
+          const keyList = mc.keys().filter(k => !k.startsWith('$'));
+          const entries: SyncData = {};
+          for (const key of keyList) {
+            const value = mc.get_value(key);
+            const attributes = mc.get_attributes(key);
+            if (attributes) {
+              entries[key] = { value, attributes };
             }
           }
-          setKeys(filteredKeys);
+          setKeys(entries);
         });
 
         mcRef.current = mc;

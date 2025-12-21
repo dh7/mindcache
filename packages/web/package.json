@@ -13,10 +13,13 @@
     "@ai-sdk/react": "^2.0.45",
     "@clerk/nextjs": "^6.9.0",
     "ai": "^5.0.45",
+    "lib0": "^0.2.115",
     "mindcache": "workspace:*",
     "next": "^15.5.8",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "y-indexeddb": "^9.0.12",
+    "yjs": "^13.6.28"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

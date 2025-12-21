@@ -156,6 +156,9 @@ importers:
       ai:
         specifier: ^5.0.45
         version: 5.0.104(zod@3.25.76)
+      lib0:
+        specifier: ^0.2.115
+        version: 0.2.115
       mindcache:
         specifier: workspace:*
         version: link:../mindcache
@@ -168,6 +171,12 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.0(react@19.2.0)
+      y-indexeddb:
+        specifier: ^9.0.12
+        version: 9.0.12(yjs@13.6.28)
+      yjs:
+        specifier: ^13.6.28
+        version: 13.6.28
     devDependencies:
       '@types/node':
         specifier: ^20.0.0

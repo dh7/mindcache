@@ -702,6 +702,23 @@ export class MindCache {
     return result;
   }
 
+  /**
+   * Get all entries with their full structure (value + attributes).
+   * Use this for UI/admin interfaces that need to display key properties.
+   * Unlike serialize(), this format is stable and won't change.
+   */
+  getAllEntries(): STM {
+    const result: STM = {};
+    for (const [key] of this.rootMap) {
+      const value = this.get_value(key);
+      const attributes = this.get_attributes(key);
+      if (attributes) {
+        result[key] = { value, attributes };
+      }
+    }
+    return result;
+  }
+
   get_value(key: string, _processingStack?: Set<string>): any {
     if (key === '$date') {
       const today = new Date();
