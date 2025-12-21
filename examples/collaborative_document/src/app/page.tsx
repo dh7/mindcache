@@ -22,7 +22,6 @@ function ConnectionBadge({
   state: 'disconnected' | 'connecting' | 'connected' | 'error';
   isOnline: boolean;
 }) {
-  // If browser is offline, show that immediately regardless of WebSocket state
   if (!isOnline) {
     return (
       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-600 text-white font-semibold text-sm shadow-lg animate-pulse">
@@ -33,30 +32,10 @@ function ConnectionBadge({
   }
 
   const config = {
-    disconnected: {
-      bg: 'bg-gray-600',
-      text: 'Disconnected',
-      icon: '○',
-      pulse: false
-    },
-    connecting: {
-      bg: 'bg-yellow-500',
-      text: 'Connecting...',
-      icon: '◐',
-      pulse: true
-    },
-    connected: {
-      bg: 'bg-green-500',
-      text: 'Connected to Cloud',
-      icon: '●',
-      pulse: true
-    },
-    error: {
-      bg: 'bg-red-500',
-      text: 'Connection Error',
-      icon: '✕',
-      pulse: false
-    },
+    disconnected: { bg: 'bg-gray-600', text: 'Disconnected', icon: '○', pulse: false },
+    connecting: { bg: 'bg-yellow-500', text: 'Connecting...', icon: '◐', pulse: true },
+    connected: { bg: 'bg-green-500', text: 'Connected to Cloud', icon: '●', pulse: true },
+    error: { bg: 'bg-red-500', text: 'Connection Error', icon: '✕', pulse: false },
   };
 
   const { bg, text, icon, pulse } = config[state];
@@ -73,11 +52,11 @@ export default function Home() {
   const [instanceId, setInstanceId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
-  const [isOnline, setIsOnline] = useState(true); // Browser network status
+  const [hasEverConnected, setHasEverConnected] = useState(false); // Stay in editor view once connected
+  const [isOnline, setIsOnline] = useState(true);
   const [text, setText] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
-  const [historyVersion, setHistoryVersion] = useState(0); // For triggering re-renders on history change
   const mindCacheRef = useRef<MindCache | null>(null);
 
   // Load saved credentials from cookies on mount
@@ -88,9 +67,8 @@ export default function Home() {
     if (savedApiKey) setApiKey(savedApiKey);
   }, []);
 
-  // Browser online/offline detection for instant feedback
+  // Browser online/offline detection
   useEffect(() => {
-    // Set initial state
     setIsOnline(navigator.onLine);
 
     const handleOnline = () => {
@@ -119,7 +97,6 @@ export default function Home() {
   const handleConnect = async () => {
     if (!instanceId || !apiKey) return;
 
-    // Save credentials to cookies
     setCookie('mc_collab_instance_id', instanceId);
     setCookie('mc_collab_api_key', apiKey);
 
@@ -130,17 +107,14 @@ export default function Home() {
       const baseUrl = process.env.NEXT_PUBLIC_MINDCACHE_API_URL || 'https://api.mindcache.dev';
 
       const mc = new MindCache({
-        cloud: {
-          instanceId,
-          apiKey,
-          baseUrl
-        }
+        cloud: { instanceId, apiKey, baseUrl }
       });
 
       log('Connecting to cloud...');
       await mc.waitForSync();
 
       setConnectionState('connected');
+      setHasEverConnected(true); // Once connected, stay in editor view
       setLastSyncTime(new Date());
       log('✓ Connected and synced!');
 
@@ -155,7 +129,7 @@ export default function Home() {
       setText(initialText);
       log(`Loaded document (${initialText.length} chars)`);
 
-      // Subscribe to document changes from OTHER clients
+      // Subscribe to document changes
       const yText = mc.get_document('shared_doc');
       if (yText) {
         yText.observe(() => {
@@ -184,40 +158,25 @@ export default function Home() {
     if (!mindCacheRef.current) return;
     mindCacheRef.current.replace_document_text('shared_doc', newText);
     setText(newText);
-    // Force history update after change
-    setHistoryVersion(v => v + 1);
   }, []);
 
-  // Undo using MindCache's built-in undo for the document key
+  // Undo using MindCache's built-in undo
   const handleUndo = useCallback(() => {
     if (!mindCacheRef.current) return;
     mindCacheRef.current.undo('shared_doc');
-    // Update text from document after undo
     const newText = mindCacheRef.current.get_document_text('shared_doc') || '';
     setText(newText);
-    setHistoryVersion(v => v + 1);
     log('↩️ Undo');
   }, []);
 
-  // Redo using MindCache's built-in redo for the document key
+  // Redo using MindCache's built-in redo
   const handleRedo = useCallback(() => {
     if (!mindCacheRef.current) return;
     mindCacheRef.current.redo('shared_doc');
-    // Update text from document after redo
     const newText = mindCacheRef.current.get_document_text('shared_doc') || '';
     setText(newText);
-    setHistoryVersion(v => v + 1);
     log('↪️ Redo');
   }, []);
-
-  // Get history entries from MindCache
-  const historyEntries = mindCacheRef.current?.getGlobalHistory() || [];
-
-  // Check if undo/redo is available (use historyVersion to ensure re-render)
-  void historyVersion; // Reference to trigger re-render
-  const canUndo = (mindCacheRef.current?.getHistory('shared_doc')?.length ?? 0) > 0;
-  // Note: canRedo requires checking the key's undo manager redo stack
-  // For simplicity, we'll just enable the button and let it be a no-op if nothing to redo
 
   const handleDisconnect = () => {
     if (mindCacheRef.current) {
@@ -225,12 +184,14 @@ export default function Home() {
       mindCacheRef.current = null;
     }
     setConnectionState('disconnected');
+    setHasEverConnected(false); // Go back to login form
     setText('');
     log('Disconnected from cloud');
   };
 
-  // Connection form (not connected yet)
-  if (connectionState === 'disconnected' || connectionState === 'error') {
+  // Connection form - only show if user has never connected yet
+  // Once connected, stay in editor view even if connection drops (offline editing)
+  if (!hasEverConnected && (connectionState === 'disconnected' || connectionState === 'error')) {
     return (
       <div className="min-h-screen p-8 font-sans bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 flex items-center justify-center">
         <main className="w-full max-w-xl bg-gray-800/80 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-gray-700/50">
@@ -248,7 +209,6 @@ export default function Home() {
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-300 ms-1">Instance ID</label>
               <input
-                id="instance-id-input"
                 type="text"
                 placeholder="e.g. inst_..."
                 value={instanceId}
@@ -259,7 +219,6 @@ export default function Home() {
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-300 ms-1">API Key</label>
               <input
-                id="api-key-input"
                 type="text"
                 placeholder="e.g. sk_..."
                 value={apiKey}
@@ -268,7 +227,6 @@ export default function Home() {
               />
             </div>
             <button
-              id="connect-btn"
               onClick={handleConnect}
               disabled={!instanceId || !apiKey}
               className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white p-3.5 rounded-lg font-bold hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl mt-2"
@@ -276,12 +234,6 @@ export default function Home() {
               Connect to Cloud
             </button>
           </div>
-
-          {connectionState === 'error' && (
-            <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
-              Failed to connect. Check your credentials and try again.
-            </div>
-          )}
 
           <div className="mt-8 p-4 bg-gray-900/50 rounded-lg border border-gray-700/50">
             <h3 className="text-sm font-semibold text-gray-300 mb-2">🌐 Test Real-Time Collaboration</h3>
@@ -297,8 +249,8 @@ export default function Home() {
     );
   }
 
-  // Connecting state
-  if (connectionState === 'connecting') {
+  // Connecting state - only show during initial connection
+  if (!hasEverConnected && connectionState === 'connecting') {
     return (
       <div className="min-h-screen p-8 font-sans bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 flex items-center justify-center">
         <main className="text-center">
@@ -313,11 +265,11 @@ export default function Home() {
     );
   }
 
-  // Connected state - show editor
+  // Connected - show editor
   return (
     <main className="min-h-screen p-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100">
       <div className="max-w-4xl mx-auto">
-        {/* Header with prominent connection status */}
+        {/* Header */}
         <header className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
@@ -344,9 +296,7 @@ export default function Home() {
               Last sync: <span className="text-green-400">{lastSyncTime ? lastSyncTime.toLocaleTimeString() : 'Never'}</span>
             </span>
             <span className="text-gray-600">|</span>
-            <span>
-              {text.length} characters
-            </span>
+            <span>{text.length} characters</span>
           </div>
         </header>
 
@@ -358,61 +308,36 @@ export default function Home() {
           </span>
         </div>
 
+        {/* Offline mode banner */}
+        {!isOnline && (
+          <div className="mb-4 p-3 bg-orange-900/40 border border-orange-600/50 rounded-lg text-orange-300 text-sm flex items-center gap-2">
+            <span className="text-lg">📴</span>
+            <span>
+              <strong>Offline Mode</strong> - Keep editing! Your changes are saved locally and will sync when you&apos;re back online.
+            </span>
+          </div>
+        )}
+
         {/* Main editor */}
         <div className="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 p-6">
-          {/* Toolbar with Undo/Redo and History */}
-          <div className="flex items-center justify-between mb-4">
-            {/* Undo/Redo Buttons */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleUndo}
-                disabled={!canUndo}
-                className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-sm rounded-lg transition-colors"
-                title="Undo (uses MindCache.undo)"
-              >
-                <span>↩️</span>
-                <span>Undo</span>
-              </button>
-              <button
-                onClick={handleRedo}
-                className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
-                title="Redo (uses MindCache.redo)"
-              >
-                <span>↪️</span>
-                <span>Redo</span>
-              </button>
-            </div>
-
-            {/* History Dropdown (View Only) */}
-            <div className="relative group">
-              <select
-                className="appearance-none bg-gray-700 text-white text-sm px-3 py-1.5 pr-8 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                value=""
-                onChange={(e) => {
-                  const idx = parseInt(e.target.value);
-                  const entry = historyEntries[idx];
-                  if (!isNaN(idx) && entry) {
-                    log(`📜 Viewing history: ${new Date(entry.timestamp).toLocaleTimeString()} - ${entry.keysAffected?.join(', ') || 'changes'}`);
-                    log(`💡 Use Undo button to go back (history is view-only)`);
-                  }
-                }}
-              >
-                <option value="" disabled>📜 History Log ({historyEntries.length})</option>
-                {historyEntries.slice().reverse().map((entry, i) => (
-                  <option key={entry.id} value={historyEntries.length - 1 - i}>
-                    {new Date(entry.timestamp).toLocaleTimeString()} - {entry.keysAffected?.join(', ') || 'changes'}
-                  </option>
-                ))}
-                {historyEntries.length === 0 && (
-                  <option disabled>No history yet</option>
-                )}
-              </select>
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</span>
-              {/* Tooltip */}
-              <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-xs text-gray-300 whitespace-nowrap z-10">
-                View-only log • Use Undo to go back
-              </div>
-            </div>
+          {/* Toolbar with Undo/Redo */}
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={handleUndo}
+              className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+              title="Undo (uses MindCache.undo)"
+            >
+              <span>↩️</span>
+              <span>Undo</span>
+            </button>
+            <button
+              onClick={handleRedo}
+              className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+              title="Redo (uses MindCache.redo)"
+            >
+              <span>↪️</span>
+              <span>Redo</span>
+            </button>
           </div>
 
           <textarea
