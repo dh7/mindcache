@@ -125,7 +125,7 @@ export default function Home() {
       }
 
       // Get initial text
-      const initialText = mc.get_document_text('shared_doc') || '';
+      const initialText = mc.get_value('shared_doc') || '';
       setText(initialText);
       log(`Loaded document (${initialText.length} chars)`);
 
@@ -156,7 +156,7 @@ export default function Home() {
 
   const handleTextChange = useCallback((newText: string) => {
     if (!mindCacheRef.current) return;
-    mindCacheRef.current.replace_document_text('shared_doc', newText);
+    mindCacheRef.current.set_value('shared_doc', newText);
     setText(newText);
   }, []);
 
@@ -164,7 +164,7 @@ export default function Home() {
   const handleUndo = useCallback(() => {
     if (!mindCacheRef.current) return;
     mindCacheRef.current.undo('shared_doc');
-    const newText = mindCacheRef.current.get_document_text('shared_doc') || '';
+    const newText = mindCacheRef.current.get_value('shared_doc') || '';
     setText(newText);
     log('↩️ Undo');
   }, []);
@@ -173,7 +173,7 @@ export default function Home() {
   const handleRedo = useCallback(() => {
     if (!mindCacheRef.current) return;
     mindCacheRef.current.redo('shared_doc');
-    const newText = mindCacheRef.current.get_document_text('shared_doc') || '';
+    const newText = mindCacheRef.current.get_value('shared_doc') || '';
     setText(newText);
     log('↪️ Redo');
   }, []);

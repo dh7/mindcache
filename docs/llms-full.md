@@ -226,11 +226,8 @@ mc.set_document('draft');
 // Get Y.Text for editor binding (Quill, CodeMirror, etc.)
 const yText = mc.get_document('notes');
 
-// Get plain text snapshot
-const text = mc.get_document_text('notes');
-
-// get_value also returns plain text for documents
-const text2 = mc.get_value('notes');
+// get_value returns plain text for documents
+const text = mc.get_value('notes');
 ```
 
 ### Character-Level Editing
@@ -246,18 +243,12 @@ mc.delete_text('notes', 0, 12);
 ### Smart Replace (Diff-Based)
 
 ```typescript
-// Replace all content - uses diff for small changes
-mc.replace_document_text('notes', '# Updated Notes');
+// set_value on documents uses diff for small changes automatically
+mc.set_value('notes', '# Updated Notes');
 
 // How it works:
 // - Changes < 80%: Uses fast-diff for incremental operations
 // - Changes > 80%: Full replacement (more efficient for rewrites)
-
-// Custom threshold
-mc.replace_document_text('notes', newContent, 0.5); // 50% threshold
-
-// set_value on documents also uses diff!
-mc.set_value('notes', 'New content'); // Routes to replace_document_text
 ```
 
 ### Benefits of Diff-Based Updates

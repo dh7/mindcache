@@ -71,7 +71,7 @@ yText.observe(() => {
 });
 
 // Make edits (diff-based, efficient)
-mc.replace_document_text('shared_doc', newContent);
+mc.set_value('shared_doc', newContent);
 ```
 
 ## Technical Details

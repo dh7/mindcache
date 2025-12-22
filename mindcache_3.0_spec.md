@@ -92,16 +92,15 @@ mc.insert_text('notes', 0, 'New heading\n');
 mc.delete_text('notes', 0, 12);
 
 // Smart replace (uses diff for small changes)
-mc.replace_document_text('notes', '# Updated Notes');
+mc.set_value('notes', '# Updated Notes');
 
 // Get plain text
 mc.get_value('notes');        // Returns string
-mc.get_document_text('notes'); // Same as above
 ```
 
 **Diff-Based Updates:**
 
-When `replace_document_text()` or `set_value()` is called on a document:
+When `set_value()` is called on a document:
 - Changes < 80%: Uses fast-diff for incremental insert/delete operations
 - Changes > 80%: Full replacement (more efficient for rewrites)
 
@@ -348,10 +347,8 @@ new MindCache(options?: {
 |--------|-------------|
 | `set_document(key, text?, attrs?)` | Create/get document |
 | `get_document(key)` | Get Y.Text (for editors) |
-| `get_document_text(key)` | Get plain text |
 | `insert_text(key, index, text)` | Insert at position |
 | `delete_text(key, index, length)` | Delete range |
-| `replace_document_text(key, text, threshold?)` | Smart replace |
 
 ### LLM Methods
 

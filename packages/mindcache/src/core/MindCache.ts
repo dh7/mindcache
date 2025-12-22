@@ -856,12 +856,18 @@ export class MindCache {
     if (existingEntry) {
       const existingAttrs = existingEntry.get('attributes') as KeyAttributes;
       if (existingAttrs?.type === 'document') {
-        // Route to replace_document_text for smart diff handling
+        // Route to _replaceDocumentText for smart diff handling
         if (typeof value === 'string') {
-          this.replace_document_text(key, value);
+          this._replaceDocumentText(key, value);
         }
         return;
       }
+    }
+
+    // If creating a NEW document type, use set_document
+    if (!existingEntry && attributes?.type === 'document') {
+      this.set_document(key, typeof value === 'string' ? value : '', attributes);
+      return;
     }
 
     // Check if we need to create a new entry (outside transaction for UndoManager setup)
@@ -1761,14 +1767,7 @@ export class MindCache {
     return undefined;
   }
 
-  /**
-   * Get plain text content of a document key.
-   * For collaborative editing, use get_document() and bind to an editor.
-   */
-  get_document_text(key: string): string | undefined {
-    const yText = this.get_document(key);
-    return yText?.toString();
-  }
+
 
   /**
    * Insert text at a position in a document key.
@@ -1791,15 +1790,11 @@ export class MindCache {
   }
 
   /**
-   * Replace all text in a document key.
+   * Replace all text in a document key (private - use set_value for public API).
    * Uses diff-based updates when changes are < diffThreshold (default 80%).
    * This preserves concurrent edits and provides better undo granularity.
-   *
-   * @param key - The document key
-   * @param newText - The new text content
-   * @param diffThreshold - Percentage (0-1) of change above which full replace is used (default: 0.8)
    */
-  replace_document_text(key: string, newText: string, diffThreshold = 0.8): void {
+  private _replaceDocumentText(key: string, newText: string, diffThreshold = 0.8): void {
     const yText = this.get_document(key);
     if (!yText) {
       return;
@@ -1940,7 +1935,7 @@ export class MindCache {
         },
         execute: async ({ value }: { value: any }) => {
           if (isDocument) {
-            this.replace_document_text(key, value);
+            this._replaceDocumentText(key, value);
           } else {
             this.set_value(key, value);
           }
@@ -2143,7 +2138,7 @@ export class MindCache {
     switch (action) {
       case 'write':
         if (isDocument) {
-          this.replace_document_text(key, value);
+          this._replaceDocumentText(key, value);
         } else {
           this.set_value(key, value);
         }
