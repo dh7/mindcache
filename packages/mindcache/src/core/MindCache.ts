@@ -183,6 +183,23 @@ export class MindCache {
               break;
             }
           }
+        } else {
+          // Deep changes (e.g., Y.Text changes inside entryMap)
+          // Walk up the parent chain to find the key
+          let current = event.target;
+          while (current && current.parent) {
+            if (current.parent.parent === this.rootMap) {
+              // current.parent is the entryMap
+              for (const [key, val] of this.rootMap) {
+                if (val === current.parent) {
+                  keysAffected.add(key);
+                  break;
+                }
+              }
+              break;
+            }
+            current = current.parent;
+          }
         }
       });
 
@@ -191,8 +208,13 @@ export class MindCache {
         const entryMap = this.rootMap.get(key);
         if (entryMap) {
           const value = entryMap.get('value');
+          const attrs = entryMap.get('attributes') as KeyAttributes;
+          // For document types, convert Y.Text to string
+          const resolvedValue = (attrs?.type === 'document' && value instanceof Y.Text)
+            ? value.toString()
+            : value;
           if (this.listeners[key]) {
-            this.listeners[key].forEach(l => l(value));
+            this.listeners[key].forEach(l => l(resolvedValue));
           }
         } else {
           // Deleted
