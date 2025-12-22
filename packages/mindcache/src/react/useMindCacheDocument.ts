@@ -5,18 +5,18 @@ import type { MindCache } from '../core/MindCache';
 import type * as Y from 'yjs';
 
 export interface UseMindCacheDocumentResult {
-    /** The Y.Text object for editor bindings (Quill, CodeMirror, etc.) */
-    yText: Y.Text | undefined;
-    /** Plain text content, updates reactively */
-    text: string;
-    /** Whether the document is ready to use */
-    isReady: boolean;
-    /** Insert text at a position */
-    insertText: (index: number, text: string) => void;
-    /** Delete text at a position */
-    deleteText: (index: number, length: number) => void;
-    /** Replace all text (uses diff-based updates) */
-    replaceText: (newText: string) => void;
+  /** The Y.Text object for editor bindings (Quill, CodeMirror, etc.) */
+  yText: Y.Text | undefined;
+  /** Plain text content, updates reactively */
+  text: string;
+  /** Whether the document is ready to use */
+  isReady: boolean;
+  /** Insert text at a position */
+  insertText: (index: number, text: string) => void;
+  /** Delete text at a position */
+  deleteText: (index: number, length: number) => void;
+  /** Replace all text (uses diff-based updates) */
+  replaceText: (newText: string) => void;
 }
 
 /**
@@ -86,7 +86,7 @@ export function useMindCacheDocument(
 
   const replaceText = useCallback((newText: string) => {
     if (mc) {
-      mc.replace_document_text(key, newText);
+      mc.set_value(key, newText);
     }
   }, [mc, key]);
 

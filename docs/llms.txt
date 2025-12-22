@@ -2,7 +2,7 @@
 
 > AI Agent Memory Management - Collaborative key-value store for AI agents with real-time sync.
 
-MindCache 3.3 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
+MindCache 3.4 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
 
 ## Quick Links
 
@@ -46,9 +46,17 @@ mc.get_value('name'); // 'Alice'
 
 ### Document (Collaborative)
 ```typescript
+// Create with set_value
+mc.set_value('notes', '# My Notes', { type: 'document' });
+
+// Or use convenience method
 mc.set_document('notes', '# My Notes');
+
+// Update (uses diff automatically)
+mc.set_value('notes', 'Updated content');
+
+// Character-level edits
 mc.insert_text('notes', 0, 'New text');
-mc.replace_document_text('notes', 'Updated content'); // Uses diff!
 ```
 
 ## LLM Tools
@@ -82,7 +90,7 @@ const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
 
 ## Core Methods
 
-- set_value(key, value, attrs?) - Store value
+- set_value(key, value, attrs?) - Store value (use { type: 'document' } for docs)
 - get_value(key) - Get value  
 - has(key) - Check if key exists
 - delete(key) - Remove key
@@ -91,9 +99,8 @@ const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
 - getAllEntries() - Get all entries with value+attributes (v3.3+)
 - set_attributes(key, attrs) - Update only attributes (v3.2+)
 - get_attributes(key) - Get key attributes
-- set_document(key, text?) - Create collaborative doc
+- set_document(key, text?) - Convenience method to create collaborative doc
 - get_document(key) - Get Y.Text for editor binding
-- replace_document_text(key, text) - Smart diff-based replace
 - get_aisdk_tools() - Generate LLM tools
 - get_system_prompt() - Generate prompt
 - undo(key) / redo(key) - Per-key undo

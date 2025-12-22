@@ -1,7 +1,7 @@
 # MindCache 3.0 — Complete SDK Reference
 
-**Version**: 3.1.0  
-**Last Updated**: 2024-12-19
+**Version**: 3.4.0  
+**Last Updated**: 2024-12-22
 
 ## Overview
 
@@ -92,16 +92,15 @@ mc.insert_text('notes', 0, 'New heading\n');
 mc.delete_text('notes', 0, 12);
 
 // Smart replace (uses diff for small changes)
-mc.replace_document_text('notes', '# Updated Notes');
+mc.set_value('notes', '# Updated Notes');
 
 // Get plain text
 mc.get_value('notes');        // Returns string
-mc.get_document_text('notes'); // Same as above
 ```
 
 **Diff-Based Updates:**
 
-When `replace_document_text()` or `set_value()` is called on a document:
+When `set_value()` is called on a document:
 - Changes < 80%: Uses fast-diff for incremental insert/delete operations
 - Changes > 80%: Full replacement (more efficient for rewrites)
 
@@ -348,10 +347,8 @@ new MindCache(options?: {
 |--------|-------------|
 | `set_document(key, text?, attrs?)` | Create/get document |
 | `get_document(key)` | Get Y.Text (for editors) |
-| `get_document_text(key)` | Get plain text |
 | `insert_text(key, index, text)` | Insert at position |
 | `delete_text(key, index, length)` | Delete range |
-| `replace_document_text(key, text, threshold?)` | Smart replace |
 
 ### LLM Methods
 
@@ -417,6 +414,7 @@ interface KeyAttributes {
 
 | Version | Changes |
 |---------|---------|
+| 3.4.0 | Unified API: set_value with type:'document' creates docs, subscribe returns string for docs, deep observer for Y.Text changes |
 | 3.1.0 | Document type, LLM tools, diff-based updates, React hooks |
 | 3.0.0 | Yjs integration, 3-mode architecture, global undo/redo |
 | 2.x | Cloud sync, Durable Objects |

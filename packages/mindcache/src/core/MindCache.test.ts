@@ -256,8 +256,17 @@ describe('MindCache', () => {
       const mc = new MindCache();
       mc.set_document('notes', 'Hello World');
 
-      expect(mc.get_document_text('notes')).toBe('Hello World');
+      expect(mc.get_value('notes')).toBe('Hello World');
       expect(mc.get_attributes('notes')?.type).toBe('document');
+    });
+
+    it('should create a document with set_value and type: document', () => {
+      const mc = new MindCache();
+      mc.set_value('notes', 'Hello World', { type: 'document' });
+
+      expect(mc.get_value('notes')).toBe('Hello World');
+      expect(mc.get_attributes('notes')?.type).toBe('document');
+      expect(mc.get_document('notes')).toBeDefined();
     });
 
     it('set_value on document key should use diff-based replace', () => {
@@ -268,14 +277,14 @@ describe('MindCache', () => {
 
       // Using set_value on a document should route to replace_document_text
       mc.set_value('doc', 'Hello Beautiful World');
-      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+      expect(mc.get_value('doc')).toBe('Hello Beautiful World');
 
       // Y.Text should still exist (not replaced with string)
       expect(mc.get_document('doc')).toBeDefined();
 
       // Undo should work (diff was applied)
       mc.undo('doc');
-      expect(mc.get_document_text('doc')).toBe('Hello World');
+      expect(mc.get_value('doc')).toBe('Hello World');
 
       vi.useRealTimers();
     });
@@ -301,57 +310,57 @@ describe('MindCache', () => {
       mc.set_document('doc', 'Hello');
 
       mc.insert_text('doc', 5, ' World');
-      expect(mc.get_document_text('doc')).toBe('Hello World');
+      expect(mc.get_value('doc')).toBe('Hello World');
 
       mc.delete_text('doc', 5, 6);
-      expect(mc.get_document_text('doc')).toBe('Hello');
+      expect(mc.get_value('doc')).toBe('Hello');
     });
 
-    it('should support replace_document_text', () => {
+    it('set_value should replace document content', () => {
       const mc = new MindCache();
       mc.set_document('doc', 'Initial content');
 
-      mc.replace_document_text('doc', 'Replaced content');
-      expect(mc.get_document_text('doc')).toBe('Replaced content');
+      mc.set_value('doc', 'Replaced content');
+      expect(mc.get_value('doc')).toBe('Replaced content');
     });
 
-    it('replace_document_text should use diff for small changes', () => {
+    it('set_value should use diff for small changes', () => {
       vi.useFakeTimers();
       const mc = new MindCache();
       mc.set_document('doc', 'Hello World');
       vi.advanceTimersByTime(600);
 
       // Small change - should use diff (insert "Beautiful ")
-      mc.replace_document_text('doc', 'Hello Beautiful World');
-      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+      mc.set_value('doc', 'Hello Beautiful World');
+      expect(mc.get_value('doc')).toBe('Hello Beautiful World');
 
       // Undo should only undo the insertion, not delete everything
       mc.undo('doc');
-      expect(mc.get_document_text('doc')).toBe('Hello World');
+      expect(mc.get_value('doc')).toBe('Hello World');
 
       vi.useRealTimers();
     });
 
-    it('replace_document_text should do full replace for major changes', () => {
+    it('set_value should do full replace for major changes', () => {
       const mc = new MindCache();
       mc.set_document('doc', 'Hello World');
 
       // Complete rewrite (>80% change) - full replace
-      mc.replace_document_text('doc', 'Completely Different Text Here');
-      expect(mc.get_document_text('doc')).toBe('Completely Different Text Here');
+      mc.set_value('doc', 'Completely Different Text Here');
+      expect(mc.get_value('doc')).toBe('Completely Different Text Here');
     });
 
-    it('replace_document_text with custom threshold', () => {
+    it('set_value handles various change sizes', () => {
       const mc = new MindCache();
       mc.set_document('doc', 'Hello');
 
-      // Force diff with threshold of 1.0 (always use diff)
-      mc.replace_document_text('doc', 'Goodbye', 1.0);
-      expect(mc.get_document_text('doc')).toBe('Goodbye');
+      // Replace with different content
+      mc.set_value('doc', 'Goodbye');
+      expect(mc.get_value('doc')).toBe('Goodbye');
 
-      // Force full replace with threshold of 0 (never use diff)
-      mc.replace_document_text('doc', 'Hello Again', 0);
-      expect(mc.get_document_text('doc')).toBe('Hello Again');
+      // Replace again
+      mc.set_value('doc', 'Hello Again');
+      expect(mc.get_value('doc')).toBe('Hello Again');
     });
 
     it('get_value should return plain text for document keys', () => {
@@ -379,13 +388,13 @@ describe('MindCache', () => {
       mc.insert_text('doc', 7, ' Text');
       vi.advanceTimersByTime(600);
 
-      expect(mc.get_document_text('doc')).toBe('Initial Text');
+      expect(mc.get_value('doc')).toBe('Initial Text');
 
       mc.undo('doc');
-      expect(mc.get_document_text('doc')).toBe('Initial');
+      expect(mc.get_value('doc')).toBe('Initial');
 
       mc.redo('doc');
-      expect(mc.get_document_text('doc')).toBe('Initial Text');
+      expect(mc.get_value('doc')).toBe('Initial Text');
 
       vi.useRealTimers();
     });
@@ -399,17 +408,17 @@ describe('MindCache', () => {
       vi.advanceTimersByTime(600);
 
       expect(mc.get_value('regular-key')).toBe('regular value');
-      expect(mc.get_document_text('doc')).toBe('Document content');
+      expect(mc.get_value('doc')).toBe('Document content');
 
       // Global undo should revert both
       mc.undoAll();
       expect(mc.get_value('regular-key')).toBeUndefined();
-      expect(mc.get_document_text('doc')).toBeUndefined();
+      expect(mc.get_value('doc')).toBeUndefined();
 
       // Global redo should restore both
       mc.redoAll();
       expect(mc.get_value('regular-key')).toBe('regular value');
-      expect(mc.get_document_text('doc')).toBe('Document content');
+      expect(mc.get_value('doc')).toBe('Document content');
 
       vi.useRealTimers();
     });
@@ -493,7 +502,7 @@ describe('MindCache', () => {
       const tools = mc.get_aisdk_tools();
       await tools['append_doc'].execute({ text: ' World' });
 
-      expect(mc.get_document_text('doc')).toBe('Hello World');
+      expect(mc.get_value('doc')).toBe('Hello World');
     });
 
     it('insert_ tool should insert text at position', async () => {
@@ -503,7 +512,7 @@ describe('MindCache', () => {
       const tools = mc.get_aisdk_tools();
       await tools['insert_doc'].execute({ index: 5, text: ' Beautiful' });
 
-      expect(mc.get_document_text('doc')).toBe('Hello Beautiful World');
+      expect(mc.get_value('doc')).toBe('Hello Beautiful World');
     });
 
     it('edit_ tool should find and replace text', async () => {
@@ -513,7 +522,7 @@ describe('MindCache', () => {
       const tools = mc.get_aisdk_tools();
       await tools['edit_doc'].execute({ find: 'World', replace: 'Universe' });
 
-      expect(mc.get_document_text('doc')).toBe('Hello Universe');
+      expect(mc.get_value('doc')).toBe('Hello Universe');
     });
 
     it('executeToolCall should work with sanitized tool names', () => {

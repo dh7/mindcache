@@ -322,7 +322,7 @@ export default function InstanceEditorPage() {
 
     // For document type, save immediately (real-time collab via Yjs)
     if (isDocument && mcRef.current) {
-      mcRef.current.replace_document_text(key, newValue);
+      mcRef.current.set_value(key, newValue);
       return;
     }
 
@@ -424,9 +424,9 @@ export default function InstanceEditorPage() {
     // Update local state
     setKeyValues(prev => ({ ...prev, [key]: '' }));
 
-    // For document type, use replace_document_text for RT sync
+    // For document type, use set_value for RT sync
     if (entry.attributes.type === 'document' && mcRef.current) {
-      mcRef.current.replace_document_text(key, '');
+      mcRef.current.set_value(key, '');
     } else {
       // Send to server via sendMessage for other types
       sendMessage({
@@ -462,7 +462,7 @@ export default function InstanceEditorPage() {
 
       if (isDocument) {
         // For documents, get the text content and create new document
-        const textContent = mcRef.current.get_document_text(oldKey) || '';
+        const textContent = mcRef.current.get_value(oldKey) || '';
         mcRef.current.set_document(newKeyName, textContent, attributes);
       } else {
         // Create new key with updated attributes
