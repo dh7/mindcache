@@ -91,7 +91,7 @@ export class MindCache {
 
   // Internal flag to prevent sync loops when receiving remote updates
   // (Less critical with Yjs but kept for API compat)
-  private _isRemoteUpdate = false;
+
 
   private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
@@ -633,10 +633,7 @@ export class MindCache {
     }
   }
 
-  // Legacy bridge
-  isRemoteUpdate(): boolean {
-    return false;
-  }
+
 
   // Serialize state
   serialize(): STM {

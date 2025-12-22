@@ -37,9 +37,7 @@ export class IndexedDBAdapter {
     await this.load();
 
     const listener = () => {
-      // Don't save if this change came from deserialize (loading)
-      // The isRemoteUpdate flag is set during deserialization
-      if (this.mindcache && !this.mindcache.isRemoteUpdate()) {
+      if (this.mindcache) {
         this.scheduleSave();
       }
     };
