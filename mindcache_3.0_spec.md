@@ -1,7 +1,7 @@
 # MindCache 3.0 — Complete SDK Reference
 
-**Version**: 3.1.0  
-**Last Updated**: 2024-12-19
+**Version**: 3.4.0  
+**Last Updated**: 2024-12-22
 
 ## Overview
 
@@ -414,6 +414,7 @@ interface KeyAttributes {
 
 | Version | Changes |
 |---------|---------|
+| 3.4.0 | Unified API: set_value with type:'document' creates docs, subscribe returns string for docs, deep observer for Y.Text changes |
 | 3.1.0 | Document type, LLM tools, diff-based updates, React hooks |
 | 3.0.0 | Yjs integration, 3-mode architecture, global undo/redo |
 | 2.x | Cloud sync, Durable Objects |

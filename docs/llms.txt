@@ -2,7 +2,7 @@
 
 > AI Agent Memory Management - Collaborative key-value store for AI agents with real-time sync.
 
-MindCache 3.3 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
+MindCache 3.4 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
 
 ## Quick Links
 
