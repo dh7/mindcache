@@ -91,7 +91,7 @@ export class MindCache {
 
   // Internal flag to prevent sync loops when receiving remote updates
   // (Less critical with Yjs but kept for API compat)
-  private _isRemoteUpdate = false;
+
 
   private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
@@ -633,10 +633,7 @@ export class MindCache {
     }
   }
 
-  // Legacy bridge
-  isRemoteUpdate(): boolean {
-    return false;
-  }
+
 
   // Serialize state
   serialize(): STM {
@@ -865,6 +862,20 @@ export class MindCache {
       }
 
       entryMap.set('attributes', mergedAttrs);
+
+      // Handle type transitions
+      const currentValue = entryMap.get('value');
+
+      // text -> document transition
+      if (mergedAttrs.type === 'document' && !(currentValue instanceof Y.Text)) {
+        const strValue = typeof currentValue === 'string' ? currentValue : String(currentValue ?? '');
+        entryMap.set('value', new Y.Text(strValue));
+        // Ensure undo manager is attached for the new document
+        this.getUndoManager(key);
+      } else if (mergedAttrs.type !== 'document' && currentValue instanceof Y.Text) {
+        // document -> text transition
+        entryMap.set('value', currentValue.toString());
+      }
     });
   }
 
@@ -879,10 +890,17 @@ export class MindCache {
       const existingAttrs = existingEntry.get('attributes') as KeyAttributes;
       if (existingAttrs?.type === 'document') {
         // Route to _replaceDocumentText for smart diff handling
-        if (typeof value === 'string') {
-          this._replaceDocumentText(key, value);
+        // BUT ONLY if we are not changing the type
+        if (!attributes?.type || attributes.type === 'document') {
+          if (typeof value === 'string') {
+            this._replaceDocumentText(key, value);
+          }
+          // If attributes are provided, update them too
+          if (attributes) {
+            this.set_attributes(key, attributes);
+          }
+          return;
         }
-        return;
       }
     }
 
@@ -929,7 +947,16 @@ export class MindCache {
         }
       }
 
-      entryMap!.set('value', value);
+
+      // Ensure value type consistency with attributes
+      let valueToSet = value;
+      if (normalizedAttributes.type === 'document' && !(valueToSet instanceof Y.Text)) {
+        valueToSet = new Y.Text(typeof value === 'string' ? value : String(value ?? ''));
+      } else if (normalizedAttributes.type !== 'document' && valueToSet instanceof Y.Text) {
+        valueToSet = valueToSet.toString();
+      }
+
+      entryMap!.set('value', valueToSet);
       entryMap!.set('attributes', normalizedAttributes);
     });
   }
