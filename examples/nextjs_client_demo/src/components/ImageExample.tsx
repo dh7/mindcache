@@ -22,14 +22,13 @@ export default function ImageExample() {
   // Initialize STM with image field
   useEffect(() => {
     if (!isLoaded || !mindcache) {
-return;
-}
+      return;
+    }
 
     // Create STM key if it doesn't exist
     if (!mindcache.has('user_image')) {
       mindcache.set_value('user_image', '', {
-        visible: false,
-        readonly: true,
+        systemTags: [],
         type: 'image',
         contentType: 'image/jpeg'
       });
@@ -56,12 +55,11 @@ return;
   // Handle image upload
   const handleImageUpload = async (file: File) => {
     if (!mindcache) {
-return;
-}
+      return;
+    }
     try {
       await mindcache.set_file('user_image', file, {
-        visible: true,
-        readonly: false
+        systemTags: ['SystemPrompt', 'LLMWrite']
       });
       setStmVersion(v => v + 1);
       console.log('✅ Image uploaded to STM');

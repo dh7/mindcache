@@ -40,12 +40,12 @@ export default function FormExample() {
       // Update state from MindCache
       setIsLoaded(mc.isLoaded);
       setConnectionState(mc.connectionState);
-      
+
       if (mc.isLoaded) {
         // Initialize keys if they don't exist
         ['name', 'role', 'age', 'company'].forEach(key => {
           if (!mc.has(key)) {
-            mc.set_value(key, '', { visible: true, readonly: false });
+            mc.set_value(key, '', { systemTags: ['SystemPrompt', 'LLMWrite'] });
           }
         });
 
@@ -56,13 +56,13 @@ export default function FormExample() {
           company: mc.get_value('company') || ''
         });
       }
-      
+
       setStmVersion(v => v + 1);
     };
 
     // Initial check
     handleChange();
-    
+
     // Subscribe to all changes (including sync events)
     mc.subscribeToAll(handleChange);
     return () => mc.unsubscribeFromAll(handleChange);

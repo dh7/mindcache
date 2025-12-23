@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { MindCache, KeyType } from 'mindcache';
+import { MindCache, KeyType, SystemTag } from 'mindcache';
 
 interface CloudSTMEditorProps {
   onSTMChange?: () => void;
@@ -15,13 +15,10 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
   const [editingValue, setEditingValue] = useState('');
   const [editingAttributes, setEditingAttributes] = useState<string | null>(null);
   const [attributesForm, setAttributesForm] = useState({
-    readonly: false,
-    visible: true,
-    hardcoded: false,
-    template: false,
     type: 'text' as KeyType,
     contentType: '',
-    tags: [] as string[]
+    tags: [] as string[],
+    systemTags: [] as SystemTag[]
   });
   const [editingKeyName, setEditingKeyName] = useState('');
   const [newTagInput, setNewTagInput] = useState('');
@@ -85,23 +82,17 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
     const attributes = mindcacheInstance.get_attributes(key);
     if (attributes) {
       setAttributesForm({
-        readonly: attributes.readonly,
-        visible: attributes.visible,
-        hardcoded: attributes.hardcoded,
-        template: attributes.template,
         type: attributes.type || 'text',
         contentType: attributes.contentType || '',
-        tags: mindcacheInstance.getTags(key)
+        tags: mindcacheInstance.getTags(key),
+        systemTags: attributes.systemTags || []
       });
     } else {
       setAttributesForm({
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false,
         type: 'text',
         contentType: '',
-        tags: []
+        tags: [],
+        systemTags: []
       });
     }
     setEditingAttributes(key);
@@ -263,10 +254,12 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                 const tags = mindcacheInstance.getTags(key);
                 if (attributes) {
                   if (contentType !== 'text') indicators.push(contentType.toUpperCase().charAt(0));
-                  if (attributes.readonly) indicators.push('R');
-                  if (!attributes.visible) indicators.push('V');
-                  if (attributes.template) indicators.push('T');
-                  if (attributes.hardcoded || isSystemKey) indicators.push('H');
+
+                  const sys = attributes.systemTags || [];
+                  if (sys.includes('LLMWrite')) indicators.push('W'); // Writable
+                  if (sys.includes('SystemPrompt')) indicators.push('S'); // System Prompt (Visible)
+                  if (sys.includes('ApplyTemplate')) indicators.push('T'); // Template
+                  if (sys.includes('protected') || isSystemKey) indicators.push('P'); // Protected
                 }
 
                 return (
@@ -459,62 +452,86 @@ export default function CloudSTMEditor({ onSTMChange, selectedTags, mindcacheIns
                 </div>
               )}
 
-              {/* Readonly */}
-              <div className="flex items-center justify-between">
-                <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[R]</span> readonly:
-                  <div className="text-xs text-gray-500 mt-1">If true, won&apos;t appear in AI tools</div>
-                </div>
-                {attributesForm.hardcoded ? (
-                  <span className="text-gray-500 font-mono px-2 py-1">{attributesForm.readonly ? 'true' : 'false'}</span>
-                ) : (
-                  <button
-                    onClick={() => setAttributesForm({ ...attributesForm, readonly: !attributesForm.readonly })}
-                    className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                  >
-                    {attributesForm.readonly ? 'true' : 'false'}
-                  </button>
-                )}
-              </div>
+              {/* System Tags Management */}
 
-              {/* Visible */}
+              {/* Writable (LLMWrite) */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[V]</span> visible:
-                  <div className="text-xs text-gray-500 mt-1">If false, hidden from injectSTM/getSTM</div>
+                  <span className="text-yellow-400">[W]</span> writable by AI:
+                  <div className="text-xs text-gray-500 mt-1">If true, AI can modify this value</div>
                 </div>
                 <button
-                  onClick={() => setAttributesForm({ ...attributesForm, visible: !attributesForm.visible })}
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('LLMWrite');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) newTags = newTags.filter(t => t !== 'LLMWrite');
+                    else newTags.push('LLMWrite');
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
                   className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
                 >
-                  {attributesForm.visible ? 'true' : 'false'}
+                  {attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}
                 </button>
               </div>
 
-              {/* Template */}
+              {/* Visible to AI (SystemPrompt) */}
+              <div className="flex items-center justify-between">
+                <div className="text-gray-400 font-mono text-sm">
+                  <span className="text-yellow-400">[S]</span> system prompt:
+                  <div className="text-xs text-gray-500 mt-1">Visible to AI in system prompt</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('SystemPrompt');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) newTags = newTags.filter(t => t !== 'SystemPrompt');
+                    else newTags.push('SystemPrompt');
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
+                  className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                >
+                  {attributesForm.systemTags.includes('SystemPrompt') ? 'true' : 'false'}
+                </button>
+              </div>
+
+              {/* Template (ApplyTemplate) */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono text-sm">
                   <span className="text-yellow-400">[T]</span> template:
                   <div className="text-xs text-gray-500 mt-1">Process with injectSTM on get</div>
                 </div>
-                {attributesForm.hardcoded ? (
-                  <span className="text-gray-500 font-mono px-2 py-1">{attributesForm.template ? 'true' : 'false'}</span>
-                ) : (
-                  <button
-                    onClick={() => setAttributesForm({ ...attributesForm, template: !attributesForm.template })}
-                    className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                  >
-                    {attributesForm.template ? 'true' : 'false'}
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('ApplyTemplate');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) newTags = newTags.filter(t => t !== 'ApplyTemplate');
+                    else newTags.push('ApplyTemplate');
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
+                  className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                >
+                  {attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}
+                </button>
               </div>
 
-              {/* Hardcoded */}
+              {/* Protected */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[H]</span> hardcoded:
+                  <span className="text-yellow-400">[P]</span> protected:
+                  <div className="text-xs text-gray-500 mt-1">Prevents deletion</div>
                 </div>
-                <span className="text-gray-500 font-mono px-2 py-1">{attributesForm.hardcoded ? 'true' : 'false'}</span>
+                <button
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('protected');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) newTags = newTags.filter(t => t !== 'protected');
+                    else newTags.push('protected');
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
+                  className="text-cyan-400 font-mono text-sm hover:bg-cyan-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                >
+                  {attributesForm.systemTags.includes('protected') ? 'true' : 'false'}
+                </button>
               </div>
 
               {/* Tags */}

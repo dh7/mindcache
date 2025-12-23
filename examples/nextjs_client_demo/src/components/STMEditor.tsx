@@ -16,13 +16,11 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
   const [editingValue, setEditingValue] = useState('');
   const [editingAttributes, setEditingAttributes] = useState<string | null>(null);
   const [attributesForm, setAttributesForm] = useState({
-    readonly: false,
-    visible: true,
-    hardcoded: false,
-    template: false,
     type: 'text' as 'text' | 'image' | 'file' | 'json',
     contentType: '',
-    tags: [] as string[]
+    tags: [] as string[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    systemTags: [] as any
   });
   const [editingKeyName, setEditingKeyName] = useState('');
   const [newTagInput, setNewTagInput] = useState('');
@@ -96,24 +94,18 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
     const attributes = mindcacheRef.current.get_attributes(key);
     if (attributes) {
       setAttributesForm({
-        readonly: attributes.readonly,
-        visible: attributes.visible,
-        hardcoded: attributes.hardcoded,
-        template: attributes.template,
         type: attributes.type,
         contentType: attributes.contentType || '',
-        tags: mindcacheRef.current.getTags(key)
+        tags: mindcacheRef.current.getTags(key),
+        systemTags: attributes.systemTags || []
       });
     } else {
       // Default attributes for new keys
       setAttributesForm({
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false,
         type: 'text',
         contentType: '',
-        tags: []
+        tags: [],
+        systemTags: []
       });
     }
     setEditingAttributes(key);
@@ -130,10 +122,10 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
       if (pendingTag && !finalTags.includes(pendingTag)) {
         finalTags.push(pendingTag);
       }
-      
+
       const oldKey = editingAttributes;
       const newKey = editingKeyName.trim();
-      
+
       // If key name changed, we need to create new entry and delete old one
       if (newKey && newKey !== oldKey) {
         // Don't allow renaming to existing key or system keys
@@ -141,20 +133,20 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
           alert(`Key "${newKey}" already exists or is a system key`);
           return;
         }
-        
+
         // Get current value
         const currentValue = mindcacheRef.current.get_value(oldKey);
-        
+
         // Create new entry with new name (excluding tags from attributes)
         const { tags: _, ...attributesWithoutTags } = attributesForm;
         void _; // Mark as intentionally unused
         mindcacheRef.current.set_value(newKey, currentValue, attributesWithoutTags);
-        
+
         // Set tags separately (using final tags)
         finalTags.forEach(tag => {
           mindcacheRef.current.addTag(newKey, tag);
         });
-        
+
         // Delete old entry
         mindcacheRef.current.delete(oldKey);
       } else {
@@ -162,7 +154,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
         const { tags: _, ...attributesWithoutTags } = attributesForm;
         void _; // Mark as intentionally unused
         mindcacheRef.current.set_attributes(oldKey, attributesWithoutTags);
-        
+
         // Update tags - remove all existing tags and add new ones (using final tags)
         const existingTags = mindcacheRef.current.getTags(oldKey);
         existingTags.forEach(tag => {
@@ -172,7 +164,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
           mindcacheRef.current.addTag(oldKey, tag);
         });
       }
-      
+
       setEditingAttributes(null);
       setEditingKeyName('');
       setNewTagInput('');
@@ -210,11 +202,11 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
   // Handle tag input change
   const handleTagInputChange = (value: string) => {
     setNewTagInput(value);
-    
+
     // Update suggestions based on input
     if (value.trim()) {
       const allTags = mindcacheRef.current.getAllTags();
-      const filtered = allTags.filter((tag: string) => 
+      const filtered = allTags.filter((tag: string) =>
         tag.toLowerCase().includes(value.toLowerCase()) &&
         !attributesForm.tags.includes(tag)
       );
@@ -269,177 +261,180 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                 return selectedTags.some(selectedTag => keyTags.includes(selectedTag));
               })
               .map(([key, value]) => {
-              const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
-              const attributes = mindcacheRef.current.get_attributes(key);
-              const isSystemKey = key.startsWith('$');
-              const contentType = attributes?.type || 'text';
-              
-              // Handle different content types for display
-              let displayValue = '';
-              let isPreviewable = false;
-              
-              if (isEmpty) {
-                displayValue = '_______';
-              } else if (contentType === 'image') {
-                const dataUrl = mindcacheRef.current.get_data_url(key);
-                displayValue = `[IMAGE: ${attributes?.contentType || 'unknown'}]`;
-                isPreviewable = !!dataUrl;
-              } else if (contentType === 'file') {
-                displayValue = `[FILE: ${attributes?.contentType || 'unknown'}]`;
-                isPreviewable = false;
-              } else if (contentType === 'json') {
-                try {
-                  displayValue = typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2);
-                } catch {
-                  displayValue = String(value);
+                const isEmpty = !value || (typeof value === 'string' && value.trim() === '');
+                const attributes = mindcacheRef.current.get_attributes(key);
+                const isSystemKey = key.startsWith('$');
+                const contentType = attributes?.type || 'text';
+
+                // Handle different content types for display
+                let displayValue = '';
+                let isPreviewable = false;
+
+                if (isEmpty) {
+                  displayValue = '_______';
+                } else if (contentType === 'image') {
+                  const dataUrl = mindcacheRef.current.get_data_url(key);
+                  displayValue = `[IMAGE: ${attributes?.contentType || 'unknown'}]`;
+                  isPreviewable = !!dataUrl;
+                } else if (contentType === 'file') {
+                  displayValue = `[FILE: ${attributes?.contentType || 'unknown'}]`;
+                  isPreviewable = false;
+                } else if (contentType === 'json') {
+                  try {
+                    displayValue = typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2);
+                  } catch {
+                    displayValue = String(value);
+                  }
+                } else {
+                  displayValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
                 }
-              } else {
-                displayValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
-              }
-              
-              // Create property indicators
-              const indicators = [];
-              const tags = mindcacheRef.current.getTags(key);
-              if (attributes) {
-                // Add type indicator
-                if (contentType !== 'text') {
-                  indicators.push(contentType.toUpperCase().charAt(0));
+
+                // Create property indicators
+                const indicators = [];
+                const tags = mindcacheRef.current.getTags(key);
+                if (attributes) {
+                  // Add type indicator
+                  if (contentType !== 'text') {
+                    indicators.push(contentType.toUpperCase().charAt(0));
+                  }
+
+                  const sys = attributes.systemTags || [];
+                  if (sys.includes('LLMWrite')) {
+                    indicators.push('W');
+                  }
+                  if (sys.includes('SystemPrompt')) {
+                    indicators.push('S');
+                  }
+                  if (sys.includes('ApplyTemplate')) {
+                    indicators.push('T');
+                  }
+                  if (sys.includes('protected') || isSystemKey) {
+                    indicators.push('P');
+                  }
                 }
-                if (attributes.readonly) {
-                  indicators.push('R');
-                }
-                if (!attributes.visible) {
-                  indicators.push('V');
-                }
-                if (attributes.template) {
-                  indicators.push('T');
-                }
-                if (attributes.hardcoded || isSystemKey) {
-                  indicators.push('H');
-                }
-              }
-              
-              return (
-                <div key={key} className="relative">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="text-gray-400 font-mono text-sm">{key}:</div>
-                      {indicators.length > 0 && (
-                        <div className="text-xs text-yellow-400 font-mono">
-                          [{indicators.join('')}]
-                        </div>
-                      )}
-                      {tags.length > 0 && (
-                        <div className="flex gap-1 flex-wrap">
-                          {tags.map(tag => (
-                            <span 
-                              key={tag}
-                              className="text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-0.5 rounded font-mono border border-blue-600"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+
+                return (
+                  <div key={key} className="relative">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="text-gray-400 font-mono text-sm">{key}:</div>
+                        {indicators.length > 0 && (
+                          <div className="text-xs text-yellow-400 font-mono">
+                            [{indicators.join('')}]
+                          </div>
+                        )}
+                        {tags.length > 0 && (
+                          <div className="flex gap-1 flex-wrap">
+                            {tags.map(tag => (
+                              <span
+                                key={tag}
+                                className="text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-0.5 rounded font-mono border border-blue-600"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => startEditingAttributes(key)}
+                          className="text-green-600 hover:text-yellow-400 font-mono text-sm leading-none px-1"
+                          title="Edit Properties"
+                        >
+                          ...
+                        </button>
+                        <button
+                          onClick={() => deleteSTMKey(key)}
+                          className="text-green-600 hover:text-red-400 font-mono text-sm leading-none"
+                          title="Delete"
+                        >
+                          X
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => startEditingAttributes(key)}
-                        className="text-green-600 hover:text-yellow-400 font-mono text-sm leading-none px-1"
-                        title="Edit Properties"
-                      >
-                        ...
-                      </button>
-                      <button
-                        onClick={() => deleteSTMKey(key)}
-                        className="text-green-600 hover:text-red-400 font-mono text-sm leading-none"
-                        title="Delete"
-                      >
-                        X
-                      </button>
-                    </div>
+
+                    {editingKey === key ? (
+                      <div className="mt-1">
+                        <textarea
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={saveEdit}
+                          className="w-full bg-black text-green-400 font-mono text-sm px-2 py-2 focus:outline-none resize-y border border-gray-600 rounded"
+                          rows={Math.max(6, editingValue.split('\n').length + 1)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && e.ctrlKey) {
+                              saveEdit();
+                            } else if (e.key === 'Escape') {
+                              cancelEdit();
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          Ctrl+Enter to save, Esc to cancel
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <div
+                          className={`break-words whitespace-pre-wrap cursor-pointer hover:bg-green-900 hover:bg-opacity-20 p-1 -m-1 font-mono text-sm ${isEmpty ? 'text-gray-500' : 'text-green-400'}`}
+                          onClick={() => {
+                            if (contentType === 'image' || contentType === 'file') {
+                              // Open file browser for image/file types
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = contentType === 'image' ? 'image/*' : '*/*';
+                              input.onchange = (e) => {
+                                const file = (e.target as HTMLInputElement).files?.[0];
+                                if (file) {
+                                  handleFileUpload(key, file);
+                                }
+                              };
+                              input.click();
+                            } else {
+                              startEditing(key, value);
+                            }
+                          }}
+                          title={contentType === 'image' || contentType === 'file' ? 'Click to upload new file' : 'Click to edit'}
+                        >
+                          <span className="text-gray-400">{'>'}</span> {displayValue}
+                        </div>
+
+                        {/* Image preview */}
+                        {contentType === 'image' && isPreviewable && (
+                          <div className="mt-2 max-w-xs">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={mindcacheRef.current.get_data_url(key)}
+                              alt={`Preview of ${key}`}
+                              className="max-w-full h-auto border border-gray-600 rounded"
+                              style={{ maxHeight: '200px' }}
+                            />
+                          </div>
+                        )}
+
+                        {/* File info */}
+                        {(contentType === 'file' || contentType === 'image') && attributes?.contentType && (
+                          <div className="mt-1 text-xs text-gray-500">
+                            Type: {attributes.contentType}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  
-                  {editingKey === key ? (
-                    <div className="mt-1">
-                      <textarea
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onBlur={saveEdit}
-                        className="w-full bg-black text-green-400 font-mono text-sm px-2 py-2 focus:outline-none resize-y border border-gray-600 rounded"
-                        rows={Math.max(6, editingValue.split('\n').length + 1)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && e.ctrlKey) {
-                            saveEdit();
-                          } else if (e.key === 'Escape') {
-                            cancelEdit();
-                          }
-                        }}
-                        autoFocus
-                      />
-                      <div className="text-xs text-gray-500 mt-1">
-                        Ctrl+Enter to save, Esc to cancel
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-1">
-                      <div 
-                        className={`break-words whitespace-pre-wrap cursor-pointer hover:bg-green-900 hover:bg-opacity-20 p-1 -m-1 font-mono text-sm ${isEmpty ? 'text-gray-500' : 'text-green-400'}`}
-                        onClick={() => {
-                          if (contentType === 'image' || contentType === 'file') {
-                            // Open file browser for image/file types
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.accept = contentType === 'image' ? 'image/*' : '*/*';
-                            input.onchange = (e) => {
-                              const file = (e.target as HTMLInputElement).files?.[0];
-                              if (file) {
-                                handleFileUpload(key, file);
-                              }
-                            };
-                            input.click();
-                          } else {
-                            startEditing(key, value);
-                          }
-                        }}
-                        title={contentType === 'image' || contentType === 'file' ? 'Click to upload new file' : 'Click to edit'}
-                      >
-                        <span className="text-gray-400">{'>'}</span> {displayValue}
-                      </div>
-                      
-                      {/* Image preview */}
-                      {contentType === 'image' && isPreviewable && (
-                        <div className="mt-2 max-w-xs">
-                          <img 
-                            src={mindcacheRef.current.get_data_url(key)} 
-                            alt={`Preview of ${key}`}
-                            className="max-w-full h-auto border border-gray-600 rounded"
-                            style={{ maxHeight: '200px' }}
-                          />
-                        </div>
-                      )}
-                      
-                      {/* File info */}
-                      {(contentType === 'file' || contentType === 'image') && attributes?.contentType && (
-                        <div className="mt-1 text-xs text-gray-500">
-                          Type: {attributes.contentType}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
       </div>
 
       {/* Attributes Editor Popup */}
       {editingAttributes && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
         >
-          <div 
+          <div
             className="bg-black border-2 border-green-400 rounded-lg p-6 w-96 max-w-full max-h-full overflow-auto"
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
@@ -459,7 +454,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                 ×
               </button>
             </div>
-            
+
             <div className="space-y-2">
               {/* Key Name */}
               <div className="flex flex-col space-y-2">
@@ -478,8 +473,8 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                 <label className="text-gray-400 font-mono text-sm">type:</label>
                 <select
                   value={attributesForm.type}
-                  onChange={(e) => setAttributesForm({ 
-                    ...attributesForm, 
+                  onChange={(e) => setAttributesForm({
+                    ...attributesForm,
                     type: e.target.value as 'text' | 'image' | 'file' | 'json',
                     // Clear contentType when switching to text/json
                     contentType: (e.target.value === 'text' || e.target.value === 'json') ? '' : attributesForm.contentType
@@ -507,12 +502,12 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                         if (file && editingKeyName) {
                           try {
                             // Update content type from file
-                            setAttributesForm({ 
-                              ...attributesForm, 
+                            setAttributesForm({
+                              ...attributesForm,
                               contentType: file.type,
                               type: file.type.startsWith('image/') ? 'image' : 'file'
                             });
-                            
+
                             // Upload the file
                             await handleFileUpload(editingKeyName, file);
                             console.log(`✅ File uploaded via popup: ${file.name}`);
@@ -530,68 +525,98 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                   </button>
                 </div>
               )}
-              {/* Readonly */}
-              <div className="flex items-center justify-between">
-                <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[R]</span> readonly:
-                  <div className="text-xs text-gray-500 mt-1">If true, won&apos;t appear in AI tools</div>
-                </div>
-                {attributesForm.hardcoded ? (
-                  <span className="text-gray-500 font-mono px-2 py-1">
-                    {attributesForm.readonly ? 'true' : 'false'}
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => setAttributesForm({ ...attributesForm, readonly: !attributesForm.readonly })}
-                    className="text-green-400 font-mono text-sm hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                  >
-                    {attributesForm.readonly ? 'true' : 'false'}
-                  </button>
-                )}
-              </div>
+              {/* System Tags Management */}
 
-              {/* Visible */}
+              {/* Writable (LLMWrite) */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[V]</span> visible:
-                  <div className="text-xs text-gray-500 mt-1">If false, hidden from injectSTM/getSTM</div>
+                  <span className="text-green-400">[W]</span> writable by AI:
+                  <div className="text-xs text-gray-500 mt-1">If true, AI can modify this value</div>
                 </div>
                 <button
-                  onClick={() => setAttributesForm({ ...attributesForm, visible: !attributesForm.visible })}
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('LLMWrite');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) {
+                      newTags = newTags.filter(t => t !== 'LLMWrite');
+                    } else {
+                      newTags.push('LLMWrite');
+                    }
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
                   className="text-green-400 font-mono text-sm hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
                 >
-                  {attributesForm.visible ? 'true' : 'false'}
+                  {attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}
                 </button>
               </div>
 
-              {/* Template */}
+              {/* Visible to AI (SystemPrompt) */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[T]</span> template:
-                  <div className="text-xs text-gray-500 mt-1">Process with injectSTM on get</div>
+                  <span className="text-green-400">[S]</span> system prompt:
+                  <div className="text-xs text-gray-500 mt-1">Visible to AI in system prompt</div>
                 </div>
-                {attributesForm.hardcoded ? (
-                  <span className="text-gray-500 font-mono px-2 py-1">
-                    {attributesForm.template ? 'true' : 'false'}
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => setAttributesForm({ ...attributesForm, template: !attributesForm.template })}
-                    className="text-green-400 font-mono text-sm hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
-                  >
-                    {attributesForm.template ? 'true' : 'false'}
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('SystemPrompt');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) {
+                      newTags = newTags.filter(t => t !== 'SystemPrompt');
+                    } else {
+                      newTags.push('SystemPrompt');
+                    }
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
+                  className="text-green-400 font-mono text-sm hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                >
+                  {attributesForm.systemTags.includes('SystemPrompt') ? 'true' : 'false'}
+                </button>
               </div>
 
-              {/* Hardcoded */}
+              {/* Template (ApplyTemplate) */}
               <div className="flex items-center justify-between">
                 <div className="text-gray-400 font-mono text-sm">
-                  <span className="text-yellow-400">[H]</span> hardcoded:
+                  <span className="text-green-400">[T]</span> template:
+                  <div className="text-xs text-gray-500 mt-1">Process with injectSTM on get</div>
                 </div>
-                <span className="text-gray-500 font-mono px-2 py-1">
-                  {attributesForm.hardcoded ? 'true' : 'false'}
-                </span>
+                <button
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('ApplyTemplate');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) {
+                      newTags = newTags.filter(t => t !== 'ApplyTemplate');
+                    } else {
+                      newTags.push('ApplyTemplate');
+                    }
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
+                  className="text-green-400 font-mono text-sm hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                >
+                  {attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}
+                </button>
+              </div>
+
+              {/* Protected */}
+              <div className="flex items-center justify-between">
+                <div className="text-gray-400 font-mono text-sm">
+                  <span className="text-green-400">[P]</span> protected:
+                  <div className="text-xs text-gray-500 mt-1">Prevents deletion</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const hasTag = attributesForm.systemTags.includes('protected');
+                    let newTags = [...attributesForm.systemTags];
+                    if (hasTag) {
+                      newTags = newTags.filter(t => t !== 'protected');
+                    } else {
+                      newTags.push('protected');
+                    }
+                    setAttributesForm({ ...attributesForm, systemTags: newTags });
+                  }}
+                  className="text-green-400 font-mono text-sm hover:bg-green-900 hover:bg-opacity-20 px-2 py-1 rounded transition-colors"
+                >
+                  {attributesForm.systemTags.includes('protected') ? 'true' : 'false'}
+                </button>
               </div>
 
               {/* Tags */}
@@ -599,14 +624,14 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                 <div className="text-gray-400 font-mono text-sm">
                   tags:
                 </div>
-                
+
                 {/* Tag display and input */}
                 <div className="relative">
                   <div className="bg-black border border-green-400 rounded px-2 py-2 focus-within:ring-1 focus-within:ring-green-400">
                     <div className="flex flex-wrap gap-1 items-center">
                       {/* Existing tags */}
                       {attributesForm.tags.map((tag, index) => (
-                        <span 
+                        <span
                           key={index}
                           className="inline-flex items-center gap-1 text-xs bg-blue-900 bg-opacity-50 text-blue-300 px-2 py-1 rounded font-mono border border-blue-600 group hover:bg-blue-800 hover:bg-opacity-50 transition-colors"
                         >
@@ -620,7 +645,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                           </button>
                         </span>
                       ))}
-                      
+
                       {/* Tag input */}
                       <input
                         type="text"
@@ -633,7 +658,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                       />
                     </div>
                   </div>
-                  
+
                   {/* Tag suggestions dropdown */}
                   {tagSuggestions.length > 0 && (
                     <div className="absolute z-10 w-full mt-1 bg-black border border-green-400 rounded shadow-lg max-h-40 overflow-y-auto">
@@ -649,7 +674,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
                     </div>
                   )}
                 </div>
-                
+
                 {/* Tag suggestions or help */}
                 <div className="text-xs text-gray-500">
                   {attributesForm.tags.length > 0 && (
