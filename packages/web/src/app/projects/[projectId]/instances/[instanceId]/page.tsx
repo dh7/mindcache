@@ -264,14 +264,9 @@ export default function InstanceEditorPage() {
         key: newKeyName,
         value,
         attributes: {
-          readonly: false,
-          visible: true,
-          hardcoded: false,
-          template: false,
           type: newKeyType,
-          tags: [],
           contentTags: [],
-          systemTags: [],
+          systemTags: ['SystemPrompt', 'LLMWrite'],
           zIndex: 0
         },
         timestamp: Date.now()
@@ -309,7 +304,7 @@ export default function InstanceEditorPage() {
     // Update available tags
     const allTags = new Set<string>();
     Object.values(keys).forEach(entry => {
-      entry?.attributes?.tags?.forEach(tag => allTags.add(tag));
+      entry?.attributes?.contentTags?.forEach((tag: string) => allTags.add(tag));
     });
     setAvailableTags(Array.from(allTags).sort());
   }, [keys, editingKey]);
@@ -509,12 +504,9 @@ export default function InstanceEditorPage() {
           value: dataUrl,
           attributes: {
             ...keys[key]?.attributes || {
-              readonly: false,
-              visible: true,
-              hardcoded: false,
-              template: false,
               type: file.type.startsWith('image/') ? 'image' : 'file',
-              tags: [],
+              contentTags: [],
+              systemTags: ['SystemPrompt', 'LLMWrite'],
               zIndex: 0
             },
             type: file.type.startsWith('image/') ? 'image' : 'file',
@@ -570,20 +562,18 @@ export default function InstanceEditorPage() {
     lines.push('');
 
     sortedKeys.forEach(([key, entry]) => {
-      if (entry.attributes.hardcoded) {
+      if (entry.attributes.systemTags?.includes('protected')) {
         return;
       }
 
       lines.push(`### ${key}`);
       const entryType = entry.attributes.type || 'text';
       lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **Readonly**: \`${entry.attributes.readonly}\``);
-      lines.push(`- **Visible**: \`${entry.attributes.visible}\``);
-      lines.push(`- **Template**: \`${entry.attributes.template}\``);
+      lines.push(`- **System Tags**: \`${entry.attributes.systemTags?.join(', ') || 'none'}\``);
       lines.push(`- **Z-Index**: \`${entry.attributes.zIndex ?? 0}\``);
 
-      if (entry.attributes.tags && entry.attributes.tags.length > 0) {
-        lines.push(`- **Tags**: \`${entry.attributes.tags.join('`, `')}\``);
+      if (entry.attributes.contentTags && entry.attributes.contentTags.length > 0) {
+        lines.push(`- **Tags**: \`${entry.attributes.contentTags.join('`, `')}\``);
       }
 
       if (entry.attributes.contentType) {
@@ -675,15 +665,10 @@ export default function InstanceEditorPage() {
             key,
             value: entry.value,
             attributes: {
-              readonly: entry.attributes.readonly ?? false,
-              visible: entry.attributes.visible ?? true,
-              hardcoded: entry.attributes.hardcoded ?? false,
-              template: entry.attributes.template ?? false,
               type: entry.attributes.type || 'text',
               contentType: entry.attributes.contentType,
-              tags: entry.attributes.tags || [],
               contentTags: entry.attributes.contentTags || [],
-              systemTags: entry.attributes.systemTags || [],
+              systemTags: entry.attributes.systemTags || ['SystemPrompt', 'LLMWrite'],
               zIndex: entry.attributes.zIndex ?? 0
             },
             timestamp: Date.now()
@@ -773,14 +758,9 @@ export default function InstanceEditorPage() {
               currentEntry = {
                 value: undefined,
                 attributes: {
-                  readonly: false,
-                  visible: true,
-                  hardcoded: false,
-                  template: false,
                   type: 'text',
-                  tags: [],
                   contentTags: [],
-                  systemTags: [],
+                  systemTags: ['SystemPrompt', 'LLMWrite'],
                   zIndex: 0
                 }
               };
@@ -789,20 +769,10 @@ export default function InstanceEditorPage() {
               if (currentEntry && type) {
                 currentEntry.attributes!.type = type;
               }
-            } else if (trimmed.startsWith('- **Readonly**: `')) {
-              const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-              if (currentEntry) {
-                currentEntry.attributes!.readonly = value;
-              }
-            } else if (trimmed.startsWith('- **Visible**: `')) {
-              const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-              if (currentEntry) {
-                currentEntry.attributes!.visible = value;
-              }
-            } else if (trimmed.startsWith('- **Template**: `')) {
-              const value = trimmed.match(/`([^`]+)`/)?.[1] === 'true';
-              if (currentEntry) {
-                currentEntry.attributes!.template = value;
+            } else if (trimmed.startsWith('- **System Tags**: `')) {
+              const tagsStr = trimmed.match(/`([^`]+)`/)?.[1] || '';
+              if (currentEntry && tagsStr !== 'none') {
+                currentEntry.attributes!.systemTags = tagsStr.split(', ').filter(t => t) as any[];
               }
             } else if (trimmed.startsWith('- **Z-Index**: `')) {
               const zIndexStr = trimmed.match(/`([^`]+)`/)?.[1];
@@ -815,7 +785,7 @@ export default function InstanceEditorPage() {
             } else if (trimmed.startsWith('- **Tags**: `')) {
               const tagsStr = trimmed.substring(13, trimmed.length - 1);
               if (currentEntry) {
-                currentEntry.attributes!.tags = tagsStr.split('`, `');
+                currentEntry.attributes!.contentTags = tagsStr.split('`, `');
               }
             } else if (trimmed.startsWith('- **Content Type**: `')) {
               const contentType = trimmed.match(/`([^`]+)`/)?.[1];
@@ -872,15 +842,10 @@ export default function InstanceEditorPage() {
               key,
               value: entry.value,
               attributes: {
-                readonly: entry.attributes.readonly ?? false,
-                visible: entry.attributes.visible ?? true,
-                hardcoded: entry.attributes.hardcoded ?? false,
-                template: entry.attributes.template ?? false,
                 type: entry.attributes.type || 'text',
                 contentType: entry.attributes.contentType,
-                tags: entry.attributes.tags || [],
                 contentTags: entry.attributes.contentTags || [],
-                systemTags: entry.attributes.systemTags || [],
+                systemTags: entry.attributes.systemTags || ['SystemPrompt', 'LLMWrite'],
                 zIndex: entry.attributes.zIndex ?? 0
               },
               timestamp: Date.now()
@@ -928,7 +893,7 @@ export default function InstanceEditorPage() {
     }
 
     return sortedKeys.filter(([_key, entry]) => {
-      const keyTags = entry.attributes.tags || [];
+      const keyTags = entry.attributes.contentTags || [];
       const keySystemTags = entry.attributes.systemTags || [];
 
       // System tag filter: must have ALL selected system tags
@@ -941,7 +906,7 @@ export default function InstanceEditorPage() {
 
           // Strict matching: only check for exact systemTags
           if (st === 'SystemPrompt') {
-            return keySystemTags.includes('SystemPrompt') || keySystemTags.includes('prompt');
+            return keySystemTags.includes('SystemPrompt');
           }
           if (st === 'LLMRead') {
             return keySystemTags.includes('LLMRead');
@@ -950,10 +915,10 @@ export default function InstanceEditorPage() {
             return keySystemTags.includes('LLMWrite');
           }
           if (st === 'protected') {
-            return _key === '$Date' || _key === '$TIME';
+            return keySystemTags.includes('protected');
           }
           if (st === 'ApplyTemplate') {
-            return keySystemTags.includes('ApplyTemplate') || keySystemTags.includes('template');
+            return keySystemTags.includes('ApplyTemplate');
           }
           return false;
         });
@@ -1095,7 +1060,7 @@ export default function InstanceEditorPage() {
                 const systemTags = entry.attributes.systemTags || [];
 
                 // SP: Only SystemPrompt tag
-                if (systemTags.includes('SystemPrompt') || systemTags.includes('prompt')) {
+                if (systemTags.includes('SystemPrompt')) {
                   indicators.push('SP');
                 }
 
@@ -1110,7 +1075,7 @@ export default function InstanceEditorPage() {
                 }
 
                 // AT: ApplyTemplate
-                if (systemTags.includes('ApplyTemplate') || systemTags.includes('template')) {
+                if (systemTags.includes('ApplyTemplate')) {
                   indicators.push('AT');
                 }
 
@@ -1159,9 +1124,9 @@ export default function InstanceEditorPage() {
                                 [{indicators.join('')}]
                               </span>
                             )}
-                            {entry.attributes.tags && entry.attributes.tags.length > 0 && (
+                            {entry.attributes.contentTags && entry.attributes.contentTags.length > 0 && (
                               <div className="flex gap-1 flex-wrap">
-                                {entry.attributes.tags.map((tag) => (
+                                {entry.attributes.contentTags.map((tag: string) => (
                                   <span
                                     key={tag}
                                     className="px-2 py-0.5 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 rounded font-mono border border-cyan-600"
