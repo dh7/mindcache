@@ -9,7 +9,7 @@
         "lint": "next lint"
     },
     "dependencies": {
-        "mindcache": "file:../../packages/mindcache",
+        "mindcache": "^3.4.1",
         "next": "^15.5.7",
         "react": "^19",
         "react-dom": "^19"

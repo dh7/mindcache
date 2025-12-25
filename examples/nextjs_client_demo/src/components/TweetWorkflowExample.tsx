@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useMindCache, MindCache } from 'mindcache';
+import { useMindCache, MindCache, SystemTag } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import Workflows from './Workflows';
 import type { TypedToolCall, ToolSet } from 'ai';
@@ -58,19 +58,18 @@ export default function TweetWorkflowExample() {
     }
 
     const fields = [
-      { key: 'topic', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] },
-      { key: 'company', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] },
-      { key: 'audience', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] },
-      { key: 'content_summary', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] },
-      { key: 'company_summary', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] },
-      { key: 'tweet', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] },
-      { key: 'tweet_image', value: '', systemTags: [], type: 'image', contentType: 'image/jpeg' }
+      { key: 'topic', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'company', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'audience', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'content_summary', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'company_summary', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'tweet', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'tweet_image', value: '', systemTags: [] as SystemTag[], type: 'image' as const, contentType: 'image/jpeg' }
     ];
 
     fields.forEach(({ key, value, systemTags, type, contentType }) => {
       if (!mindcache.has(key)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        mindcache.set_value(key, value, { systemTags: systemTags as any, type: type as any, contentType });
+        mindcache.set_value(key, value, { systemTags, type, contentType });
       }
     });
 

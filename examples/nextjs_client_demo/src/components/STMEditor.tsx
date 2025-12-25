@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { mindcache } from 'mindcache';
+import { mindcache, SystemTag } from 'mindcache';
 
 // Type definitions
 interface STMEditorProps {
@@ -19,8 +19,7 @@ export default function STMEditor({ onSTMChange, selectedTags }: STMEditorProps)
     type: 'text' as 'text' | 'image' | 'file' | 'json',
     contentType: '',
     tags: [] as string[],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    systemTags: [] as any
+    systemTags: [] as SystemTag[]
   });
   const [editingKeyName, setEditingKeyName] = useState('');
   const [newTagInput, setNewTagInput] = useState('');
