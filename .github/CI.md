@@ -75,6 +75,30 @@ Triggered on: push to `main`
 
 Deploys `/docs` folder to GitHub Pages.
 
+### 4. `deploy-server.yml` - Cloudflare Workers Deployment
+
+Triggered on:
+- Push to `main` when `packages/server/**` or `packages/shared/**` change
+- Manual dispatch via GitHub UI
+
+**Features:**
+- Checks for pending D1 database migrations
+- Applies migrations automatically if needed
+- Deploys worker to Cloudflare Workers production
+- Runs a post-deployment smoke test
+
+**Required Secrets:**
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Workers + D1 permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+
+**Manual Deployment:**
+You can trigger a manual deployment from the GitHub Actions tab:
+1. Go to Actions → "Deploy Server"
+2. Click "Run workflow"
+3. Optionally check "Skip database migrations"
+
 ## ESLint Setup
 
 ### Root Config (`.eslintrc.js`)
