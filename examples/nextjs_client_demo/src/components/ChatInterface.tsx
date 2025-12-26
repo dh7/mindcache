@@ -55,18 +55,18 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   // Use provided instance or create a default one (for backward compatibility)
   const defaultInstance = useRef(new MindCache());
   const mindcacheRef = mindcacheInstance || defaultInstance.current;
-  
+
   // Analyze image tool function
   const analyzeImageWithSTM = async (prompt: string) => {
     try {
       console.log('🔍 Starting image analysis with STM integration');
-      
+
       // Extract image references from prompt ({{image_name}})
       const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
       const imageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
-      
+
       console.log('📝 Found image references:', imageRefs);
-      
+
       // Only analyze images with explicit references
       let imagesToAnalyze: string[] = [];
       if (imageRefs.length === 0) {
@@ -87,17 +87,17 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
           }
         });
       }
-      
+
       if (imagesToAnalyze.length === 0) {
         return {
           success: false,
           error: 'No images found to analyze. Make sure images are stored in STM and referenced correctly.'
         };
       }
-      
+
       // Create FormData for the analysis API
       const formData = new FormData();
-      
+
       // Convert first base64 to blob for the API
       const base64Data = imagesToAnalyze[0];
       const byteCharacters = atob(base64Data);
@@ -107,22 +107,22 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       }
       const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: 'image/jpeg' });
-      
+
       formData.append('image', blob, 'image.jpg');
       formData.append('prompt', prompt);
-      
+
       console.log('🚀 Calling image analysis API');
       const response = await fetch('/api/image-analysis', {
         method: 'POST',
         body: formData,
       });
-      
+
       if (response.ok) {
         const result = await response.json();
-        
+
         if (result.success) {
           console.log('✅ Analysis completed:', { hasAnalysis: !!result.data.analysis });
-          
+
           return {
             success: true,
             analysis: result.data.analysis,
@@ -157,9 +157,9 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   const generateImageWithImages = async (prompt: string, images: string[] = [], imageName?: string) => {
     try {
       const mode = images.length > 0 ? 'edit' : 'generate';
-      
+
       console.log('🔍 generateImageWithImages called with:', { prompt, mode, imageCount: images.length, imageName });
-      
+
       const requestBody: any = {
         prompt,
         mode,
@@ -178,11 +178,11 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
         requestBody.aspectRatio = "1:1";
       }
 
-      console.log('📤 Sending request:', { 
-        mode, 
-        hasImages: images.length > 0, 
+      console.log('📤 Sending request:', {
+        mode,
+        hasImages: images.length > 0,
         imageCount: images.length,
-        promptLength: prompt.length 
+        promptLength: prompt.length
       });
 
       const response = await fetch('/api/image-edit', {
@@ -200,7 +200,7 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
           const requestId = response.headers.get('X-Request-ID');
           const responseMode = response.headers.get('X-Mode');
           const inputCount = parseInt(response.headers.get('X-Input-Count') || '0');
-          
+
           // Convert blob to base64
           const base64Data = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -212,17 +212,16 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
             reader.onerror = reject;
             reader.readAsDataURL(imageBlob);
           });
-          
+
           // Store the generated image in mindcache
           const timestamp = Date.now();
           const imageKey = imageName || `generated_image_${timestamp}`;
-          
+
           console.log('🖼️ Adding image to mindcache:', { imageKey, contentType, base64Length: base64Data.length, customName: !!imageName });
           mindcacheRef.add_image(imageKey, base64Data, contentType, {
-            readonly: true,
-            visible: true
+            systemTags: ['SystemPrompt']
           });
-          
+
           const storedAttributes = mindcacheRef.get_attributes(imageKey);
           console.log('🔍 Stored attributes:', storedAttributes);
 
@@ -262,14 +261,14 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       };
     }
   };
-  
+
   // Generate tool schemas (without execute functions) for the server
   function getToolSchemas(): Record<string, ToolSchema> {
     const tools = mindcacheRef.get_aisdk_tools();
     const schemas: Record<string, ToolSchema> = {};
-    
+
     console.log('🔧 Generated tools on client:', Object.keys(tools));
-    
+
     // Convert tools to schema-only format
     Object.entries(tools).forEach(([toolName, tool]: [string, { description: string }]) => {
       schemas[toolName] = {
@@ -291,19 +290,19 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
         try {
           const originalBody = init?.body ? JSON.parse(init.body as string) : {};
           let finalSystemPrompt;
-          
+
           // Priority: custom systemPrompt prop > STM tagged > default from mindcache
           if (systemPrompt) {
             finalSystemPrompt = systemPrompt;
           } else if (stmLoaded) {
             const systemPromptTagged = mindcacheRef.getTagged("SystemPrompt");
-            finalSystemPrompt = systemPromptTagged 
+            finalSystemPrompt = systemPromptTagged
               ? systemPromptTagged.split(': ').slice(1).join(': ') // Extract value part after "key: "
               : mindcacheRef.get_system_prompt();
           } else {
             finalSystemPrompt = mindcacheRef.get_system_prompt();
           }
-          
+
           const nextBody = { ...originalBody, toolSchemas: getToolSchemas(), systemPrompt: finalSystemPrompt };
           console.log('📤 Sending to server:', { toolSchemas: Object.keys(nextBody.toolSchemas || {}), hasSystemPrompt: Boolean(finalSystemPrompt) });
           return fetch(input, { ...init, body: JSON.stringify(nextBody) });
@@ -317,38 +316,38 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
     onFinish: ({ message }) => {
       console.log('🏁 Message finished:', message);
       console.log('🏁 Message parts:', (message as Message).parts);
-      
+
       // Extract and log sources from web search results
       const parts = (message as Message).parts || [];
       const toolResults = parts.filter((part: MessagePart) => part.type === 'tool-result');
-      const webSearchResults = toolResults.filter((result: MessagePart) => 
+      const webSearchResults = toolResults.filter((result: MessagePart) =>
         result.toolName === 'web_search' && (result.result as { sources?: WebSearchSource[] })?.sources
       );
-      
+
       if (webSearchResults.length > 0) {
         console.log('🔍 Web search sources:', webSearchResults.map((r: MessagePart) => (r.result as { sources: WebSearchSource[] }).sources));
       }
     },
     async onToolCall({ toolCall }) {
-       console.log('🔧 Client intercepted tool call:', toolCall);
-       const typedToolCall = toolCall as TypedToolCall<ToolSet>;
-       const toolName = typedToolCall.toolName;
-       const toolInput = typedToolCall.input;
+      console.log('🔧 Client intercepted tool call:', toolCall);
+      const typedToolCall = toolCall as TypedToolCall<ToolSet>;
+      const toolName = typedToolCall.toolName;
+      const toolInput = typedToolCall.input;
 
-       console.log('🔧 Extracted:', { toolName, toolInput });
-      
+      console.log('🔧 Extracted:', { toolName, toolInput });
+
       // Execute tools client-side to maintain STM state
       if (typeof toolName === 'string' && toolName.startsWith('write_')) {
         const value = (toolInput as Record<string, unknown>)?.value as string;
-        
+
         // Execute the tool call using the centralized method
         const result = mindcacheRef.executeToolCall(toolName, value);
-        
+
         // Notify parent component of tool call
         if (onToolCall) {
           onToolCall(typedToolCall);
         }
-        
+
         // v5 API: add tool result with 'output'
         if (result) {
           addToolResult({
@@ -366,15 +365,15 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       if (toolName === 'generate_image') {
         console.log('🖼️ Handling generate_image tool call');
         const { prompt, imageName } = typedToolCall.input as { prompt: string; imageName?: string };
-        
+
         // Extract explicit image references from prompt ({{image_name}})
         const imageRefMatches = prompt.match(/\{\{(\w+)\}\}/g);
         const explicitImageRefs = imageRefMatches?.map(ref => ref.replace(/\{\{|\}\}/g, '')) || [];
-        
+
         console.log('📝 Found explicit image references:', explicitImageRefs);
-        
+
         let imagesToInclude: string[] = [];
-        
+
         if (explicitImageRefs.length > 0) {
           // Get specific referenced images
           console.log('🎯 Using explicit image references:', explicitImageRefs);
@@ -388,17 +387,17 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
             }
           });
         }
-        
+
         console.log(`🎯 Images to include: ${imagesToInclude.length}`);
-        
+
         const result = await generateImageWithImages(prompt, imagesToInclude, imageName);
         console.log('🖼️ Image generation result:', result);
-        
+
         // Notify parent if callback exists
         if (onToolCall) {
           onToolCall(typedToolCall);
         }
-        
+
         addToolResult({
           tool: toolName,
           toolCallId: typedToolCall.toolCallId,
@@ -411,15 +410,15 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       if (toolName === 'analyze_image') {
         console.log('🔍 Handling analyze_image tool call');
         const { prompt } = typedToolCall.input as { prompt: string; analysisName?: string };
-        
+
         const result = await analyzeImageWithSTM(prompt);
         console.log('🔍 Image analysis result:', result);
-        
+
         // Notify parent if callback exists
         if (onToolCall) {
           onToolCall(typedToolCall);
         }
-        
+
         addToolResult({
           tool: toolName,
           toolCallId: typedToolCall.toolCallId,
@@ -431,11 +430,11 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
       // Handle generate_mermaid_diagram tool
       if (toolName === 'generate_mermaid_diagram') {
         console.log('📊 Handling generate_mermaid_diagram tool call');
-        const { mermaidCode, imageName } = typedToolCall.input as { 
-          mermaidCode: string; 
+        const { mermaidCode, imageName } = typedToolCall.input as {
+          mermaidCode: string;
           imageName?: string;
         };
-        
+
         try {
           const response = await fetch('/api/mermaid-to-image', {
             method: 'POST',
@@ -445,7 +444,7 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
 
           if (response.ok) {
             const imageBlob = await response.blob();
-            
+
             // Convert blob to base64
             const base64Data = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -457,28 +456,27 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
               reader.onerror = reject;
               reader.readAsDataURL(imageBlob);
             });
-            
+
             // Store the diagram in mindcache
             const timestamp = Date.now();
             const imageKey = imageName || `diagram_${timestamp}`;
-            
+
             console.log('📊 Adding diagram to mindcache:', { imageKey, base64Length: base64Data.length });
             mindcacheRef.add_image(imageKey, base64Data, 'image/png', {
-              readonly: true,
-              visible: true
+              systemTags: ['SystemPrompt']
             });
-            
+
             const result = {
               success: true,
               imageKey,
               message: `Diagram generated successfully and stored as '${imageKey}'`
             };
-            
+
             // Notify parent if callback exists
             if (onToolCall) {
               onToolCall(typedToolCall);
             }
-            
+
             addToolResult({
               tool: toolName,
               toolCallId: typedToolCall.toolCallId,
@@ -490,7 +488,7 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
               success: false,
               error: errorData.error || `API error: ${response.status}`
             };
-            
+
             addToolResult({
               tool: toolName,
               toolCallId: typedToolCall.toolCallId,
@@ -503,7 +501,7 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
             success: false,
             error: error instanceof Error ? error.message : 'Unknown error occurred'
           };
-          
+
           addToolResult({
             tool: toolName,
             toolCallId: typedToolCall.toolCallId,
@@ -537,7 +535,7 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
         parts: [{ type: 'text' as const, text: workflowPrompt }], // Original text with {{key}} for display
         metadata: { processedText: processedPrompt } // Processed text for LLM
       });
-      
+
       // Immediately notify that the prompt was sent to clear the workflowPrompt
       if (onWorkflowPromptSent) {
         onWorkflowPromptSent();
@@ -549,8 +547,8 @@ export default function ChatInterface({ onToolCall, initialMessages, workflowPro
   return (
     <div className="flex-1 flex flex-col pr-1 min-h-0">
       <ChatConversation messages={messages} />
-      
-      <ChatInput 
+
+      <ChatInput
         onSendMessage={sendMessage}
         status={status}
         mindcacheInstance={mindcacheRef}

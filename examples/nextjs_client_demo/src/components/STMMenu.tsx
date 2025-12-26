@@ -15,16 +15,17 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
 
   // Update available tags when STM changes
   useEffect(() => {
+    const mc = mindcacheRef.current;
     const updateTags = () => {
-      setAvailableTags(mindcacheRef.current.getAllTags());
+      setAvailableTags(mc.getAllTags());
     };
-    
+
     // Initial load
     updateTags();
-    
+
     // Subscribe to STM changes
-    mindcacheRef.current.subscribeToAll(updateTags);
-    return () => mindcacheRef.current.unsubscribeFromAll(updateTags);
+    mc.subscribeToAll(updateTags);
+    return () => mc.unsubscribeFromAll(updateTags);
   }, []);
 
   // Toggle tag selection
@@ -32,7 +33,7 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
     if (!onSelectedTagsChange) {
       return;
     }
-    
+
     if (selectedTags.includes(tag)) {
       onSelectedTagsChange(selectedTags.filter(t => t !== tag));
     } else {
@@ -73,7 +74,7 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
         // Update mindcache first - this ensures STM is fully loaded
         mindcacheRef.current.fromJSON(saved);
         console.log('✅ STM loaded from localStorage');
-        
+
         // Then refresh all UI components after STM is ready
         if (onRefresh) {
           // Use setTimeout to ensure mindcache updates propagate
@@ -95,7 +96,7 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
       // Clear mindcache first - this ensures STM is fully cleared
       mindcacheRef.current.clear();
       console.log('🗑️ STM cleared');
-      
+
       // Refresh all UI components (including chat reset) after clear is complete
       if (onRefresh) {
         // Use setTimeout to ensure mindcache updates propagate
@@ -140,11 +141,11 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
           reader.onload = (event) => {
             try {
               const markdown = event.target?.result as string;
-              
+
               // Update mindcache first - this ensures STM is fully imported
               mindcacheRef.current.fromMarkdown(markdown);
               console.log('✅ STM imported from markdown');
-              
+
               // Then refresh all UI components after import is complete
               if (onRefresh) {
                 // Use setTimeout to ensure mindcache updates propagate
@@ -172,28 +173,28 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
   return (
     <div className="border border-gray-600 rounded p-4 font-mono text-sm flex-shrink-0 mb-2">
       <div className="flex space-x-4 mb-2">
-        <div 
+        <div
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={handleAddKey}
           title="Add new STM key"
         >
           Add Key
         </div>
-        <div 
+        <div
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={loadSTM}
           title="Load STM from localStorage"
         >
           Load
         </div>
-        <div 
+        <div
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={saveSTM}
           title="Save STM to localStorage"
         >
           Save
         </div>
-        <div 
+        <div
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={() => {
             if (confirm('Clear STM? This will delete all entries and reset the chat.')) {
@@ -204,14 +205,14 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
         >
           Clear
         </div>
-        <div 
+        <div
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={exportSTM}
           title="Export STM to markdown file"
         >
           Export
         </div>
-        <div 
+        <div
           className="text-green-400 cursor-pointer hover:text-green-300 transition-colors"
           onClick={importSTM}
           title="Import STM from markdown file"
@@ -219,7 +220,7 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
           Import
         </div>
       </div>
-      
+
       {/* Tag Filter Section */}
       {availableTags.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gray-700">
@@ -229,11 +230,10 @@ export default function STMMenu({ onRefresh, selectedTags = [], onSelectedTagsCh
               <button
                 key={tag}
                 onClick={() => toggleTag(tag)}
-                className={`text-xs px-2 py-1 rounded font-mono border transition-colors ${
-                  selectedTags.includes(tag)
+                className={`text-xs px-2 py-1 rounded font-mono border transition-colors ${selectedTags.includes(tag)
                     ? 'bg-blue-900 bg-opacity-50 text-blue-300 border-blue-600'
                     : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-500'
-                }`}
+                  }`}
                 title={selectedTags.includes(tag) ? 'Click to unselect' : 'Click to select'}
               >
                 {tag}

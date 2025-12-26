@@ -72,9 +72,9 @@ describe('MindCache', () => {
 
     it('should get attributes for keys', () => {
       const mc = new MindCache();
-      mc.set_value('attr-key', 'val', { readonly: true, zIndex: 10 });
+      mc.set_value('attr-key', 'val', { systemTags: [], zIndex: 10 });
       const attrs = mc.get_attributes('attr-key');
-      expect(attrs?.readonly).toBe(true);
+      expect(attrs?.systemTags).not.toContain('LLMWrite');
       expect(attrs?.zIndex).toBe(10);
     });
   });
@@ -444,8 +444,8 @@ describe('MindCache', () => {
   describe('LLM Tools', () => {
     it('should generate write_ tools for writable keys', () => {
       const mc = new MindCache();
-      mc.set_value('writable', 'value', { readonly: false });
-      mc.set_value('readonly', 'value', { readonly: true });
+      mc.set_value('writable', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      mc.set_value('readonly', 'value', { systemTags: ['SystemPrompt'] }); // No LLMWrite
 
       const tools = mc.get_aisdk_tools();
       const toolNames = Object.keys(tools);
@@ -465,7 +465,7 @@ describe('MindCache', () => {
 
     it('should sanitize key names for tool names', () => {
       const mc = new MindCache();
-      mc.set_value('my-special@key!', 'value');
+      mc.set_value('my-special@key!', 'value', { systemTags: ['LLMWrite'] });
 
       const tools = mc.get_aisdk_tools();
       expect(Object.keys(tools)).toContain('write_my-special_key_');
@@ -473,7 +473,7 @@ describe('MindCache', () => {
 
     it('write_ tool should execute correctly', async () => {
       const mc = new MindCache();
-      mc.set_value('test', 'old_value');
+      mc.set_value('test', 'old_value', { systemTags: ['LLMWrite'] });
 
       const tools = mc.get_aisdk_tools();
       const result = await tools['write_test'].execute({ value: 'new_value' });
@@ -527,7 +527,7 @@ describe('MindCache', () => {
 
     it('executeToolCall should work with sanitized tool names', () => {
       const mc = new MindCache();
-      mc.set_value('my-special@key!', 'original');
+      mc.set_value('my-special@key!', 'original', { systemTags: ['LLMWrite'] });
 
       const result = mc.executeToolCall('write_my-special_key_', 'new_value');
 
@@ -544,7 +544,7 @@ describe('MindCache', () => {
 
     it('get_system_prompt should include tool hints for writable keys', () => {
       const mc = new MindCache();
-      mc.set_value('writable', 'value', { readonly: false, visible: true });
+      mc.set_value('writable', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const prompt = mc.get_system_prompt();
 
@@ -554,7 +554,7 @@ describe('MindCache', () => {
 
     it('get_system_prompt should include document tool hints for document keys', () => {
       const mc = new MindCache();
-      mc.set_document('notes', 'content');
+      mc.set_document('notes', 'content', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const prompt = mc.get_system_prompt();
 

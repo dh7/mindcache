@@ -7,17 +7,13 @@ export type AccessLevel = 'user' | 'system';
 
 /**
  * Known system tags that control key behavior
- * - 'SystemPrompt': Include in system prompt
- * - 'LLMRead': LLM can read this key (visible to LLMs)
+ * - 'SystemPrompt': Include in system prompt (visible to LLM context)
+ * - 'LLMRead': LLM can read this key via tools
  * - 'LLMWrite': LLM can write to this key via tools
- * - 'protected': Cannot be deleted (replaces hardcoded)
+ * - 'protected': Cannot be deleted
  * - 'ApplyTemplate': Process value through template injection
- *
- * @deprecated 'prompt' - Use 'SystemPrompt' instead
- * @deprecated 'readonly' - Use absence of 'LLMWrite' instead (if LLMWrite not present, readonly=true)
- * @deprecated 'template' - Use 'ApplyTemplate' instead
  */
-export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate' | 'prompt' | 'readonly' | 'template';
+export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate';
 
 /**
  * Type of value stored in a MindCache key
@@ -38,19 +34,17 @@ export interface KeyAttributes {
   systemTags: SystemTag[];
   /** Z-index for ordering keys (lower values appear first) */
   zIndex: number;
-
-  // Legacy attributes - kept for backward compatibility, derived from systemTags
-  /** @deprecated Use !systemTags.includes('LLMWrite') instead */
-  readonly: boolean;
-  /** @deprecated Use systemTags.includes('SystemPrompt') instead */
-  visible: boolean;
-  /** @deprecated Use systemTags.includes('protected') instead */
-  hardcoded: boolean;
-  /** @deprecated Use systemTags.includes('ApplyTemplate') instead */
-  template: boolean;
-  /** @deprecated Use contentTags instead */
-  tags?: string[];
 }
+
+/**
+ * Default attributes for new keys
+ */
+export const DEFAULT_KEY_ATTRIBUTES: KeyAttributes = {
+  type: 'text',
+  contentTags: [],
+  systemTags: [],  // Keys are private by default - explicitly add SystemPrompt/LLMRead/LLMWrite to enable LLM access
+  zIndex: 0
+};
 
 /**
  * A single entry in the MindCache store
@@ -80,22 +74,6 @@ export type Listener = (value: unknown) => void;
 export type GlobalListener = () => void;
 
 /**
- * Default attributes for new keys
- */
-export const DEFAULT_KEY_ATTRIBUTES: KeyAttributes = {
-  type: 'text',
-  contentTags: [],
-  systemTags: ['SystemPrompt', 'LLMWrite'], // visible in system prompt and writable by LLM by default
-  zIndex: 0,
-  // Legacy - derived from systemTags
-  readonly: false,
-  visible: true,
-  hardcoded: false,
-  template: false,
-  tags: []
-};
-
-/**
  * A single entry in the global history log
  */
 export interface HistoryEntry {
@@ -117,3 +95,27 @@ export interface HistoryOptions {
   snapshotInterval?: number;
 }
 
+/**
+ * Helper functions for working with system tags
+ */
+export const SystemTagHelpers = {
+  /** Check if key is writable by LLM */
+  isLLMWritable: (attrs: KeyAttributes): boolean =>
+    attrs.systemTags.includes('LLMWrite'),
+
+  /** Check if key is readable by LLM (in context or via tools) */
+  isLLMReadable: (attrs: KeyAttributes): boolean =>
+    attrs.systemTags.includes('SystemPrompt') || attrs.systemTags.includes('LLMRead'),
+
+  /** Check if key is included in system prompt */
+  isInSystemPrompt: (attrs: KeyAttributes): boolean =>
+    attrs.systemTags.includes('SystemPrompt'),
+
+  /** Check if key is protected from deletion */
+  isProtected: (attrs: KeyAttributes): boolean =>
+    attrs.systemTags.includes('protected'),
+
+  /** Check if key uses template injection */
+  hasTemplateInjection: (attrs: KeyAttributes): boolean =>
+    attrs.systemTags.includes('ApplyTemplate')
+};

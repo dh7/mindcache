@@ -1,24 +1,14 @@
+import type { STMEntry as KeyEntry, KeyAttributes as SDKKeyAttributes, SystemTag } from 'mindcache';
+
 export interface Instance {
   id: string;
   name: string;
   is_readonly: number;
 }
 
-export interface KeyEntry {
-  value: unknown;
-  attributes: {
-    readonly: boolean;
-    visible: boolean;
-    hardcoded: boolean;
-    template: boolean;
-    type: 'text' | 'image' | 'file' | 'json';
-    contentType?: string;
-    tags?: string[];
-    systemTags?: string[]; // SystemPrompt, LLMWrite, ApplyTemplate, protected, etc.
-    zIndex?: number;
-  };
-  updatedAt?: number;
-}
+// Re-export from SDK for consistency
+export type { KeyEntry, SystemTag };
+export type KeyAttributes = SDKKeyAttributes;
 
 export type SyncData = Record<string, KeyEntry>;
 

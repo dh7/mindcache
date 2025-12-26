@@ -118,19 +118,21 @@ export default function ChatInterface({
                       return <span key={idx}>{part.text}</span>;
                     }
                     if (part.type === 'tool-invocation' || part.type === 'tool-call') {
+                      const toolName = 'toolName' in part ? (part as any).toolName : 'tool';
                       return (
                         <div key={idx} className="text-yellow-400 text-xs mt-1">
-                          🔧 {part.toolName}
+                          🔧 {toolName}
                         </div>
                       );
                     }
                     if (part.type === 'tool-result') {
-                      const resultText = typeof part.result === 'string'
-                        ? part.result
-                        : JSON.stringify(part.result);
+                      const result = 'result' in part ? (part as any).result : null;
+                      const resultText = typeof result === 'string'
+                        ? result
+                        : JSON.stringify(result);
                       return (
                         <div key={idx} className="text-green-500 text-xs mt-1">
-                          ✅ {resultText.length > 80 ? resultText.substring(0, 80) + '...' : resultText}
+                          ✅ {resultText && resultText.length > 80 ? resultText.substring(0, 80) + '...' : resultText}
                         </div>
                       );
                     }

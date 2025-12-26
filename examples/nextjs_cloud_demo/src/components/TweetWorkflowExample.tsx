@@ -41,7 +41,7 @@ export default function TweetWorkflowExample() {
   const loadFormData = () => {
     const mc = mindcacheRef.current;
     if (!mc) return;
-    
+
     setFormData({
       topic: mc.get_value('topic') || '',
       company: mc.get_value('company') || '',
@@ -60,7 +60,7 @@ export default function TweetWorkflowExample() {
     const handleChange = () => {
       setIsLoaded(mc.isLoaded);
       setConnectionState(mc.connectionState);
-      
+
       if (mc.isLoaded) {
         // Initialize fields if they don't exist
         const fields = [
@@ -75,15 +75,15 @@ export default function TweetWorkflowExample() {
 
         fields.forEach(({ key, value, type }) => {
           if (!mc.has(key)) {
-            mc.set_value(key, value, { 
-              visible: true, readonly: false, type: (type || 'text') as 'text' | 'image' 
+            mc.set_value(key, value, {
+              systemTags: ['SystemPrompt', 'LLMWrite'], type: (type || 'text') as 'text' | 'image' | 'file' | 'json'
             });
           }
         });
 
         loadFormData();
       }
-      
+
       setStmVersion(v => v + 1);
     };
 
@@ -160,7 +160,7 @@ export default function TweetWorkflowExample() {
             <Workflows
               onSendPrompt={setWorkflowPrompt}
               isExecuting={chatStatus !== 'ready'}
-              onExecutionComplete={() => {}}
+              onExecutionComplete={() => { }}
               stmLoaded={isLoaded}
               stmVersion={stmVersion}
               workflow={WORKFLOW_STEPS}

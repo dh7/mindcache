@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { STMEntry as KeyEntry } from 'mindcache';
+import { STMEntry as KeyEntry, SystemTag } from 'mindcache';
 
 interface KeyPropertiesPanelProps {
   keyName: string;
@@ -30,15 +30,10 @@ export function KeyPropertiesPanel({
   canEdit
 }: KeyPropertiesPanelProps) {
   const [attributesForm, setAttributesForm] = useState({
-    readonly: entry.attributes.readonly,
-    visible: entry.attributes.visible,
-    hardcoded: entry.attributes.hardcoded,
-    template: entry.attributes.template,
     type: entry.attributes.type,
     contentType: entry.attributes.contentType || '',
-    tags: entry.attributes.tags || [],
     contentTags: entry.attributes.contentTags || [],
-    systemTags: (entry.attributes.systemTags || []) as any[], // Loose typing for internal state to avoid overly complex array casting
+    systemTags: (entry.attributes.systemTags || []) as SystemTag[],
     zIndex: entry.attributes.zIndex ?? 0
   });
   const [zIndexInput, setZIndexInput] = useState(String(entry.attributes.zIndex ?? 0));
@@ -47,18 +42,16 @@ export function KeyPropertiesPanel({
   const [newTagInput, setNewTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
 
+  // Derive protection state from systemTags
+  const isProtected = attributesForm.systemTags.includes('protected');
+
   // Reset form when entry changes
   useEffect(() => {
     setAttributesForm({
-      readonly: entry.attributes.readonly,
-      visible: entry.attributes.visible,
-      hardcoded: entry.attributes.hardcoded,
-      template: entry.attributes.template,
       type: entry.attributes.type,
       contentType: entry.attributes.contentType || '',
-      tags: entry.attributes.tags || [],
       contentTags: entry.attributes.contentTags || [],
-      systemTags: entry.attributes.systemTags || [],
+      systemTags: (entry.attributes.systemTags || []) as SystemTag[],
       zIndex: entry.attributes.zIndex ?? 0
     });
     setZIndexInput(String(entry.attributes.zIndex ?? 0));
@@ -78,14 +71,10 @@ export function KeyPropertiesPanel({
     field: T,
     value: (typeof attributesForm)[T]
   ) => {
-    // If updating tags, also update contentTags
-    let newForm = { ...attributesForm, [field]: value };
-    if (field === 'tags') {
-      newForm = { ...newForm, contentTags: value as string[] };
-    }
+    const newForm = { ...attributesForm, [field]: value };
     setAttributesForm(newForm);
     // Auto-save on change
-    onSave(keyName, newForm as any); // Cast to any to avoid strict KeyAttributes mismatch on partial update if any
+    onSave(keyName, newForm as KeyEntry['attributes']);
   };
 
   const handleZIndexSave = () => {
@@ -98,13 +87,13 @@ export function KeyPropertiesPanel({
 
   const addTag = (tag: string) => {
     const trimmedTag = tag.trim();
-    if (trimmedTag && !attributesForm.tags.includes(trimmedTag)) {
-      handleChange('tags', [...attributesForm.tags, trimmedTag]);
+    if (trimmedTag && !attributesForm.contentTags.includes(trimmedTag)) {
+      handleChange('contentTags', [...attributesForm.contentTags, trimmedTag]);
     }
   };
 
   const removeTag = (tagToRemove: string) => {
-    handleChange('tags', attributesForm.tags.filter(tag => tag !== tagToRemove));
+    handleChange('contentTags', attributesForm.contentTags.filter(tag => tag !== tagToRemove));
   };
 
   const handleTagInputChange = (value: string) => {
@@ -112,7 +101,7 @@ export function KeyPropertiesPanel({
     if (value.trim()) {
       const filtered = availableTags.filter(tag =>
         tag.toLowerCase().includes(value.toLowerCase()) &&
-        !attributesForm.tags.includes(tag)
+        !attributesForm.contentTags.includes(tag)
       );
       setTagSuggestions(filtered);
     } else {
@@ -128,8 +117,8 @@ export function KeyPropertiesPanel({
         setNewTagInput('');
         setTagSuggestions([]);
       }
-    } else if (e.key === 'Backspace' && newTagInput === '' && attributesForm.tags.length > 0) {
-      const lastTag = attributesForm.tags[attributesForm.tags.length - 1];
+    } else if (e.key === 'Backspace' && newTagInput === '' && attributesForm.contentTags.length > 0) {
+      const lastTag = attributesForm.contentTags[attributesForm.contentTags.length - 1];
       removeTag(lastTag);
     } else if (e.key === 'Escape') {
       setTagSuggestions([]);
@@ -158,6 +147,17 @@ export function KeyPropertiesPanel({
     input.click();
   };
 
+  const toggleSystemTag = (tag: SystemTag) => {
+    const currentSystemTags = attributesForm.systemTags;
+    const hasTag = currentSystemTags.includes(tag);
+    const newSystemTags = hasTag
+      ? currentSystemTags.filter(t => t !== tag)
+      : [...currentSystemTags, tag];
+    const newForm = { ...attributesForm, systemTags: newSystemTags };
+    setAttributesForm(newForm);
+    onSave(keyName, newForm as KeyEntry['attributes']);
+  };
+
   if (!isExpanded) {
     return null;
   }
@@ -175,17 +175,16 @@ export function KeyPropertiesPanel({
         <div className="relative">
           <div className="bg-black border border-zinc-700 rounded px-2 py-1.5 focus-within:border-cyan-600 transition-colors">
             <div className="flex flex-wrap gap-1 items-center">
-              {attributesForm.tags.map((tag, index) => (
+              {attributesForm.contentTags.map((tag, index) => (
                 <span
                   key={index}
-                  className="inline-flex items-center gap-1 text-xs bg-cyan-900 bg-opacity-50 text-cyan-300 px-1.5 py-0.5 rounded font-mono border border-cyan-600"
+                  className="inline-flex items-center gap-1 bg-zinc-800 text-cyan-400 px-2 py-0.5 rounded text-xs"
                 >
                   {tag}
                   {canEdit && (
                     <button
                       onClick={() => removeTag(tag)}
-                      className="text-cyan-400 hover:text-red-400 leading-none"
-                      title="Remove tag"
+                      className="text-zinc-500 hover:text-red-400 transition-colors"
                     >
                       ×
                     </button>
@@ -198,21 +197,20 @@ export function KeyPropertiesPanel({
                   value={newTagInput}
                   onChange={(e) => handleTagInputChange(e.target.value)}
                   onKeyDown={handleTagInput}
-                  className="bg-transparent text-cyan-400 font-mono text-xs focus:outline-none flex-1 min-w-0"
-                  placeholder={attributesForm.tags.length === 0 ? 'Add tags...' : ''}
-                  style={{ minWidth: '60px' }}
+                  placeholder={attributesForm.contentTags.length === 0 ? 'add tags...' : ''}
+                  className="flex-1 min-w-[80px] bg-transparent text-white text-xs focus:outline-none placeholder-zinc-500"
                 />
               )}
             </div>
           </div>
-
+          {/* Tag suggestions dropdown */}
           {tagSuggestions.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-black border border-zinc-700 rounded shadow-lg max-h-32 overflow-y-auto">
+            <div className="absolute z-10 mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-md shadow-lg max-h-40 overflow-auto">
               {tagSuggestions.map((tag, index) => (
                 <button
                   key={index}
                   onClick={() => addTagFromSuggestion(tag)}
-                  className="w-full text-left px-2 py-1.5 text-xs font-mono text-cyan-400 hover:bg-cyan-900 hover:bg-opacity-30 transition-colors"
+                  className="w-full text-left px-3 py-1.5 text-xs text-cyan-400 hover:bg-zinc-700 transition-colors"
                 >
                   {tag}
                 </button>
@@ -222,54 +220,33 @@ export function KeyPropertiesPanel({
         </div>
       </div>
 
-      {/* 2. Value - based on type */}
-      {/* Text/JSON value editor */}
-      {isTextType && canEdit && (
+      {/* 2. Value Editor - different for text/json/image/file */}
+      {isTextType && (
         <div className="flex flex-col space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400 text-xs">value:</span>
-            {currentValue && (
-              <button
-                onClick={() => onClearValue(keyName)}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors"
-              >
-                clear
-              </button>
-            )}
-          </div>
+          <span className="text-gray-400 text-xs">value:</span>
           <textarea
-            className="w-full p-2 bg-black border border-zinc-700 rounded font-mono text-xs text-zinc-300 focus:border-cyan-600 outline-none resize-y transition-colors"
-            rows={contentType === 'json' ? 6 : 3}
             value={currentValue}
             onChange={(e) => onValueChange(keyName, e.target.value)}
-            placeholder="Enter value..."
+            disabled={!canEdit}
+            placeholder="enter value..."
+            className="bg-black text-white font-mono text-sm border border-zinc-700 rounded px-3 py-2 focus:outline-none focus:border-cyan-600 disabled:opacity-50 transition-colors min-h-[80px] resize-y"
           />
         </div>
       )}
 
-      {/* Text/JSON readonly display */}
-      {isTextType && !canEdit && currentValue && (
-        <div className="flex flex-col space-y-1">
-          <span className="text-gray-400 text-xs">value:</span>
-          <pre className="text-xs font-mono text-zinc-300 bg-black p-2 rounded overflow-x-auto">
-            {currentValue}
-          </pre>
-        </div>
-      )}
-
-      {/* Image display */}
       {isImageType && (
         <div className="flex flex-col space-y-2">
           <span className="text-gray-400 text-xs">image:</span>
 
-          {/* Show image preview if available */}
+          {/* Image preview */}
           {currentValue && (
-            <img
-              src={currentValue}
-              alt={`Preview of ${keyName}`}
-              className="max-w-full h-auto border border-zinc-700 rounded"
-              style={{ maxHeight: '300px' }}
-            />
+            <div className="relative max-w-[200px]">
+              <img
+                src={`data:${entry.attributes.contentType || 'image/png'};base64,${currentValue}`}
+                alt={keyName}
+                className="rounded border border-zinc-700 max-h-32 object-contain"
+              />
+            </div>
           )}
 
           {/* Upload and clear buttons */}
@@ -294,7 +271,6 @@ export function KeyPropertiesPanel({
         </div>
       )}
 
-      {/* File display */}
       {isFileType && (
         <div className="flex flex-col space-y-2">
           <span className="text-gray-400 text-xs">file:</span>
@@ -341,7 +317,7 @@ export function KeyPropertiesPanel({
               contentType: (newType === 'text' || newType === 'json' || newType === 'document') ? '' : attributesForm.contentType
             };
             setAttributesForm(newForm);
-            onSave(keyName, newForm as any);
+            onSave(keyName, newForm as KeyEntry['attributes']);
           }}
           disabled={!canEdit}
           className="bg-black text-cyan-400 font-mono text-xs border border-zinc-700 rounded px-2 py-1 focus:outline-none focus:border-cyan-600 disabled:opacity-50 transition-colors"
@@ -360,22 +336,12 @@ export function KeyPropertiesPanel({
         <div className="flex items-center gap-1">
           <span className="text-yellow-400">[SP]</span>
           <button
-            onClick={() => {
-              const currentSystemTags = attributesForm.systemTags || [];
-              const hasSystemPrompt = currentSystemTags.includes('SystemPrompt') || currentSystemTags.includes('prompt');
-              const newSystemTags = hasSystemPrompt
-                ? currentSystemTags.filter(t => t !== 'SystemPrompt' && t !== 'prompt')
-                : [...currentSystemTags.filter(t => t !== 'SystemPrompt' && t !== 'prompt'), 'SystemPrompt'];
-              // Update both at once to avoid async state issues
-              const newForm = { ...attributesForm, systemTags: newSystemTags, visible: !hasSystemPrompt };
-              setAttributesForm(newForm);
-              onSave(keyName, newForm as any);
-            }}
+            onClick={() => toggleSystemTag('SystemPrompt')}
             disabled={!canEdit}
             className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
             title="SystemPrompt: Include in system prompt"
           >
-            {(attributesForm.systemTags || []).includes('SystemPrompt') || (attributesForm.systemTags || []).includes('prompt') ? 'true' : 'false'}
+            {attributesForm.systemTags.includes('SystemPrompt') ? 'true' : 'false'}
           </button>
         </div>
 
@@ -383,46 +349,28 @@ export function KeyPropertiesPanel({
         <div className="flex items-center gap-1">
           <span className="text-yellow-400">[LR]</span>
           <button
-            onClick={() => {
-              const currentSystemTags = attributesForm.systemTags || [];
-              const hasLLMRead = currentSystemTags.includes('LLMRead');
-              const newSystemTags = hasLLMRead
-                ? currentSystemTags.filter(t => t !== 'LLMRead')
-                : [...currentSystemTags.filter(t => t !== 'LLMRead'), 'LLMRead'];
-              const newForm = { ...attributesForm, systemTags: newSystemTags };
-              setAttributesForm(newForm);
-              onSave(keyName, newForm as any);
-            }}
+            onClick={() => toggleSystemTag('LLMRead')}
             disabled={!canEdit}
             className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
             title="LLMRead: LLM can read this key"
           >
-            {(attributesForm.systemTags || []).includes('LLMRead') ? 'true' : 'false'}
+            {attributesForm.systemTags.includes('LLMRead') ? 'true' : 'false'}
           </button>
         </div>
 
         {/* LLMWrite */}
         <div className="flex items-center gap-1">
           <span className="text-yellow-400">[LW]</span>
-          {attributesForm.hardcoded ? (
-            <span className="text-gray-500 font-mono">{(attributesForm.systemTags || []).includes('LLMWrite') ? 'true' : 'false'}</span>
+          {isProtected ? (
+            <span className="text-gray-500 font-mono">{attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}</span>
           ) : (
             <button
-              onClick={() => {
-                const currentSystemTags = attributesForm.systemTags || [];
-                const hasLW = currentSystemTags.includes('LLMWrite');
-                const newSystemTags = hasLW
-                  ? currentSystemTags.filter(t => t !== 'LLMWrite')
-                  : [...currentSystemTags.filter(t => t !== 'LLMWrite' && t !== 'readonly'), 'LLMWrite'];
-                const newForm = { ...attributesForm, systemTags: newSystemTags, readonly: hasLW };
-                setAttributesForm(newForm);
-                onSave(keyName, newForm as any);
-              }}
+              onClick={() => toggleSystemTag('LLMWrite')}
               disabled={!canEdit}
               className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
               title="LLMWrite: LLM can write via tools"
             >
-              {(attributesForm.systemTags || []).includes('LLMWrite') ? 'true' : 'false'}
+              {attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}
             </button>
           )}
         </div>
@@ -430,31 +378,22 @@ export function KeyPropertiesPanel({
         {/* ApplyTemplate */}
         <div className="flex items-center gap-1">
           <span className="text-yellow-400">[AT]</span>
-          {attributesForm.hardcoded ? (
-            <span className="text-gray-500 font-mono">{(attributesForm.systemTags || []).includes('ApplyTemplate') ? 'true' : 'false'}</span>
+          {isProtected ? (
+            <span className="text-gray-500 font-mono">{attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}</span>
           ) : (
             <button
-              onClick={() => {
-                const currentSystemTags = attributesForm.systemTags || [];
-                const hasAT = currentSystemTags.includes('ApplyTemplate') || currentSystemTags.includes('template');
-                const newSystemTags = hasAT
-                  ? currentSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template')
-                  : [...currentSystemTags.filter(t => t !== 'ApplyTemplate' && t !== 'template'), 'ApplyTemplate'];
-                const newForm = { ...attributesForm, systemTags: newSystemTags, template: !hasAT };
-                setAttributesForm(newForm);
-                onSave(keyName, newForm as any);
-              }}
+              onClick={() => toggleSystemTag('ApplyTemplate')}
               disabled={!canEdit}
               className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
               title="ApplyTemplate: Process template injection"
             >
-              {(attributesForm.systemTags || []).includes('ApplyTemplate') || (attributesForm.systemTags || []).includes('template') ? 'true' : 'false'}
+              {attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}
             </button>
           )}
         </div>
 
         {/* Protected - just display if true */}
-        {attributesForm.hardcoded && (
+        {isProtected && (
           <div className="flex items-center gap-1">
             <span className="text-yellow-400">[P]</span>
             <span className="text-gray-500 font-mono">true</span>

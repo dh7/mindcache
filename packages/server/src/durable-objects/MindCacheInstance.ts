@@ -22,6 +22,8 @@ interface Env {
 }
 
 const ENCODING_STATUS_KEY = 'yjs_encoded_state';
+const SCHEMA_VERSION_KEY = 'schema_version';
+const CURRENT_SCHEMA_VERSION = 2; // Bump when schema changes
 
 export class MindCacheInstanceDO extends DurableObject {
   private sql: SqlStorage;
@@ -103,28 +105,105 @@ export class MindCacheInstanceDO extends DurableObject {
   }
 
   private initializeDatabase(): void {
-    // Create keys table if it doesn't exist
+    // Create keys table with new schema
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS keys (
         name TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         type TEXT NOT NULL DEFAULT 'text',
         content_type TEXT,
-        readonly INTEGER NOT NULL DEFAULT 0,
-        visible INTEGER NOT NULL DEFAULT 1,
-        hardcoded INTEGER NOT NULL DEFAULT 0,
-        template INTEGER NOT NULL DEFAULT 0,
-        tags TEXT,
+        content_tags TEXT,
+        system_tags TEXT,
         z_index INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       )
     `);
 
-    // Add z_index column if it doesn't exist (migration for existing databases)
+    // Run migrations
+    this.runMigrations();
+  }
+
+  private runMigrations(): void {
+    // Check current schema version
+    let currentVersion = 0;
     try {
-      this.sql.exec('ALTER TABLE keys ADD COLUMN z_index INTEGER NOT NULL DEFAULT 0');
+      const cursor = this.sql.exec('SELECT value FROM schema_meta WHERE key = ?', SCHEMA_VERSION_KEY);
+      for (const row of cursor) {
+        currentVersion = Number(row.value);
+      }
     } catch {
-      // Column already exists, ignore
+      // schema_meta table doesn't exist
+      try {
+        this.sql.exec('CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)');
+      } catch {
+        // Ignore if exists
+      }
+    }
+
+    // Migration from v1 (legacy booleans) to v2 (systemTags/contentTags)
+    if (currentVersion < 2) {
+      // Check if old columns exist
+      try {
+        const cursor = this.sql.exec('PRAGMA table_info(keys)');
+        const columns = new Set<string>();
+        for (const row of cursor) {
+          columns.add(row.name as string);
+        }
+
+        // If we have old columns, migrate them
+        if (columns.has('readonly') && !columns.has('system_tags')) {
+          // Add new columns
+          try {
+            this.sql.exec('ALTER TABLE keys ADD COLUMN content_tags TEXT');
+          } catch { /* exists */ }
+          try {
+            this.sql.exec('ALTER TABLE keys ADD COLUMN system_tags TEXT');
+          } catch { /* exists */ }
+
+          // Migrate data: convert legacy booleans to systemTags
+          const rows = this.sql.exec('SELECT name, readonly, visible, hardcoded, template, tags FROM keys');
+          for (const row of rows) {
+            const name = row.name as string;
+            const systemTags: string[] = [];
+
+            // visible=true => SystemPrompt (or LLMRead)
+            if (row.visible) {
+              systemTags.push('SystemPrompt');
+            }
+            // readonly=false => LLMWrite
+            if (!row.readonly) {
+              systemTags.push('LLMWrite');
+            }
+            // hardcoded=true => protected
+            if (row.hardcoded) {
+              systemTags.push('protected');
+            }
+            // template=true => ApplyTemplate
+            if (row.template) {
+              systemTags.push('ApplyTemplate');
+            }
+
+            // tags become contentTags
+            const contentTags = row.tags ? JSON.parse(row.tags as string) : [];
+
+            this.sql.exec(
+              'UPDATE keys SET content_tags = ?, system_tags = ? WHERE name = ?',
+              JSON.stringify(contentTags),
+              JSON.stringify(systemTags),
+              name
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Migration error:', e);
+      }
+
+      // Update version
+      this.sql.exec(
+        'INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)',
+        SCHEMA_VERSION_KEY,
+        String(CURRENT_SCHEMA_VERSION)
+      );
     }
   }
 
@@ -179,18 +258,15 @@ export class MindCacheInstanceDO extends DurableObject {
           }
 
           this.sql.exec(`
-                    INSERT OR REPLACE INTO keys (name, value, type, content_type, readonly, visible, hardcoded, template, tags, z_index, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO keys (name, value, type, content_type, content_tags, system_tags, z_index, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                   `,
           key,
           JSON.stringify(value),
           attributes.type,
           attributes.contentType || null,
-          attributes.readonly ? 1 : 0,
-          attributes.visible ? 1 : 0,
-          attributes.hardcoded ? 1 : 0,
-          attributes.template ? 1 : 0,
-          attributes.tags ? JSON.stringify(attributes.tags) : null,
+          JSON.stringify(attributes.contentTags || []),
+          JSON.stringify(attributes.systemTags || []),
           attributes.zIndex ?? 0,
           now
           );
@@ -373,16 +449,26 @@ export class MindCacheInstanceDO extends DurableObject {
 
     for (const row of cursor) {
       const name = row.name as string;
+
+      // Parse tags from JSON
+      let contentTags: string[] = [];
+      let systemTags: string[] = [];
+
+      try {
+        contentTags = row.content_tags ? JSON.parse(row.content_tags as string) : [];
+      } catch { /* ignore */ }
+
+      try {
+        systemTags = row.system_tags ? JSON.parse(row.system_tags as string) : [];
+      } catch { /* ignore */ }
+
       result[name] = {
         value: JSON.parse(row.value as string),
         attributes: {
           type: row.type as KeyAttributes['type'],
           contentType: row.content_type as string | undefined,
-          readonly: Boolean(row.readonly),
-          visible: Boolean(row.visible),
-          hardcoded: Boolean(row.hardcoded),
-          template: Boolean(row.template),
-          tags: row.tags ? JSON.parse(row.tags as string) : [],
+          contentTags,
+          systemTags: systemTags as KeyAttributes['systemTags'],
           zIndex: row.z_index !== undefined ? (row.z_index as number) : 0
         },
         updatedAt: row.updated_at as number

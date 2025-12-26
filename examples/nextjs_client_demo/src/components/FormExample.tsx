@@ -27,21 +27,21 @@ export default function FormExample() {
   // Initialize default keys and sync form state once loaded
   useEffect(() => {
     if (!isLoaded || !mindcache) {
-return;
-}
+      return;
+    }
 
     // Create STM keys if they don't exist
     if (!mindcache.has('name')) {
-      mindcache.set_value('name', '', { visible: true, readonly: false });
+      mindcache.set_value('name', '', { systemTags: ['SystemPrompt', 'LLMWrite'] });
     }
     if (!mindcache.has('role')) {
-      mindcache.set_value('role', '', { visible: true, readonly: false });
+      mindcache.set_value('role', '', { systemTags: ['SystemPrompt', 'LLMWrite'] });
     }
     if (!mindcache.has('age')) {
-      mindcache.set_value('age', '', { visible: true, readonly: false });
+      mindcache.set_value('age', '', { systemTags: ['SystemPrompt', 'LLMWrite'] });
     }
     if (!mindcache.has('company')) {
-      mindcache.set_value('company', '', { visible: true, readonly: false });
+      mindcache.set_value('company', '', { systemTags: ['SystemPrompt', 'LLMWrite'] });
     }
 
     // Load initial values from STM into state

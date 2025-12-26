@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useMindCache, MindCache } from 'mindcache';
+import { useMindCache, MindCache, SystemTag } from 'mindcache';
 import ChatInterface from './ChatInterface';
 import Workflows from './Workflows';
 import type { TypedToolCall, ToolSet } from 'ai';
@@ -54,22 +54,22 @@ export default function TweetWorkflowExample() {
   // Initialize STM with all fields
   useEffect(() => {
     if (!isLoaded || !mindcache) {
-return;
-}
+      return;
+    }
 
     const fields = [
-      { key: 'topic', value: '', visible: true, readonly: false },
-      { key: 'company', value: '', visible: true, readonly: false },
-      { key: 'audience', value: '', visible: true, readonly: false },
-      { key: 'content_summary', value: '', visible: true, readonly: false },
-      { key: 'company_summary', value: '', visible: true, readonly: false },
-      { key: 'tweet', value: '', visible: true, readonly: false },
-      { key: 'tweet_image', value: '', visible: false, readonly: true, type: 'image', contentType: 'image/jpeg' }
+      { key: 'topic', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'company', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'audience', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'content_summary', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'company_summary', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'tweet', value: '', systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[] },
+      { key: 'tweet_image', value: '', systemTags: [] as SystemTag[], type: 'image' as const, contentType: 'image/jpeg' }
     ];
 
-    fields.forEach(({ key, value, visible, readonly, type, contentType }) => {
+    fields.forEach(({ key, value, systemTags, type, contentType }) => {
       if (!mindcache.has(key)) {
-        mindcache.set_value(key, value, { visible, readonly, type: type as any, contentType });
+        mindcache.set_value(key, value, { systemTags, type, contentType });
       }
     });
 
@@ -275,6 +275,7 @@ Always use {{fieldname}} to reference values from STM in your responses and tool
               {/* Tweet Image */}
               <div className="border border-gray-700 rounded overflow-hidden bg-black" style={{ minHeight: '200px' }}>
                 {tweetImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={tweetImage}
                     alt="Tweet image"

@@ -7,14 +7,14 @@
  * - Uses SystemPrompt-tagged keys for context
  *
  * Two modes:
- * - Edit mode: Can modify readonly keys, system prompt keys, and attributes
- * - Use mode: Can only modify non-readonly, non-system-prompt keys
+ * - Edit mode: Can modify all keys including system prompt keys
+ * - Use mode: Can only modify keys with LLMWrite tag
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, tool, convertToModelMessages, UIMessage } from 'ai';
 import { z } from 'zod';
-import type { KeyAttributes, KeyEntry } from '@mindcache/shared';
+import { KeyAttributes, KeyEntry, DEFAULT_KEY_ATTRIBUTES, SystemTagHelpers } from '@mindcache/shared';
 
 export interface ChatEnv {
   OPENAI_API_KEY?: string;
@@ -96,7 +96,7 @@ async function deleteInstanceKey(
 }
 
 /**
- * Build system prompt from keys tagged with 'SystemPrompt'
+ * Build system prompt from keys tagged with 'SystemPrompt' or 'LLMRead'
  */
 function buildSystemPrompt(data: InstanceData): string {
   const systemPromptParts: string[] = [
@@ -111,15 +111,9 @@ function buildSystemPrompt(data: InstanceData): string {
     ''
   ];
 
-  // Add system prompt keys (SystemPrompt or LLMRead)
+  // Add keys that are readable by LLM (SystemPrompt or LLMRead)
   for (const [key, entry] of Object.entries(data)) {
-    const systemTags = entry.attributes.systemTags || [];
-    const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt');
-    const hasLLMRead = systemTags.includes('LLMRead');
-    // Backward compat: check visible attribute if systemTags is empty
-    const hasReadAccess = hasSystemPrompt || hasLLMRead || (systemTags.length === 0 && entry.attributes.visible !== false);
-
-    if (hasReadAccess) {
+    if (SystemTagHelpers.isLLMReadable(entry.attributes)) {
       const value = typeof entry.value === 'string'
         ? entry.value
         : JSON.stringify(entry.value, null, 2);
@@ -134,13 +128,9 @@ function buildSystemPrompt(data: InstanceData): string {
   systemPromptParts.push('');
 
   for (const [key, entry] of Object.entries(data)) {
-    const tags = entry.attributes.tags?.join(', ') || '';
-    const systemTags = entry.attributes.systemTags || [];
-    // Backward compat: if systemTags is empty, use legacy readonly attribute
-    const hasLLMWrite = systemTags.length > 0
-      ? (systemTags.includes('LLMWrite') && !systemTags.includes('readonly'))
-      : !entry.attributes.readonly;
-    const readonly = hasLLMWrite ? '' : ' (readonly)';
+    const tags = entry.attributes.contentTags.join(', ');
+    const isWritable = SystemTagHelpers.isLLMWritable(entry.attributes);
+    const readonly = isWritable ? '' : ' (readonly)';
     systemPromptParts.push(`- **${key}**${readonly}: ${entry.attributes.type}${tags ? ` [${tags}]` : ''}`);
   }
 
@@ -172,59 +162,55 @@ function createMindCacheTools(
           key,
           value: entry.value,
           type: entry.attributes.type,
-          tags: entry.attributes.tags,
-          readonly: entry.attributes.readonly
+          tags: entry.attributes.contentTags,
+          writable: SystemTagHelpers.isLLMWritable(entry.attributes)
         };
       }
     }),
 
     write_key: tool({
-      description: 'Write or update a key in MindCache. Creates the key if it does not exist.',
+      description: 'Write or update a key in MindCache. Creates the key if it does not exist. When updating an existing key, the type is preserved unless explicitly changed.',
       inputSchema: z.object({
         key: z.string().describe('The key name to write'),
         value: z.union([z.string(), z.number(), z.boolean(), z.record(z.unknown()), z.array(z.unknown())])
           .describe('The value to store'),
-        type: z.enum(['text', 'json']).optional().describe('Value type (default: text)'),
-        tags: z.array(z.string()).optional().describe('Tags to apply to the key')
+        type: z.enum(['text', 'json', 'document', 'image', 'file']).optional()
+          .describe('Value type. Only specify when creating a new key or explicitly changing the type. For existing keys, the type is preserved by default.'),
+        tags: z.array(z.string()).optional().describe('Content tags to apply to the key')
       }),
       execute: async ({ key, value, type, tags }) => {
         // Refresh data to check current state
         const data = await fetchInstanceData(env, instanceId);
         const existing = data[key];
 
-        // In "use" mode, can't write to readonly keys or SystemPrompt keys
+        // In "use" mode, can't write to keys without LLMWrite tag
         if (mode === 'use' && existing) {
-          const systemTags = existing.attributes.systemTags || [];
-          // Backward compat: if systemTags is empty, use legacy readonly attribute
-          // Key is writable if: (has LLMWrite AND not readonly) OR (no systemTags AND not legacy readonly)
-          const hasLLMWrite = systemTags.length > 0
-            ? (systemTags.includes('LLMWrite') && !systemTags.includes('readonly'))
-            : !existing.attributes.readonly;
-          const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt');
-
-          if (!hasLLMWrite) {
-            return { error: `Key "${key}" is readonly` };
+          if (!SystemTagHelpers.isLLMWritable(existing.attributes)) {
+            return { error: `Key "${key}" is not writable (missing LLMWrite tag)` };
           }
-          if (hasSystemPrompt) {
+          if (SystemTagHelpers.isInSystemPrompt(existing.attributes)) {
             return { error: `Key "${key}" is a system prompt key and cannot be modified in use mode` };
           }
         }
 
+        // For existing keys, preserve attributes and only update what's specified
+        // For new keys, use defaults
         const attributes: KeyAttributes = existing?.attributes || {
-          readonly: false,
-          visible: true,
-          hardcoded: false,
-          template: false,
+          ...DEFAULT_KEY_ATTRIBUTES,
           type: type || 'text',
-          tags: tags || []
+          contentTags: tags || []
         };
 
-        // Update type and tags if provided
-        if (type) {
+        // Only update type if explicitly provided for a new key or type change
+        if (type && !existing) {
+          attributes.type = type;
+        } else if (type && existing && type !== existing.attributes.type) {
           attributes.type = type;
         }
+        // Otherwise, preserve the existing type
+
         if (tags) {
-          attributes.tags = tags;
+          attributes.contentTags = tags;
         }
 
         await setInstanceKey(env, instanceId, key, value, attributes);
@@ -245,19 +231,15 @@ function createMindCacheTools(
           return { error: `Key "${key}" not found` };
         }
 
-        // In "use" mode, can't delete readonly keys or SystemPrompt keys
+        // In "use" mode, can't delete protected or system prompt keys
         if (mode === 'use') {
-          const systemTags = existing.attributes.systemTags || [];
-          // Backward compat: if systemTags is empty, use legacy readonly attribute
-          const hasLLMWrite = systemTags.length > 0
-            ? (systemTags.includes('LLMWrite') && !systemTags.includes('readonly'))
-            : !existing.attributes.readonly;
-          const hasSystemPrompt = systemTags.includes('SystemPrompt') || systemTags.includes('prompt');
-
-          if (!hasLLMWrite) {
-            return { error: `Key "${key}" is readonly` };
+          if (!SystemTagHelpers.isLLMWritable(existing.attributes)) {
+            return { error: `Key "${key}" is not writable (missing LLMWrite tag)` };
           }
-          if (hasSystemPrompt) {
+          if (SystemTagHelpers.isProtected(existing.attributes)) {
+            return { error: `Key "${key}" is protected and cannot be deleted` };
+          }
+          if (SystemTagHelpers.isInSystemPrompt(existing.attributes)) {
             return { error: `Key "${key}" is a system prompt key and cannot be deleted in use mode` };
           }
         }
@@ -270,7 +252,7 @@ function createMindCacheTools(
     list_keys: tool({
       description: 'List all keys in MindCache with their types and tags',
       inputSchema: z.object({
-        tag: z.string().optional().describe('Filter by tag')
+        tag: z.string().optional().describe('Filter by content tag')
       }),
       execute: async ({ tag }) => {
         const data = await fetchInstanceData(env, instanceId);
@@ -278,12 +260,12 @@ function createMindCacheTools(
         let keys = Object.entries(data).map(([key, entry]) => ({
           key,
           type: entry.attributes.type,
-          tags: entry.attributes.tags,
-          readonly: entry.attributes.readonly
+          tags: entry.attributes.contentTags,
+          writable: SystemTagHelpers.isLLMWritable(entry.attributes)
         }));
 
         if (tag) {
-          keys = keys.filter(k => k.tags?.includes(tag));
+          keys = keys.filter(k => k.tags.includes(tag));
         }
 
         return { keys };
@@ -357,4 +339,3 @@ export async function handleChatRequest(
     );
   }
 }
-

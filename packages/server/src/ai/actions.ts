@@ -1,6 +1,6 @@
 /**
  * Action APIs
- * 
+ *
  * Pre-built endpoints that read from and write to MindCache:
  * - /api/transform - LLM transforms template to output
  * - /api/generate-image - Generate image with Fireworks flux-kontext-pro
@@ -9,7 +9,7 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText } from 'ai';
-import type { KeyAttributes, KeyEntry } from '@mindcache/shared';
+import { KeyAttributes, KeyEntry, DEFAULT_KEY_ATTRIBUTES } from '@mindcache/shared';
 
 export interface ActionEnv {
   OPENAI_API_KEY?: string;
@@ -30,7 +30,7 @@ async function fetchInstanceData(
 ): Promise<InstanceData> {
   const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
   const stub = env.MINDCACHE_INSTANCE.get(id);
-  
+
   const response = await stub.fetch(new Request('http://internal/keys'));
   if (!response.ok) {
     throw new Error('Failed to fetch instance data');
@@ -66,13 +66,13 @@ async function setInstanceKey(
 ): Promise<void> {
   const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
   const stub = env.MINDCACHE_INSTANCE.get(id);
-  
+
   const response = await stub.fetch(new Request('http://internal/keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value, attributes }),
+    body: JSON.stringify({ key, value, attributes })
   }));
-  
+
   if (!response.ok) {
     throw new Error('Failed to set key');
   }
@@ -84,9 +84,11 @@ async function setInstanceKey(
 function resolveTemplate(template: string, data: InstanceData): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
     const entry = data[key];
-    if (!entry) return `{{${key}}}`; // Keep unresolved
-    return typeof entry.value === 'string' 
-      ? entry.value 
+    if (!entry) {
+      return `{{${key}}}`;
+    } // Keep unresolved
+    return typeof entry.value === 'string'
+      ? entry.value
       : JSON.stringify(entry.value);
   });
 }
@@ -164,25 +166,23 @@ export async function handleTransformRequest(
     // Generate transformed text
     const result = await generateText({
       model: openai(model),
-      prompt: promptText 
+      prompt: promptText
         ? `${promptText}\n\nInput:\n${resolvedTemplate}`
-        : resolvedTemplate,
+        : resolvedTemplate
     });
 
     // Store result in output key
     await setInstanceKey(env, instanceId, outputKey, result.text, {
-      readonly: false,
-      visible: true,
-      hardcoded: false,
-      template: false,
+      ...DEFAULT_KEY_ATTRIBUTES,
       type: 'text',
-      tags: ['generated'],
+      contentTags: ['generated'],
+      systemTags: ['LLMRead'] // Generated content is readable but not in system prompt by default
     });
 
     return Response.json({
       success: true,
       outputKey,
-      result: result.text,
+      result: result.text
     });
   } catch (error) {
     console.error('Transform error:', error);
@@ -217,16 +217,16 @@ export async function handleGenerateImageRequest(
 ): Promise<Response> {
   try {
     const body = await request.json() as GenerateImageRequest;
-    const { 
-      instanceId, 
-      prompt: directPrompt, 
+    const {
+      instanceId,
+      prompt: directPrompt,
       promptKey,
-      outputKey, 
+      outputKey,
       imageKey,
       imageKeys,
       seed = -1,
       aspectRatio = '1:1',
-      safetyTolerance = 2,
+      safetyTolerance = 2
     } = body;
 
     // Validate required fields first
@@ -258,7 +258,7 @@ export async function handleGenerateImageRequest(
     // Build request body
     const requestBody: Record<string, unknown> = {
       prompt: imagePrompt,
-      seed,
+      seed
     };
 
     // Get source images if provided (for editing)
@@ -294,9 +294,9 @@ export async function handleGenerateImageRequest(
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Authorization': `Bearer ${env.FIREWORKS_API_KEY}`,
+          'Authorization': `Bearer ${env.FIREWORKS_API_KEY}`
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(requestBody)
       }
     );
 
@@ -312,7 +312,7 @@ export async function handleGenerateImageRequest(
 
     // Poll for completion
     const resultEndpoint = 'https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro/get_result';
-    
+
     for (let attempts = 0; attempts < 60; attempts++) {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -321,14 +321,14 @@ export async function handleGenerateImageRequest(
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'image/jpeg',
-          'Authorization': `Bearer ${env.FIREWORKS_API_KEY}`,
+          'Authorization': `Bearer ${env.FIREWORKS_API_KEY}`
         },
-        body: JSON.stringify({ id: submitResult.request_id }),
+        body: JSON.stringify({ id: submitResult.request_id })
       });
 
       if (resultResponse.ok) {
-        const pollResult = await resultResponse.json() as { 
-          status: string; 
+        const pollResult = await resultResponse.json() as {
+          status: string;
           result?: { sample?: string };
           details?: string;
         };
@@ -348,27 +348,25 @@ export async function handleGenerateImageRequest(
               }
               base64Image = `data:image/jpeg;base64,${btoa(binary)}`;
             } else {
-              base64Image = imageData.startsWith('data:') 
-                ? imageData 
+              base64Image = imageData.startsWith('data:')
+                ? imageData
                 : `data:image/jpeg;base64,${imageData}`;
             }
 
             // Store in MindCache
             await setInstanceKey(env, instanceId, outputKey, base64Image, {
-              readonly: false,
-              visible: true,
-              hardcoded: false,
-              template: false,
+              ...DEFAULT_KEY_ATTRIBUTES,
               type: 'image',
               contentType: 'image/jpeg',
-              tags: ['generated', 'fireworks'],
+              contentTags: ['generated', 'fireworks'],
+              systemTags: ['LLMRead'] // Generated content is readable but not in system prompt by default
             });
 
             return Response.json({
               success: true,
               outputKey,
               // Don't return full base64 in response, just confirm it was saved
-              message: 'Image generated and saved to MindCache',
+              message: 'Image generated and saved to MindCache'
             });
           }
         }
@@ -420,10 +418,10 @@ export async function handleAnalyzeImageRequest(
 ): Promise<Response> {
   try {
     const body = await request.json() as AnalyzeImageRequest;
-    const { 
-      instanceId, 
-      imageKey, 
-      imageUrl: directUrl, 
+    const {
+      instanceId,
+      imageKey,
+      imageUrl: directUrl,
       imageBase64,
       prompt: directPrompt,
       promptKey,
@@ -464,8 +462,8 @@ export async function handleAnalyzeImageRequest(
       const imgValue = await getKeyValue(env, instanceId, imageKey);
       imageForApi = typeof imgValue === 'string' ? imgValue : String(imgValue);
     } else if (imageBase64) {
-      imageForApi = imageBase64.startsWith('data:') 
-        ? imageBase64 
+      imageForApi = imageBase64.startsWith('data:')
+        ? imageBase64
         : `data:image/jpeg;base64,${imageBase64}`;
     } else {
       imageForApi = directUrl!;
@@ -488,26 +486,24 @@ export async function handleAnalyzeImageRequest(
           role: 'user',
           content: [
             { type: 'text', text: analysisPrompt! },
-            { type: 'image', image: imageForApi },
-          ],
-        },
-      ],
+            { type: 'image', image: imageForApi }
+          ]
+        }
+      ]
     });
 
     // Store result in output key
     await setInstanceKey(env, instanceId, outputKey, result.text, {
-      readonly: false,
-      visible: true,
-      hardcoded: false,
-      template: false,
+      ...DEFAULT_KEY_ATTRIBUTES,
       type: 'text',
-      tags: ['generated', 'vision-analysis'],
+      contentTags: ['generated', 'vision-analysis'],
+      systemTags: ['LLMRead'] // Generated content is readable but not in system prompt by default
     });
 
     return Response.json({
       success: true,
       outputKey,
-      analysis: result.text,
+      analysis: result.text
     });
   } catch (error) {
     console.error('Analyze image error:', error);

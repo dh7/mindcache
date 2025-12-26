@@ -34,17 +34,17 @@ export default function ImageExample() {
     const handleChange = () => {
       setIsLoaded(mc.isLoaded);
       setConnectionState(mc.connectionState);
-      
+
       if (mc.isLoaded) {
         // Initialize user_image key if it doesn't exist
         if (!mc.has('user_image')) {
-          mc.set_value('user_image', '', { 
-            visible: false, readonly: true, type: 'image', contentType: 'image/jpeg'
+          mc.set_value('user_image', '', {
+            systemTags: [], type: 'image', contentType: 'image/jpeg'
           });
         }
         setImageUrl(mc.get_data_url('user_image'));
       }
-      
+
       setStmVersion(v => v + 1);
     };
 
@@ -55,7 +55,7 @@ export default function ImageExample() {
 
   const handleImageUpload = async (file: File) => {
     try {
-      await mindcacheRef.current?.set_file('user_image', file, { visible: true, readonly: false });
+      await mindcacheRef.current?.set_file('user_image', file, { systemTags: ['SystemPrompt', 'LLMWrite'] });
       setStmVersion(v => v + 1);
     } catch (error) {
       alert('Failed to upload image');

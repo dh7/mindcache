@@ -13,6 +13,7 @@ export type {
   AccessLevel,
   STM,
   STMEntry,
+  STMEntry as KeyEntry, // Alias for compatibility
   Listener,
   GlobalListener,
   HistoryEntry,
@@ -21,7 +22,7 @@ export type {
   MindCacheCloudOptions,
   MindCacheIndexedDBOptions
 } from './core';
-export { DEFAULT_KEY_ATTRIBUTES } from './core';
+export { DEFAULT_KEY_ATTRIBUTES, SystemTagHelpers } from './core';
 
 // Cloud exports (for advanced usage)
 export { CloudAdapter } from './cloud';

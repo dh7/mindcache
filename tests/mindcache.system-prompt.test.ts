@@ -9,10 +9,14 @@ describe('MindCache System Prompt Generation', () => {
 
   describe('get_system_prompt()', () => {
     test('should generate system prompt with readonly and writable keys', () => {
-      cache.set_value('user_name', 'Alice', { readonly: false, visible: true });
-      cache.set_value('config', 'production', { readonly: true, visible: true });
-      cache.set_value('hidden', 'secret', { readonly: false, visible: false });
-      cache.set_value('notes', 'Important info', { readonly: false, visible: true });
+      // SystemPrompt + LLMWrite = writable and visible
+      cache.set_value('user_name', 'Alice', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      // SystemPrompt only = readonly and visible
+      cache.set_value('config', 'production', { systemTags: ['SystemPrompt'] });
+      // LLMWrite only = writable but not in system prompt
+      cache.set_value('hidden', 'secret', { systemTags: ['LLMWrite'] });
+      // SystemPrompt + LLMWrite = writable and visible
+      cache.set_value('notes', 'Important info', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -24,7 +28,7 @@ describe('MindCache System Prompt Generation', () => {
       expect(systemPrompt).toContain('config: production');
       expect(systemPrompt).not.toContain('write_config tool');
 
-      // Should not include hidden keys
+      // Should not include hidden keys (no SystemPrompt tag)
       expect(systemPrompt).not.toContain('hidden');
       expect(systemPrompt).not.toContain('secret');
 
@@ -33,10 +37,50 @@ describe('MindCache System Prompt Generation', () => {
       expect(systemPrompt).toMatch(/\$time: \d{2}:\d{2}:\d{2}/);
     });
 
+    test('should include LLMRead keys in system prompt like SystemPrompt', () => {
+      // LLMRead = visible in system prompt (readonly)
+      cache.set_value('llm_readable', 'readable_value', { systemTags: ['LLMRead'] });
+      // LLMRead + LLMWrite = visible and writable
+      cache.set_value('llm_read_write', 'read_write_value', { systemTags: ['LLMRead', 'LLMWrite'] });
+      // Only LLMWrite = NOT in system prompt but writable
+      cache.set_value('only_writable', 'write_only_value', { systemTags: ['LLMWrite'] });
+
+      const systemPrompt = cache.get_system_prompt();
+
+      // LLMRead keys should be visible in system prompt
+      expect(systemPrompt).toContain('llm_readable: readable_value');
+      expect(systemPrompt).not.toContain('write_llm_readable tool'); // No LLMWrite = no tool
+
+      // LLMRead + LLMWrite should have tool mention
+      expect(systemPrompt).toContain('llm_read_write: read_write_value. You can rewrite "llm_read_write" by using the write_llm_read_write tool');
+
+      // Only LLMWrite should NOT be in system prompt
+      expect(systemPrompt).not.toContain('only_writable');
+      expect(systemPrompt).not.toContain('write_only_value');
+    });
+
+    test('should treat LLMRead and SystemPrompt equivalently for visibility', () => {
+      cache.set_value('with_system_prompt', 'value1', { systemTags: ['SystemPrompt'] });
+      cache.set_value('with_llm_read', 'value2', { systemTags: ['LLMRead'] });
+      cache.set_value('with_both', 'value3', { systemTags: ['SystemPrompt', 'LLMRead'] });
+      cache.set_value('with_neither', 'value4', { systemTags: [] });
+
+      const systemPrompt = cache.get_system_prompt();
+
+      // All visible keys should appear
+      expect(systemPrompt).toContain('with_system_prompt: value1');
+      expect(systemPrompt).toContain('with_llm_read: value2');
+      expect(systemPrompt).toContain('with_both: value3');
+
+      // Key with no visibility tags should not appear
+      expect(systemPrompt).not.toContain('with_neither');
+      expect(systemPrompt).not.toContain('value4');
+    });
+
     test('should process templates in system prompt', () => {
-      cache.set_value('name', 'Bob', { readonly: false, visible: true });
-      cache.set_value('greeting', 'Hello {{name}}!', { readonly: true, visible: true, template: true });
-      cache.set_value('message', 'Welcome {{name}} to our system!', { readonly: false, visible: true, template: true });
+      cache.set_value('name', 'Bob', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      cache.set_value('greeting', 'Hello {{name}}!', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
+      cache.set_value('message', 'Welcome {{name}} to our system!', { systemTags: ['SystemPrompt', 'LLMWrite', 'ApplyTemplate'] });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -47,9 +91,9 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should handle nested template processing', () => {
-      cache.set_value('user', 'Alice', { readonly: false, visible: true });
-      cache.set_value('greeting', 'Hello {{user}}!', { readonly: true, visible: true, template: true });
-      cache.set_value('full_message', '{{greeting}} Welcome to the system.', { readonly: true, visible: true, template: true });
+      cache.set_value('user', 'Alice', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      cache.set_value('greeting', 'Hello {{user}}!', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
+      cache.set_value('full_message', '{{greeting}} Welcome to the system.', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -60,8 +104,8 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should return only system keys when no visible keys exist', () => {
-      cache.set_value('hidden1', 'value1', { visible: false });
-      cache.set_value('hidden2', 'value2', { visible: false });
+      cache.set_value('hidden1', 'value1', { systemTags: [] });
+      cache.set_value('hidden2', 'value2', { systemTags: ['LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -72,8 +116,8 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should handle mixed readonly and writable keys correctly', () => {
-      cache.set_value('readonly_config', 'prod', { readonly: true, visible: true });
-      cache.set_value('writable_setting', 'value', { readonly: false, visible: true });
+      cache.set_value('readonly_config', 'prod', { systemTags: ['SystemPrompt'] });
+      cache.set_value('writable_setting', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
       const lines = systemPrompt.split('\n');
@@ -87,8 +131,8 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should handle empty values correctly', () => {
-      cache.set_value('empty_readonly', '', { readonly: true, visible: true });
-      cache.set_value('empty_writable', '', { readonly: false, visible: true });
+      cache.set_value('empty_readonly', '', { systemTags: ['SystemPrompt'] });
+      cache.set_value('empty_writable', '', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -97,8 +141,8 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should handle complex object values', () => {
-      cache.set_value('user_data', { name: 'Alice', age: 30 }, { readonly: true, visible: true });
-      cache.set_value('settings', { theme: 'dark', notifications: true }, { readonly: false, visible: true });
+      cache.set_value('user_data', { name: 'Alice', age: 30 }, { systemTags: ['SystemPrompt'] });
+      cache.set_value('settings', { theme: 'dark', notifications: true }, { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
 
@@ -107,14 +151,14 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should respect visibility settings', () => {
-      cache.set_value('public_readonly', 'visible', { readonly: true, visible: true });
-      cache.set_value('public_writable', 'visible', { readonly: false, visible: true });
-      cache.set_value('private_readonly', 'hidden', { readonly: true, visible: false });
-      cache.set_value('private_writable', 'hidden', { readonly: false, visible: false });
+      cache.set_value('public_readonly', 'visible', { systemTags: ['SystemPrompt'] });
+      cache.set_value('public_writable', 'visible', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      cache.set_value('private_readonly', 'hidden', { systemTags: [] });
+      cache.set_value('private_writable', 'hidden', { systemTags: ['LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
 
-      // Only visible keys should appear
+      // Only visible keys should appear (those with SystemPrompt tag)
       expect(systemPrompt).toContain('public_readonly: visible');
       expect(systemPrompt).toContain('public_writable: visible. You can rewrite "public_writable" by using the write_public_writable tool');
 
@@ -126,7 +170,7 @@ describe('MindCache System Prompt Generation', () => {
 
     test('should handle system keys consistently', () => {
       // Set some regular keys
-      cache.set_value('regular_key', 'value', { readonly: false, visible: true });
+      cache.set_value('regular_key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
       const lines = systemPrompt.split('\n');
@@ -146,9 +190,7 @@ describe('MindCache System Prompt Generation', () => {
 
     test('should handle template with system keys', () => {
       cache.set_value('today_message', 'Today is {{$date}} at {{$time}}', {
-        readonly: true,
-        visible: true,
-        template: true
+        systemTags: ['SystemPrompt', 'ApplyTemplate']
       });
 
       const systemPrompt = cache.get_system_prompt();
@@ -162,8 +204,8 @@ describe('MindCache System Prompt Generation', () => {
     });
 
     test('should generate consistent output format', () => {
-      cache.set_value('key1', 'value1', { readonly: false, visible: true });
-      cache.set_value('key2', 'value2', { readonly: true, visible: true });
+      cache.set_value('key1', 'value1', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      cache.set_value('key2', 'value2', { systemTags: ['SystemPrompt'] });
 
       const systemPrompt = cache.get_system_prompt();
       const lines = systemPrompt.split('\n');

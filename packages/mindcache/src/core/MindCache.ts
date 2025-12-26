@@ -95,42 +95,17 @@ export class MindCache {
 
   private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
-    let hasSystemPrompt = false;
-    let hasLLMRead = false;
-    let hasLLMWrite = false;
-    let hasReadonly = false;
+    const seen = new Set<SystemTag>();
 
-    // First pass: identify what we have
     for (const tag of tags) {
-      if (tag === 'SystemPrompt' || tag === 'prompt') {
-        hasSystemPrompt = true;
-      } else if (tag === 'LLMRead') {
-        hasLLMRead = true;
-      } else if (tag === 'LLMWrite') {
-        hasLLMWrite = true;
-      } else if (tag === 'readonly') {
-        hasReadonly = true;
-      } else if (tag === 'protected') {
-        normalized.push(tag);
-      } else if (tag === 'ApplyTemplate' || tag === 'template') {
-        normalized.push('ApplyTemplate');
+      // Only include valid SystemTag values, skip duplicates
+      if (['SystemPrompt', 'LLMRead', 'LLMWrite', 'protected', 'ApplyTemplate'].includes(tag)) {
+        if (!seen.has(tag)) {
+          seen.add(tag);
+          normalized.push(tag);
+        }
       }
     }
-
-    // Add normalized tags
-    if (hasSystemPrompt) {
-      normalized.push('SystemPrompt');
-    }
-    if (hasLLMRead) {
-      normalized.push('LLMRead');
-    }
-
-    if (hasReadonly) {
-      normalized.push('readonly');
-    } else if (hasLLMWrite) {
-      normalized.push('LLMWrite');
-    }
-    // If neither readonly nor LLMWrite is set, that's fine - key is readable but not LLM-writable
 
     return normalized;
   }
@@ -678,16 +653,10 @@ export class MindCache {
         const attrs = entry.attributes || {};
         const normalizedAttrs: KeyAttributes = {
           type: attrs.type || 'text',
+          contentType: attrs.contentType,
           contentTags: attrs.contentTags || [],
-          systemTags: attrs.systemTags || this.normalizeSystemTags(attrs.visible !== false ? ['prompt'] : []),
-          zIndex: attrs.zIndex ?? 0,
-          // Legacy fields
-          readonly: attrs.readonly ?? false,
-          visible: attrs.visible ?? true,
-          hardcoded: attrs.hardcoded ?? false,
-          template: attrs.template ?? false,
-          tags: attrs.tags || [],
-          contentType: attrs.contentType
+          systemTags: this.normalizeSystemTags(attrs.systemTags || []),
+          zIndex: attrs.zIndex ?? 0
         };
         entryMap.set('attributes', normalizedAttrs);
       }
@@ -810,7 +779,7 @@ export class MindCache {
     }
 
     // Apply Template Logic
-    if (attributes?.systemTags?.includes('ApplyTemplate') || attributes?.systemTags?.includes('template') || attributes?.template) {
+    if (attributes?.systemTags?.includes('ApplyTemplate')) {
       if (typeof value === 'string') {
         const stack = _processingStack || new Set();
         stack.add(key);
@@ -825,13 +794,8 @@ export class MindCache {
       return {
         type: 'text',
         contentTags: [],
-        systemTags: ['prompt', 'readonly', 'protected'],
-        zIndex: 999999,
-        readonly: true,
-        visible: true,
-        hardcoded: true,
-        template: false,
-        tags: []
+        systemTags: ['SystemPrompt', 'protected'],
+        zIndex: 999999
       };
     }
     const entryMap = this.rootMap.get(key);
@@ -927,11 +891,7 @@ export class MindCache {
     this.doc.transact(() => {
       const oldAttributes = isNewEntry
         ? {
-          ...DEFAULT_KEY_ATTRIBUTES,
-          contentTags: [],
-          systemTags: ['SystemPrompt', 'LLMWrite'] as SystemTag[],
-          tags: [],
-          zIndex: 0
+          ...DEFAULT_KEY_ATTRIBUTES
         }
         : entryMap!.get('attributes');
 
@@ -940,11 +900,6 @@ export class MindCache {
       let normalizedAttributes = { ...finalAttributes };
       if (finalAttributes.systemTags) {
         normalizedAttributes.systemTags = this.normalizeSystemTags(finalAttributes.systemTags);
-      }
-      if (finalAttributes.template) {
-        if (!normalizedAttributes.systemTags.includes('template')) {
-          normalizedAttributes.systemTags.push('template');
-        }
       }
 
 
@@ -959,6 +914,48 @@ export class MindCache {
       entryMap!.set('value', valueToSet);
       entryMap!.set('attributes', normalizedAttributes);
     });
+  }
+
+  /**
+   * LLM-safe method to write a value to a key.
+   * This method:
+   * - Only updates the value, never modifies attributes/systemTags
+   * - Checks LLMWrite permission before writing
+   * - Returns false if key doesn't exist or lacks LLMWrite permission
+   *
+   * Used by create_vercel_ai_tools() to prevent LLMs from escalating privileges.
+   */
+  llm_set_key(key: string, value: any): boolean {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      return false;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attributes = entryMap.get('attributes') as KeyAttributes;
+
+    // Check LLMWrite permission
+    if (!attributes?.systemTags?.includes('LLMWrite')) {
+      return false;
+    }
+
+    // For document type, use diff-based replace
+    if (attributes.type === 'document') {
+      if (typeof value === 'string') {
+        this._replaceDocumentText(key, value);
+      }
+      return true;
+    }
+
+    // For other types, just update the value (NOT attributes)
+    this.doc.transact(() => {
+      entryMap.set('value', value);
+    });
+
+    return true;
   }
 
   delete_key(key: string): void {
@@ -1496,16 +1493,14 @@ export class MindCache {
       const attributes = entryMap.get('attributes') as KeyAttributes;
       const value = entryMap.get('value');
 
-      if (attributes?.hardcoded) {
+      if (attributes?.systemTags?.includes('protected')) {
         return;
       }
 
       lines.push(`### ${key}`);
       const entryType = attributes?.type || 'text';
       lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **Readonly**: \`${attributes?.readonly ?? false}\``);
-      lines.push(`- **Visible**: \`${attributes?.visible ?? true}\``);
-      lines.push(`- **Template**: \`${attributes?.template ?? false}\``);
+      lines.push(`- **System Tags**: \`${attributes?.systemTags?.join(', ') || 'none'}\``);
       lines.push(`- **Z-Index**: \`${attributes?.zIndex ?? 0}\``);
 
       if (attributes?.contentTags && attributes.contentTags.length > 0) {
@@ -1610,16 +1605,11 @@ export class MindCache {
         }
         continue;
       }
-      if (line.startsWith('- **Readonly**:')) {
-        currentAttributes.readonly = line.includes('`true`');
-        continue;
-      }
-      if (line.startsWith('- **Visible**:')) {
-        currentAttributes.visible = line.includes('`true`');
-        continue;
-      }
-      if (line.startsWith('- **Template**:')) {
-        currentAttributes.template = line.includes('`true`');
+      if (line.startsWith('- **System Tags**:')) {
+        const tagsStr = line.match(/`([^`]+)`/)?.[1] || '';
+        if (tagsStr !== 'none') {
+          currentAttributes.systemTags = tagsStr.split(', ').filter(t => t) as SystemTag[];
+        }
         continue;
       }
       if (line.startsWith('- **Z-Index**:')) {
@@ -1630,7 +1620,6 @@ export class MindCache {
       if (line.startsWith('- **Tags**:')) {
         const tags = line.match(/`([^`]+)`/g)?.map(t => t.slice(1, -1)) || [];
         currentAttributes.contentTags = tags;
-        currentAttributes.tags = tags;
         continue;
       }
       if (line.startsWith('- **Content Type**:')) {
@@ -1946,8 +1935,12 @@ export class MindCache {
   /**
    * Generate Vercel AI SDK compatible tools for writable keys.
    * For document type keys, generates additional tools: append_, insert_, edit_
+   *
+   * Security: All tools use llm_set_key internally which:
+   * - Only modifies VALUES, never attributes/systemTags
+   * - Prevents LLMs from escalating privileges
    */
-  get_aisdk_tools(): Record<string, any> {
+  create_vercel_ai_tools(): Record<string, any> {
     const tools: Record<string, any> = {};
 
     for (const [key, val] of this.rootMap) {
@@ -1960,8 +1953,7 @@ export class MindCache {
       const attributes = entryMap.get('attributes') as KeyAttributes;
 
       // Check if key has LLMWrite access (writable by LLM)
-      const isWritable = !attributes?.readonly &&
-        (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+      const isWritable = attributes?.systemTags?.includes('LLMWrite');
 
       if (!isWritable) {
         continue;
@@ -1983,15 +1975,19 @@ export class MindCache {
           required: ['value']
         },
         execute: async ({ value }: { value: any }) => {
-          if (isDocument) {
-            this._replaceDocumentText(key, value);
-          } else {
-            this.set_value(key, value);
+          // Use llm_set_key for security - only modifies value, not attributes
+          const success = this.llm_set_key(key, value);
+          if (success) {
+            return {
+              result: `Successfully wrote "${value}" to ${key}`,
+              key,
+              value
+            };
           }
           return {
-            result: `Successfully wrote "${value}" to ${key}`,
+            result: `Failed to write to ${key} - permission denied or key not found`,
             key,
-            value
+            error: true
           };
         }
       };
@@ -2009,6 +2005,10 @@ export class MindCache {
             required: ['text']
           },
           execute: async ({ text }: { text: string }) => {
+            // Check permission first
+            if (!attributes?.systemTags?.includes('LLMWrite')) {
+              return { result: `Permission denied for ${key}`, key, error: true };
+            }
             const yText = this.get_document(key);
             if (yText) {
               yText.insert(yText.length, text);
@@ -2034,6 +2034,10 @@ export class MindCache {
             required: ['index', 'text']
           },
           execute: async ({ index, text }: { index: number; text: string }) => {
+            // Check permission first
+            if (!attributes?.systemTags?.includes('LLMWrite')) {
+              return { result: `Permission denied for ${key}`, key, error: true };
+            }
             this.insert_text(key, index, text);
             return {
               result: `Successfully inserted text at position ${index} in ${key}`,
@@ -2056,6 +2060,10 @@ export class MindCache {
             required: ['find', 'replace']
           },
           execute: async ({ find, replace }: { find: string; replace: string }) => {
+            // Check permission first
+            if (!attributes?.systemTags?.includes('LLMWrite')) {
+              return { result: `Permission denied for ${key}`, key, error: true };
+            }
             const yText = this.get_document(key);
             if (yText) {
               const text = yText.toString();
@@ -2083,6 +2091,13 @@ export class MindCache {
   }
 
   /**
+   * @deprecated Use create_vercel_ai_tools() instead
+   */
+  get_aisdk_tools(): Record<string, any> {
+    return this.create_vercel_ai_tools();
+  }
+
+  /**
    * Generate a system prompt containing all visible STM keys and their values.
    * Indicates which tools can be used to modify writable keys.
    */
@@ -2098,11 +2113,9 @@ export class MindCache {
       const entryMap = val as Y.Map<any>;
       const attributes = entryMap.get('attributes') as KeyAttributes;
 
-      // Check visibility
-      const isVisible = attributes?.visible !== false &&
-        (attributes?.systemTags?.includes('prompt') ||
-          attributes?.systemTags?.includes('SystemPrompt') ||
-          !attributes?.systemTags);
+      // Check visibility - key is visible if it has SystemPrompt or LLMRead tag
+      const isVisible = attributes?.systemTags?.includes('SystemPrompt') ||
+        attributes?.systemTags?.includes('LLMRead');
 
       if (!isVisible) {
         continue;
@@ -2111,9 +2124,8 @@ export class MindCache {
       const value = this.get_value(key);
       const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
 
-      // Check if writable
-      const isWritable = !attributes?.readonly &&
-        (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+      // Check if writable - key is writable if it has LLMWrite tag
+      const isWritable = attributes?.systemTags?.includes('LLMWrite');
 
       const isDocument = attributes?.type === 'document';
       const sanitizedKey = this.sanitizeKeyForTool(key);
@@ -2174,9 +2186,8 @@ export class MindCache {
 
     const attributes = entryMap.get('attributes') as KeyAttributes;
 
-    // Check if writable
-    const isWritable = !attributes?.readonly &&
-      (attributes?.systemTags?.includes('LLMWrite') || !attributes?.systemTags);
+    // Check if writable - key is writable if it has LLMWrite tag
+    const isWritable = attributes?.systemTags?.includes('LLMWrite');
 
     if (!isWritable) {
       return null;
