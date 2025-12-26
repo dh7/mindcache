@@ -10,8 +10,8 @@ describe('MindCache Tooling', () => {
 
   describe('get_aisdk_tools', () => {
     test('should generate tools for writable keys only', () => {
-      cache.set_value('writable_key', 'value1', { readonly: false });
-      cache.set_value('readonly_key', 'value2', { readonly: true });
+      cache.set_value('writable_key', 'value1', { systemTags: ['LLMWrite'] });
+      cache.set_value('readonly_key', 'value2', { systemTags: ['SystemPrompt'] });
 
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
@@ -29,9 +29,9 @@ describe('MindCache Tooling', () => {
     });
 
     test('should sanitize key names for tool names', () => {
-      cache.set_value('my-special@key!', 'value1');
-      cache.set_value('normal_key', 'value2');
-      cache.set_value('key with spaces', 'value3');
+      cache.set_value('my-special@key!', 'value1', { systemTags: ['LLMWrite'] });
+      cache.set_value('normal_key', 'value2', { systemTags: ['LLMWrite'] });
+      cache.set_value('key with spaces', 'value3', { systemTags: ['LLMWrite'] });
 
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
@@ -48,8 +48,8 @@ describe('MindCache Tooling', () => {
 
     test('should return empty object when no writable keys exist', () => {
       // Only add readonly keys
-      cache.set_value('readonly1', 'value1', { readonly: true });
-      cache.set_value('readonly2', 'value2', { readonly: true });
+      cache.set_value('readonly1', 'value1', { systemTags: ['SystemPrompt'] });
+      cache.set_value('readonly2', 'value2', { systemTags: ['SystemPrompt'] });
 
       const tools = cache.get_aisdk_tools();
 
@@ -57,7 +57,7 @@ describe('MindCache Tooling', () => {
     });
 
     test('should include proper tool descriptions and schemas', () => {
-      cache.set_value('test_key', 'test_value');
+      cache.set_value('test_key', 'test_value', { systemTags: ['LLMWrite'] });
 
       const tools = cache.get_aisdk_tools();
       const tool = tools['write_test_key'];
@@ -69,7 +69,7 @@ describe('MindCache Tooling', () => {
     });
 
     test('should execute tools correctly', async () => {
-      cache.set_value('editable', 'old_value', { readonly: false });
+      cache.set_value('editable', 'old_value', { systemTags: ['LLMWrite'] });
 
       const tools = cache.get_aisdk_tools();
       const editableTool = tools['write_editable'];
@@ -86,7 +86,7 @@ describe('MindCache Tooling', () => {
 
   describe('executeToolCall', () => {
     test('should work with sanitized tool names', () => {
-      cache.set_value('my-special@key!', 'original_value');
+      cache.set_value('my-special@key!', 'original_value', { systemTags: ['LLMWrite'] });
 
       // Execute tool call with sanitized name
       const result = cache.executeToolCall('write_my-special_key_', 'new_value');
@@ -111,7 +111,7 @@ describe('MindCache Tooling', () => {
     });
 
     test('should not work with readonly keys', () => {
-      cache.set_value('readonly_key', 'original', { readonly: true });
+      cache.set_value('readonly_key', 'original', { systemTags: ['SystemPrompt'] });
 
       const result = cache.executeToolCall('write_readonly_key', 'new_value');
 
@@ -131,7 +131,7 @@ describe('MindCache Tooling', () => {
       ];
 
       testCases.forEach(({ original, sanitized }) => {
-        cache.set_value(original, 'test_value');
+        cache.set_value(original, 'test_value', { systemTags: ['LLMWrite'] });
 
         const result = cache.executeToolCall(`write_${sanitized}`, 'updated_value');
 
@@ -145,7 +145,7 @@ describe('MindCache Tooling', () => {
     });
 
     test('should handle non-string values', () => {
-      cache.set_value('test_key', 'original');
+      cache.set_value('test_key', 'original', { systemTags: ['LLMWrite'] });
 
       // Test with number
       const result1 = cache.executeToolCall('write_test_key', 123);
@@ -163,10 +163,8 @@ describe('MindCache Tooling', () => {
 
     test('should work with keys that have attributes', () => {
       cache.set_value('special_key', 'original', {
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false
+        systemTags: ['SystemPrompt', 'LLMWrite'],
+        contentTags: ['important']
       });
 
       const result = cache.executeToolCall('write_special_key', 'updated');
@@ -178,14 +176,14 @@ describe('MindCache Tooling', () => {
       // Attributes should be preserved
       const attributes = cache.get_attributes('special_key');
       expect(attributes).toBeDefined();
-      expect(attributes!.visible).toBe(true);
+      expect(attributes!.systemTags).toContain('SystemPrompt');
     });
   });
 
   describe('Key Sanitization', () => {
     test('should consistently sanitize keys across methods', () => {
       const originalKey = 'test@key#with$special%chars!';
-      cache.set_value(originalKey, 'test_value');
+      cache.set_value(originalKey, 'test_value', { systemTags: ['LLMWrite'] });
 
       // Check tool generation
       const tools = cache.get_aisdk_tools();
@@ -217,7 +215,7 @@ describe('MindCache Tooling', () => {
 
       edgeCases.forEach((key, index) => {
         if (key) { // Skip empty string
-          cache.set_value(key, `value_${index}`);
+          cache.set_value(key, `value_${index}`, { systemTags: ['LLMWrite'] });
 
           const tools = cache.get_aisdk_tools();
           const toolNames = Object.keys(tools);
@@ -239,9 +237,9 @@ describe('MindCache Tooling', () => {
 
   describe('Integration with System Prompt', () => {
     test('should include tool information in system prompt for writable keys', () => {
-      cache.set_value('writable_key', 'writable_value', { readonly: false, visible: true });
-      cache.set_value('readonly_key', 'readonly_value', { readonly: true, visible: true });
-      cache.set_value('hidden_key', 'hidden_value', { readonly: false, visible: false });
+      cache.set_value('writable_key', 'writable_value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      cache.set_value('readonly_key', 'readonly_value', { systemTags: ['SystemPrompt'] });
+      cache.set_value('hidden_key', 'hidden_value', { systemTags: ['LLMWrite'] });
 
       const prompt = cache.get_system_prompt();
 
@@ -252,13 +250,13 @@ describe('MindCache Tooling', () => {
       expect(prompt).toContain('readonly_key: readonly_value');
       expect(prompt).not.toContain('write_readonly_key tool');
 
-      // Should not include hidden key at all
+      // Should not include hidden key at all (no SystemPrompt tag)
       expect(prompt).not.toContain('hidden_key');
       expect(prompt).not.toContain('hidden_value');
     });
 
     test('should handle sanitized tool names in system prompt', () => {
-      cache.set_value('special@key!', 'test_value', { readonly: false, visible: true });
+      cache.set_value('special@key!', 'test_value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const prompt = cache.get_system_prompt();
 

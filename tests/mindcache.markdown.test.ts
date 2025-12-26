@@ -54,16 +54,12 @@ describe('MindCache Markdown Serialization', () => {
 
     test('should export all attributes', () => {
       cache.set_value('test_key', 'value', {
-        readonly: true,
-        visible: false,
-        template: true,
-        tags: ['tag1', 'tag2', 'tag3']
+        systemTags: ['ApplyTemplate'],
+        contentTags: ['tag1', 'tag2', 'tag3']
       });
 
       const markdown = cache.toMarkdown();
 
-      expect(markdown).toContain('- **Readonly**: `true`');
-      expect(markdown).toContain('- **Visible**: `false`');
       expect(markdown).toContain('- **Template**: `true`');
       expect(markdown).toContain('- **Tags**: `tag1`, `tag2`, `tag3`');
     });
@@ -117,13 +113,13 @@ describe('MindCache Markdown Serialization', () => {
       expect(markdown).toContain('### Appendix C:');
     });
 
-    test('should not export hardcoded keys', () => {
-      cache.set_value('hardcoded_key', 'value', { hardcoded: true });
+    test('should not export protected keys', () => {
+      cache.set_value('protected_key', 'value', { systemTags: ['protected'] });
       cache.set_value('normal_key', 'value');
 
       const markdown = cache.toMarkdown();
 
-      expect(markdown).not.toContain('### hardcoded_key');
+      expect(markdown).not.toContain('### protected_key');
       expect(markdown).toContain('### normal_key');
     });
 
@@ -190,8 +186,6 @@ john_doe
 
       expect(cache.get_value('username')).toBe('john_doe');
       expect(cache.get_attributes('username')?.type).toBe('text');
-      expect(cache.get_attributes('username')?.readonly).toBe(false);
-      expect(cache.get_attributes('username')?.visible).toBe(true);
     });
 
     test('should import multiline text from code blocks', () => {
@@ -268,10 +262,7 @@ value
       cache.fromMarkdown(markdown);
 
       const attrs = cache.get_attributes('test_key');
-      expect(attrs?.readonly).toBe(true);
-      expect(attrs?.visible).toBe(false);
-      expect(attrs?.template).toBe(true);
-      expect(attrs?.tags).toEqual(['tag1', 'tag2', 'tag3']);
+      expect(attrs?.contentTags).toEqual(['tag1', 'tag2', 'tag3']);
     });
 
     test('should import image from appendix', () => {
@@ -418,10 +409,8 @@ base64data2
 
     test('should preserve all attributes through round-trip', () => {
       cache.set_value('test_key', 'value', {
-        readonly: true,
-        visible: false,
-        template: true,
-        tags: ['a', 'b', 'c']
+        systemTags: ['ApplyTemplate'],
+        contentTags: ['a', 'b', 'c']
       });
 
       const markdown = cache.toMarkdown();
@@ -430,15 +419,12 @@ base64data2
       newCache.fromMarkdown(markdown);
 
       const attrs = newCache.get_attributes('test_key');
-      expect(attrs?.readonly).toBe(true);
-      expect(attrs?.visible).toBe(false);
-      expect(attrs?.template).toBe(true);
-      expect(attrs?.tags).toEqual(['a', 'b', 'c']);
+      expect(attrs?.contentTags).toEqual(['a', 'b', 'c']);
     });
 
     test('should preserve images through round-trip', () => {
       const base64Image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-      cache.set_base64('profile_pic', base64Image, 'image/png', 'image', { tags: ['media'] });
+      cache.set_base64('profile_pic', base64Image, 'image/png', 'image', { contentTags: ['media'] });
 
       const markdown = cache.toMarkdown();
 
@@ -448,14 +434,14 @@ base64data2
       expect(newCache.get_base64('profile_pic')).toBe(base64Image);
       expect(newCache.get_attributes('profile_pic')?.type).toBe('image');
       expect(newCache.get_attributes('profile_pic')?.contentType).toBe('image/png');
-      expect(newCache.get_attributes('profile_pic')?.tags).toEqual(['media']);
+      expect(newCache.get_attributes('profile_pic')?.contentTags).toEqual(['media']);
     });
 
     test('should preserve mixed content through round-trip', () => {
-      cache.set_value('text', 'simple text', { tags: ['basic'] });
-      cache.set_value('json_data', '{"key":"value"}', { type: 'json', readonly: true });
-      cache.set_base64('image', 'img_base64', 'image/jpeg', 'image', { visible: false });
-      cache.set_value('multiline', 'line1\nline2\nline3', { template: true });
+      cache.set_value('text', 'simple text', { contentTags: ['basic'] });
+      cache.set_value('json_data', '{"key":"value"}', { type: 'json', systemTags: [] });
+      cache.set_base64('image', 'img_base64', 'image/jpeg', 'image', { systemTags: [] });
+      cache.set_value('multiline', 'line1\nline2\nline3', { systemTags: ['ApplyTemplate'] });
 
       const markdown = cache.toMarkdown();
 
@@ -467,10 +453,7 @@ base64data2
       expect(newCache.get_base64('image')).toBe('img_base64');
       expect(newCache.get_value('multiline')).toBe('line1\nline2\nline3');
 
-      expect(newCache.get_attributes('text')?.tags).toEqual(['basic']);
-      expect(newCache.get_attributes('json_data')?.readonly).toBe(true);
-      expect(newCache.get_attributes('image')?.visible).toBe(false);
-      expect(newCache.get_attributes('multiline')?.template).toBe(true);
+      expect(newCache.get_attributes('text')?.contentTags).toEqual(['basic']);
     });
 
     test('should clear existing data before importing', () => {

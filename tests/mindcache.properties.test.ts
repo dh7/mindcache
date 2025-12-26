@@ -12,62 +12,45 @@ describe('MindCache Key Properties', () => {
       cache.set_value('test_key', 'test_value');
       const attributes = cache.get_attributes('test_key');
 
-      // Check key properties individually (new format includes contentTags, systemTags)
-      expect(attributes?.readonly).toBe(false);
-      expect(attributes?.visible).toBe(true);
-      expect(attributes?.hardcoded).toBe(false);
-      expect(attributes?.template).toBe(false);
+      // Check key properties - new format uses systemTags
       expect(attributes?.type).toBe('text');
       expect(attributes?.contentTags).toEqual([]);
-      expect(attributes?.systemTags).toContain('prompt'); // visible by default
+      expect(attributes?.systemTags).toContain('SystemPrompt'); // visible by default
+      expect(attributes?.systemTags).toContain('LLMWrite'); // writable by default
     });
 
     test('should set value with custom attributes', () => {
       const customAttributes = {
-        readonly: true,
-        visible: false,
-        hardcoded: true,
-        template: true // This will be forced to false because hardcoded=true
+        systemTags: ['protected'] as ('SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate')[]
       };
 
       cache.set_value('custom_key', 'custom_value', customAttributes);
       const attributes = cache.get_attributes('custom_key');
 
-      // Hardcoded keys force readonly=true and template=false
-      expect(attributes?.readonly).toBe(true);
-      expect(attributes?.visible).toBe(false);
-      expect(attributes?.hardcoded).toBe(true);
-      expect(attributes?.template).toBe(false); // Hardcoded keys cannot be templates
-      expect(attributes?.type).toBe('text');
-      expect(attributes?.systemTags).toContain('readonly');
       expect(attributes?.systemTags).toContain('protected');
+      expect(attributes?.systemTags).not.toContain('SystemPrompt');
+      expect(attributes?.systemTags).not.toContain('LLMWrite');
     });
 
     test('should set partial attributes', () => {
-      cache.set_value('partial_key', 'partial_value', { readonly: true, visible: false });
+      cache.set_value('partial_key', 'partial_value', { systemTags: [] });
       const attributes = cache.get_attributes('partial_key');
 
-      expect(attributes?.readonly).toBe(true);
-      expect(attributes?.visible).toBe(false);
-      expect(attributes?.hardcoded).toBe(false);
-      expect(attributes?.template).toBe(false);
+      expect(attributes?.systemTags).toEqual([]);
       expect(attributes?.type).toBe('text');
-      expect(attributes?.systemTags).toContain('readonly');
-      expect(attributes?.systemTags).not.toContain('prompt'); // visible=false
     });
 
     test('should update attributes of existing key', () => {
       cache.set_value('existing_key', 'value');
-      const result = cache.set_attributes('existing_key', { readonly: true, visible: false });
+      const result = cache.set_attributes('existing_key', { systemTags: [] });
 
       expect(result).toBe(true);
       const attributes = cache.get_attributes('existing_key');
-      expect(attributes?.readonly).toBe(true);
-      expect(attributes?.visible).toBe(false);
+      expect(attributes?.systemTags).toEqual([]);
     });
 
     test('should return false when setting attributes for non-existent key', () => {
-      const result = cache.set_attributes('non_existent', { readonly: true });
+      const result = cache.set_attributes('non_existent', { systemTags: ['protected'] });
       expect(result).toBe(false);
     });
 
@@ -76,149 +59,33 @@ describe('MindCache Key Properties', () => {
       expect(attributes).toBeUndefined();
     });
 
-    test('should return hardcoded attributes for $date and $time', () => {
+    test('should return protected attributes for $date and $time', () => {
       const dateAttrs = cache.get_attributes('$date');
       const timeAttrs = cache.get_attributes('$time');
 
       // Check key properties
-      expect(dateAttrs?.readonly).toBe(true);
-      expect(dateAttrs?.visible).toBe(true);
-      expect(dateAttrs?.hardcoded).toBe(true);
-      expect(dateAttrs?.template).toBe(false);
       expect(dateAttrs?.type).toBe('text');
-      expect(dateAttrs?.systemTags).toContain('prompt');
-      expect(dateAttrs?.systemTags).toContain('readonly');
+      expect(dateAttrs?.systemTags).toContain('SystemPrompt');
       expect(dateAttrs?.systemTags).toContain('protected');
 
-      expect(timeAttrs?.readonly).toBe(true);
-      expect(timeAttrs?.visible).toBe(true);
-      expect(timeAttrs?.hardcoded).toBe(true);
-      expect(timeAttrs?.template).toBe(false);
       expect(timeAttrs?.type).toBe('text');
+      expect(timeAttrs?.systemTags).toContain('SystemPrompt');
+      expect(timeAttrs?.systemTags).toContain('protected');
     });
 
-    test('should not allow setting attributes for hardcoded system keys', () => {
-      const dateResult = cache.set_attributes('$date', { readonly: false });
-      const timeResult = cache.set_attributes('$time', { visible: false });
+    test('should not allow setting attributes for protected system keys', () => {
+      const dateResult = cache.set_attributes('$date', { systemTags: [] });
+      const timeResult = cache.set_attributes('$time', { systemTags: [] });
 
       expect(dateResult).toBe(false);
       expect(timeResult).toBe(false);
     });
-
-    test('should not allow modifying hardcoded property via set_attributes', () => {
-      cache.set_value('test_key', 'test_value', { hardcoded: false });
-
-      // Verify initial hardcoded property
-      const initialAttrs = cache.get_attributes('test_key');
-      expect(initialAttrs?.hardcoded).toBe(false);
-
-      // Try to modify hardcoded property
-      const result = cache.set_attributes('test_key', { hardcoded: true, readonly: true });
-
-      // Should return true (operation succeeded) but hardcoded property should remain unchanged
-      expect(result).toBe(true);
-
-      const finalAttrs = cache.get_attributes('test_key');
-      expect(finalAttrs?.hardcoded).toBe(false); // Hardcoded property should not change
-      expect(finalAttrs?.readonly).toBe(true); // Other properties should change
-    });
-
-    test('hardcoded keys should always be readonly', () => {
-      cache.set_value('user_key', 'value', { hardcoded: true });
-
-      const attributes = cache.get_attributes('user_key');
-      expect(attributes?.hardcoded).toBe(true); // This should work for initial creation
-      expect(attributes?.readonly).toBe(true); // Should automatically be readonly
-
-      // But trying to modify it later should not work
-      cache.set_attributes('user_key', { hardcoded: false });
-      const updatedAttributes = cache.get_attributes('user_key');
-      expect(updatedAttributes?.hardcoded).toBe(true); // Should remain true
-      expect(updatedAttributes?.readonly).toBe(true); // Should remain readonly
-    });
-
-    test('hardcoded keys cannot be made non-readonly', () => {
-      cache.set_value('hardcoded_key', 'value', { hardcoded: true, readonly: false });
-
-      const attributes = cache.get_attributes('hardcoded_key');
-      expect(attributes?.hardcoded).toBe(true);
-      expect(attributes?.readonly).toBe(true); // Should be forced to true
-
-      // Try to set readonly to false
-      cache.set_attributes('hardcoded_key', { readonly: false });
-      const updatedAttributes = cache.get_attributes('hardcoded_key');
-      expect(updatedAttributes?.readonly).toBe(true); // Should remain true
-    });
-
-    test('hardcoded keys cannot be templates', () => {
-      cache.set_value('hardcoded_key', 'value', { hardcoded: true, template: true });
-
-      const attributes = cache.get_attributes('hardcoded_key');
-      expect(attributes?.hardcoded).toBe(true);
-      expect(attributes?.template).toBe(false); // Should be forced to false
-
-      // Try to set template to true
-      cache.set_attributes('hardcoded_key', { template: true });
-      const updatedAttributes = cache.get_attributes('hardcoded_key');
-      expect(updatedAttributes?.template).toBe(false); // Should remain false
-    });
-
-    test('hardcoded keys always remain hardcoded via set_value', () => {
-      cache.set_value('hardcoded_key', 'value1', { hardcoded: true });
-      
-      // Try to make it non-hardcoded
-      cache.set_value('hardcoded_key', 'value2', { hardcoded: false });
-      
-      const attrs = cache.get_attributes('hardcoded_key');
-      expect(attrs?.hardcoded).toBe(true); // Should remain hardcoded
-      expect(attrs?.systemTags).toContain('protected'); // Should have protected tag
-      expect(cache.get_value('hardcoded_key')).toBe('value2'); // Value should update
-    });
-
-    test('hardcoded keys always remain hardcoded via set_attributes', () => {
-      cache.set_value('hardcoded_key', 'value', { hardcoded: true });
-      
-      // Try various ways to remove hardcoded status
-      cache.set_attributes('hardcoded_key', { hardcoded: false });
-      let attrs = cache.get_attributes('hardcoded_key');
-      expect(attrs?.hardcoded).toBe(true);
-      expect(attrs?.systemTags).toContain('protected');
-      
-      // Try removing protected tag via systemRemoveTag (requires system access)
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set_value('hardcoded_key', 'value', { hardcoded: true });
-      const removed = systemCache.systemRemoveTag('hardcoded_key', 'protected');
-      expect(removed).toBe(false); // Should fail - cannot remove protected from hardcoded keys
-      attrs = systemCache.get_attributes('hardcoded_key');
-      expect(attrs?.hardcoded).toBe(true);
-      expect(attrs?.systemTags).toContain('protected');
-    });
-
-    test('hardcoded keys preserve protected tag after attribute changes', () => {
-      cache.set_value('hardcoded_key', 'value', { hardcoded: true });
-      
-      // Change various attributes
-      cache.set_attributes('hardcoded_key', { visible: false });
-      let attrs = cache.get_attributes('hardcoded_key');
-      expect(attrs?.hardcoded).toBe(true);
-      expect(attrs?.systemTags).toContain('protected');
-      
-      cache.set_attributes('hardcoded_key', { contentTags: ['test'] });
-      attrs = cache.get_attributes('hardcoded_key');
-      expect(attrs?.hardcoded).toBe(true);
-      expect(attrs?.systemTags).toContain('protected');
-      
-      cache.set_attributes('hardcoded_key', { zIndex: 100 });
-      attrs = cache.get_attributes('hardcoded_key');
-      expect(attrs?.hardcoded).toBe(true);
-      expect(attrs?.systemTags).toContain('protected');
-    });
   });
 
-  describe('Readonly Property', () => {
-    test('readonly keys should not appear in AI SDK tools', () => {
-      cache.set_value('writable_key', 'value1', { readonly: false });
-      cache.set_value('readonly_key', 'value2', { readonly: true });
+  describe('LLMWrite Property (Writable Keys)', () => {
+    test('non-writable keys should not appear in AI SDK tools', () => {
+      cache.set_value('writable_key', 'value1', { systemTags: ['LLMWrite'] });
+      cache.set_value('readonly_key', 'value2', { systemTags: ['SystemPrompt'] });
 
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
@@ -227,7 +94,7 @@ describe('MindCache Key Properties', () => {
       expect(toolNames).not.toContain('write_readonly_key');
     });
 
-    test('hardcoded system keys should not appear in AI SDK tools', () => {
+    test('protected system keys should not appear in AI SDK tools', () => {
       const tools = cache.get_aisdk_tools();
       const toolNames = Object.keys(tools);
 
@@ -235,7 +102,7 @@ describe('MindCache Key Properties', () => {
       expect(toolNames).not.toContain('write_$time');
     });
 
-    test('should not allow setting hardcoded system keys via set_value', () => {
+    test('should not allow setting protected system keys via set_value', () => {
       const originalDate = cache.get_value('$date');
 
       cache.set_value('$date', '2020-01-01');
@@ -245,9 +112,9 @@ describe('MindCache Key Properties', () => {
       expect(cache.get_value('$date')).toBe(originalDate);
     });
 
-    test('AI SDK tools should work correctly with readonly keys', async () => {
-      cache.set_value('editable', 'old_value', { readonly: false });
-      cache.set_value('locked', 'locked_value', { readonly: true });
+    test('AI SDK tools should work correctly with non-writable keys', async () => {
+      cache.set_value('editable', 'old_value', { systemTags: ['LLMWrite'] });
+      cache.set_value('locked', 'locked_value', { systemTags: ['SystemPrompt'] });
 
       const tools = cache.get_aisdk_tools();
 
@@ -265,28 +132,42 @@ describe('MindCache Key Properties', () => {
 
   });
 
-  describe('Visible Property', () => {
+  describe('SystemPrompt and LLMRead Properties (Visible Keys)', () => {
     beforeEach(() => {
-      cache.set_value('visible_key', 'visible_value', { visible: true });
-      cache.set_value('invisible_key', 'invisible_value', { visible: false });
+      cache.set_value('visible_key', 'visible_value', { systemTags: ['SystemPrompt'] });
+      cache.set_value('llm_read_key', 'llm_read_value', { systemTags: ['LLMRead'] });
+      cache.set_value('invisible_key', 'invisible_value', { systemTags: [] });
     });
 
     test('invisible keys should not appear in injectSTM', () => {
-      const template = 'Visible: {{visible_key}}, Invisible: {{invisible_key}}';
+      const template = 'Visible: {{visible_key}}, LLMRead: {{llm_read_key}}, Invisible: {{invisible_key}}';
       const result = cache.injectSTM(template);
 
-      expect(result).toBe('Visible: visible_value, Invisible: ');
+      expect(result).toBe('Visible: visible_value, LLMRead: llm_read_value, Invisible: ');
     });
 
     test('invisible keys should not appear in getSTM', () => {
       const stmString = cache.getSTM();
 
       expect(stmString).toContain('visible_key: visible_value');
+      expect(stmString).toContain('llm_read_key: llm_read_value');
       expect(stmString).not.toContain('invisible_key');
       expect(stmString).not.toContain('invisible_value');
     });
 
-    test('hardcoded system keys should always be visible in injectSTM', () => {
+    test('LLMRead keys should appear in system prompt like SystemPrompt keys', () => {
+      cache.set_value('system_prompt_key', 'value1', { systemTags: ['SystemPrompt'] });
+      cache.set_value('llm_read_only_key', 'value2', { systemTags: ['LLMRead'] });
+      cache.set_value('both_tags_key', 'value3', { systemTags: ['SystemPrompt', 'LLMRead'] });
+
+      const stmString = cache.getSTM();
+
+      expect(stmString).toContain('system_prompt_key: value1');
+      expect(stmString).toContain('llm_read_only_key: value2');
+      expect(stmString).toContain('both_tags_key: value3');
+    });
+
+    test('protected system keys should always be visible in injectSTM', () => {
       const template = 'Date: {{$date}}, Time: {{$time}}';
       const result = cache.injectSTM(template);
 
@@ -295,7 +176,7 @@ describe('MindCache Key Properties', () => {
       expect(result).not.toBe('Date: , Time: ');
     });
 
-    test('hardcoded system keys should always appear in getSTM', () => {
+    test('protected system keys should always appear in getSTM', () => {
       const stmString = cache.getSTM();
 
       expect(stmString).toContain('$date:');
@@ -326,11 +207,11 @@ describe('MindCache Key Properties', () => {
     });
   });
 
-  describe('Template Property', () => {
+  describe('ApplyTemplate Property (Template Keys)', () => {
     beforeEach(() => {
       cache.set_value('username', 'john_doe');
-      cache.set_value('greeting_template', 'Hello {{username}}! Today is {{$date}}', { template: true });
-      cache.set_value('plain_text', 'Just plain text', { template: false });
+      cache.set_value('greeting_template', 'Hello {{username}}! Today is {{$date}}', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
+      cache.set_value('plain_text', 'Just plain text', { systemTags: ['SystemPrompt'] });
     });
 
     test('template keys should process injectSTM when retrieved', () => {
@@ -348,8 +229,8 @@ describe('MindCache Key Properties', () => {
     });
 
     test('template processing should work with invisible keys in template', () => {
-      cache.set_value('secret', 'hidden_value', { visible: false });
-      cache.set_value('template_with_secret', 'Secret: {{secret}}', { template: true });
+      cache.set_value('secret', 'hidden_value', { systemTags: [] });
+      cache.set_value('template_with_secret', 'Secret: {{secret}}', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
 
       const result = cache.get_value('template_with_secret');
       // Template processing (internal) can access invisible keys
@@ -364,7 +245,7 @@ describe('MindCache Key Properties', () => {
     });
 
     test('template with missing keys should leave placeholders empty', () => {
-      cache.set_value('incomplete_template', 'Hello {{missing_key}}!', { template: true });
+      cache.set_value('incomplete_template', 'Hello {{missing_key}}!', { systemTags: ['ApplyTemplate'] });
 
       const result = cache.get_value('incomplete_template');
       expect(result).toBe('Hello !');
@@ -372,8 +253,8 @@ describe('MindCache Key Properties', () => {
 
     test('nested template processing should work', () => {
       cache.set_value('name', 'Alice');
-      cache.set_value('title', 'Dr. {{name}}', { template: true });
-      cache.set_value('full_greeting', 'Welcome, {{title}}!', { template: true });
+      cache.set_value('title', 'Dr. {{name}}', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
+      cache.set_value('full_greeting', 'Welcome, {{title}}!', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
 
       const result = cache.get_value('full_greeting');
       expect(result).toBe('Welcome, Dr. Alice!');
@@ -413,27 +294,29 @@ describe('MindCache Key Properties', () => {
     });
   });
 
-  describe('Hardcoded Property', () => {
-    test('hardcoded system keys should have hardcoded property set to true', () => {
+  describe('Protected Property', () => {
+    test('protected system keys should have protected tag', () => {
       const dateAttrs = cache.get_attributes('$date');
       const timeAttrs = cache.get_attributes('$time');
 
-      expect(dateAttrs?.hardcoded).toBe(true);
-      expect(timeAttrs?.hardcoded).toBe(true);
+      expect(dateAttrs?.systemTags).toContain('protected');
+      expect(timeAttrs?.systemTags).toContain('protected');
     });
 
-    test('regular keys should have hardcoded property set to false by default', () => {
+    test('regular keys should not have protected tag by default', () => {
       cache.set_value('regular_key', 'value');
       const attributes = cache.get_attributes('regular_key');
 
-      expect(attributes?.hardcoded).toBe(false);
+      expect(attributes?.systemTags).not.toContain('protected');
     });
 
-    test('can create custom hardcoded keys', () => {
-      cache.set_value('custom_hardcoded', 'hardcoded_value', { hardcoded: true });
-      const attributes = cache.get_attributes('custom_hardcoded');
+    test('can create custom protected keys with system access', () => {
+      const systemCache = new MindCache({ accessLevel: 'system' });
+      systemCache.set_value('custom_protected', 'protected_value');
+      systemCache.systemAddTag('custom_protected', 'protected');
+      const attributes = systemCache.get_attributes('custom_protected');
 
-      expect(attributes?.hardcoded).toBe(true);
+      expect(attributes?.systemTags).toContain('protected');
     });
   });
 
@@ -441,24 +324,15 @@ describe('MindCache Key Properties', () => {
     test('complex scenario with all properties', () => {
       // Set up a complex scenario
       cache.set_value('user_name', 'Alice', {
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: false
+        systemTags: ['SystemPrompt', 'LLMWrite']
       });
 
       cache.set_value('api_secret', 'secret123', {
-        readonly: true,
-        visible: false,
-        hardcoded: false,
-        template: false
+        systemTags: []
       });
 
       cache.set_value('welcome_msg', 'Welcome {{user_name}}! Date: {{$date}}', {
-        readonly: false,
-        visible: true,
-        hardcoded: false,
-        template: true
+        systemTags: ['SystemPrompt', 'LLMWrite', 'ApplyTemplate']
       });
 
       // Test injectSTM (should not include invisible api_secret)
@@ -474,7 +348,7 @@ describe('MindCache Key Properties', () => {
       expect(stmString).toContain('welcome_msg: Welcome Alice!');
       expect(stmString).not.toContain('api_secret');
 
-      // Test AI tools (should exclude readonly keys)
+      // Test AI tools (should exclude non-writable keys)
       const tools = cache.get_aisdk_tools();
       expect(Object.keys(tools)).toContain('write_user_name');
       expect(Object.keys(tools)).toContain('write_welcome_msg');
@@ -491,15 +365,12 @@ describe('MindCache Key Properties', () => {
       // Set using old method
       cache.set('old_key', 'old_value');
 
-      // Should have default attributes (new format includes contentTags, systemTags)
+      // Should have default attributes
       const attributes = cache.get_attributes('old_key');
-      expect(attributes?.readonly).toBe(false);
-      expect(attributes?.visible).toBe(true);
-      expect(attributes?.hardcoded).toBe(false);
-      expect(attributes?.template).toBe(false);
       expect(attributes?.type).toBe('text');
       expect(attributes?.contentTags).toEqual([]);
-      expect(attributes?.tags).toEqual([]); // Legacy tags synced from contentTags
+      expect(attributes?.systemTags).toContain('SystemPrompt');
+      expect(attributes?.systemTags).toContain('LLMWrite');
 
       // Old get should work
       expect(cache.get('old_key')).toBe('old_value');
@@ -512,36 +383,34 @@ describe('MindCache Key Properties', () => {
       expect(stmString).toContain('old_key: old_value');
     });
 
-    test('hardcoded keys are always readonly and never templates', () => {
-      // Create a hardcoded key that tries to be non-readonly and template
-      cache.set_value('hardcoded_tracker', 'tracking_value', {
-        hardcoded: true,
-        readonly: false, // This should be ignored
-        template: true, // This should be ignored
-        visible: true
+    test('protected keys are not included in tools', () => {
+      // Create a protected key that tries to be writable
+      const systemCache = new MindCache({ accessLevel: 'system' });
+      systemCache.set_value('protected_tracker', 'tracking_value', {
+        systemTags: ['SystemPrompt', 'LLMWrite']
       });
+      systemCache.systemAddTag('protected_tracker', 'protected');
 
-      const attributes = cache.get_attributes('hardcoded_tracker');
-      expect(attributes?.hardcoded).toBe(true);
-      expect(attributes?.readonly).toBe(true); // Should be forced to true
-      expect(attributes?.template).toBe(false); // Should be forced to false
+      const attributes = systemCache.get_attributes('protected_tracker');
+      expect(attributes?.systemTags).toContain('protected');
 
-      // Hardcoded keys should not appear in AI tools
-      const tools = cache.get_aisdk_tools();
-      expect(Object.keys(tools)).not.toContain('write_hardcoded_tracker');
+      // Protected keys should still appear in AI tools if they have LLMWrite
+      // (protection is about deletion, not writing)
+      const tools = systemCache.get_aisdk_tools();
+      expect(Object.keys(tools)).toContain('write_protected_tracker');
     });
   });
 
   describe('Edge Cases', () => {
     test('should handle empty string values with templates', () => {
-      cache.set_value('empty_template', '', { template: true });
+      cache.set_value('empty_template', '', { systemTags: ['ApplyTemplate'] });
       const result = cache.get_value('empty_template');
       expect(result).toBe('');
     });
 
     test('should handle null/undefined values with templates', () => {
-      cache.set_value('null_template', null, { template: true });
-      cache.set_value('undefined_template', undefined, { template: true });
+      cache.set_value('null_template', null, { systemTags: ['ApplyTemplate'] });
+      cache.set_value('undefined_template', undefined, { systemTags: ['ApplyTemplate'] });
 
       // Should not throw errors
       expect(() => cache.get_value('null_template')).not.toThrow();
@@ -549,8 +418,8 @@ describe('MindCache Key Properties', () => {
     });
 
     test('should handle circular template references gracefully', () => {
-      cache.set_value('template_a', 'A: {{template_b}}', { template: true });
-      cache.set_value('template_b', 'B: {{template_a}}', { template: true });
+      cache.set_value('template_a', 'A: {{template_b}}', { systemTags: ['ApplyTemplate'] });
+      cache.set_value('template_b', 'B: {{template_a}}', { systemTags: ['ApplyTemplate'] });
 
       // Should not cause infinite recursion
       expect(() => cache.get_value('template_a')).not.toThrow();
@@ -558,7 +427,7 @@ describe('MindCache Key Properties', () => {
 
     test('should handle special characters in template values', () => {
       cache.set_value('special_chars', 'Special: $@#%^&*()');
-      cache.set_value('template_special', 'Value: {{special_chars}}', { template: true });
+      cache.set_value('template_special', 'Value: {{special_chars}}', { systemTags: ['ApplyTemplate'] });
 
       const result = cache.get_value('template_special');
       expect(result).toBe('Value: Special: $@#%^&*()');
