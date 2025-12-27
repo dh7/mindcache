@@ -59,6 +59,8 @@ export interface MindCacheOptions {
   history?: HistoryOptions;
   /** Access level for tag operations. 'system' allows managing system tags. */
   accessLevel?: AccessLevel;
+  /** Optional existing Y.Doc instance (for server-side hydration) */
+  doc?: Y.Doc;
 }
 
 // Connection state type
@@ -136,8 +138,8 @@ export class MindCache {
   private _historyEnabled = false;
 
   constructor(options?: MindCacheOptions) {
-    // Initialize Yjs
-    this.doc = new Y.Doc();
+    // Initialize Yjs (use provided doc or create new)
+    this.doc = options?.doc || new Y.Doc();
     this.rootMap = this.doc.getMap('mindcache');
 
     // Deep observer for both key-specific and global listeners

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.30",
+    "@mindcache/mindcache": "workspace:*",
     "@mindcache/shared": "workspace:*",
     "ai": "^5.0.45",
     "lib0": "^0.2.115",
