@@ -2,7 +2,7 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import diff from 'fast-diff';
-import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions } from './types';
+import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions, ContextRules } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
 
 // Browser environment type declarations
@@ -57,10 +57,12 @@ export interface MindCacheOptions {
   indexedDB?: MindCacheIndexedDBOptions;
   /** History tracking options (enabled in IndexedDB and Cloud modes) */
   history?: HistoryOptions;
-  /** Access level for tag operations. 'system' allows managing system tags. */
+  /** Access level for tag operations. 'admin' allows managing system tags. */
   accessLevel?: AccessLevel;
   /** Optional existing Y.Doc instance (for server-side hydration) */
   doc?: Y.Doc;
+  /** Context filtering rules. When set, only keys matching the rules are visible. */
+  context?: ContextRules;
 }
 
 // Connection state type
@@ -118,8 +120,11 @@ export class MindCache {
   private _isLoaded = true; // Default true for local mode
   private _cloudConfig: MindCacheCloudOptions | null = null;
 
-  // Access level for system operations
+  // Access level for admin operations
   private _accessLevel: AccessLevel = 'user';
+
+  // Context filtering (client-local, not persisted)
+  private _contextRules: ContextRules | null = null;
 
   private _initPromise: Promise<void> | null = null;
 
@@ -210,6 +215,11 @@ export class MindCache {
 
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
+    }
+
+    // Initialize context from options
+    if (options?.context) {
+      this._contextRules = options.context;
     }
 
     const initPromises: Promise<void>[] = [];
@@ -430,7 +440,137 @@ export class MindCache {
   }
 
   get hasSystemAccess(): boolean {
-    return this._accessLevel === 'system';
+    return this._accessLevel === 'admin';
+  }
+
+  // ============================================
+  // Context Methods (client-local filtering)
+  // ============================================
+
+  /**
+   * Check if context filtering is currently active.
+   */
+  get hasContext(): boolean {
+    return this._contextRules !== null;
+  }
+
+  /**
+   * Get current context rules, or null if no context is set.
+   */
+  get_context(): ContextRules | null {
+    return this._contextRules;
+  }
+
+  /**
+   * Set context filtering rules.
+   * When context is set, only keys with ALL specified tags are visible.
+   *
+   * @param rules - Context rules, or array of tags (shorthand for { tags: [...] })
+   */
+  set_context(rules: ContextRules | string[]): void {
+    if (Array.isArray(rules)) {
+      this._contextRules = { tags: rules };
+    } else {
+      this._contextRules = rules;
+    }
+  }
+
+  /**
+   * Clear context filtering. All keys become visible again.
+   */
+  reset_context(): void {
+    this._contextRules = null;
+  }
+
+  /**
+   * Check if a key matches the current context rules.
+   * Returns true if no context is set.
+   */
+  private keyMatchesContext(key: string): boolean {
+    // System keys always match
+    if (key.startsWith('$')) {
+      return true;
+    }
+
+    // No context = all keys match
+    if (!this._contextRules) {
+      return true;
+    }
+
+    // If no tags required, all keys match
+    if (this._contextRules.tags.length === 0) {
+      return true;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attrs = entryMap.get('attributes') as KeyAttributes;
+    const contentTags = attrs?.contentTags || [];
+
+    // AND logic: key must have ALL specified tags
+    return this._contextRules.tags.every(tag => contentTags.includes(tag));
+  }
+
+  /**
+   * Create a new key with optional default tags from context.
+   *
+   * @throws Error if key already exists
+   */
+  create_key(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
+    if (key === '$date' || key === '$time' || key === '$version') {
+      throw new Error(`Cannot create reserved key: ${key}`);
+    }
+
+    if (this.rootMap.has(key)) {
+      throw new Error(`Key already exists: ${key}. Use set_value to update.`);
+    }
+
+    // Merge context defaults with provided attributes
+    let finalAttributes: Partial<KeyAttributes> = { ...attributes };
+
+    if (this._contextRules) {
+      // Add default content tags from context
+      const contextContentTags = this._contextRules.defaultContentTags || this._contextRules.tags;
+      const existingContentTags = finalAttributes.contentTags || [];
+      finalAttributes.contentTags = [...new Set([...existingContentTags, ...contextContentTags])];
+
+      // Add default system tags from context
+      if (this._contextRules.defaultSystemTags) {
+        const existingSystemTags = finalAttributes.systemTags || [];
+        finalAttributes.systemTags = [...new Set([...existingSystemTags, ...this._contextRules.defaultSystemTags])] as SystemTag[];
+      }
+    }
+
+    // Create the key
+    const entryMap = new Y.Map();
+    this.rootMap.set(key, entryMap);
+
+    // Ensure UndoManager exists
+    this.getUndoManager(key);
+
+    this.doc.transact(() => {
+      const baseAttributes = {
+        ...DEFAULT_KEY_ATTRIBUTES,
+        ...finalAttributes
+      };
+
+      // Normalize system tags
+      if (baseAttributes.systemTags) {
+        baseAttributes.systemTags = this.normalizeSystemTags(baseAttributes.systemTags);
+      }
+
+      // Handle document type
+      let valueToSet = value;
+      if (baseAttributes.type === 'document' && !(valueToSet instanceof Y.Text)) {
+        valueToSet = new Y.Text(typeof value === 'string' ? value : String(value ?? ''));
+      }
+
+      entryMap.set('value', valueToSet);
+      entryMap.set('attributes', baseAttributes);
+    });
   }
 
   private async _initCloud(): Promise<void> {
@@ -724,7 +864,9 @@ export class MindCache {
   getAll(): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [key] of this.rootMap) {
-      result[key] = this.get_value(key);
+      if (this.keyMatchesContext(key)) {
+        result[key] = this.get_value(key);
+      }
     }
     // Add temporal keys
     result['$date'] = this.get_value('$date');
@@ -740,10 +882,12 @@ export class MindCache {
   getAllEntries(): STM {
     const result: STM = {};
     for (const [key] of this.rootMap) {
-      const value = this.get_value(key);
-      const attributes = this.get_attributes(key);
-      if (attributes) {
-        result[key] = { value, attributes };
+      if (this.keyMatchesContext(key)) {
+        const value = this.get_value(key);
+        const attributes = this.get_attributes(key);
+        if (attributes) {
+          result[key] = { value, attributes };
+        }
       }
     }
     return result;
@@ -764,6 +908,11 @@ export class MindCache {
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
+      return undefined;
+    }
+
+    // Check context filtering
+    if (!this.keyMatchesContext(key)) {
       return undefined;
     }
 
@@ -818,6 +967,11 @@ export class MindCache {
       return; // Key doesn't exist
     }
 
+    // Context validation: can't modify key that doesn't match context
+    if (this._contextRules && !this.keyMatchesContext(key)) {
+      throw new Error(`Cannot modify key "${key}": does not match current context`);
+    }
+
     this.doc.transact(() => {
       const existingAttrs = entryMap.get('attributes') as KeyAttributes;
       const mergedAttrs = { ...existingAttrs, ...attributes };
@@ -853,6 +1007,11 @@ export class MindCache {
     // For existing document type keys, use diff-based replace
     const existingEntry = this.rootMap.get(key);
     if (existingEntry) {
+      // Context validation: can't modify key that doesn't match context
+      if (this._contextRules && !this.keyMatchesContext(key)) {
+        throw new Error(`Cannot modify key "${key}": does not match current context`);
+      }
+
       const existingAttrs = existingEntry.get('attributes') as KeyAttributes;
       if (existingAttrs?.type === 'document') {
         // Route to _replaceDocumentText for smart diff handling
@@ -868,6 +1027,12 @@ export class MindCache {
           return;
         }
       }
+    }
+
+    // If key doesn't exist and context is set, use create_key
+    if (!existingEntry && this._contextRules) {
+      this.create_key(key, value, attributes);
+      return;
     }
 
     // If creating a NEW document type, use set_document
@@ -985,7 +1150,10 @@ export class MindCache {
     if (key === '$date' || key === '$time' || key === '$version') {
       return true;
     }
-    return this.rootMap.has(key);
+    if (!this.rootMap.has(key)) {
+      return false;
+    }
+    return this.keyMatchesContext(key);
   }
 
   /**
@@ -1036,15 +1204,26 @@ export class MindCache {
    * Get the number of keys in MindCache.
    */
   size(): number {
-    // Include temporal keys in count
-    return this.rootMap.size + 2; // +2 for $date and $time
+    // Count keys that match context + 2 temporal keys
+    let count = 0;
+    for (const [key] of this.rootMap) {
+      if (this.keyMatchesContext(key)) {
+        count++;
+      }
+    }
+    return count + 2; // +2 for $date and $time
   }
 
   /**
    * Get all keys in MindCache (including temporal keys).
    */
   keys(): string[] {
-    const keys = Array.from(this.rootMap.keys());
+    const keys: string[] = [];
+    for (const [key] of this.rootMap) {
+      if (this.keyMatchesContext(key)) {
+        keys.push(key);
+      }
+    }
     keys.push('$date', '$time');
     return keys;
   }
@@ -1055,7 +1234,9 @@ export class MindCache {
   values(): any[] {
     const result: any[] = [];
     for (const [key] of this.rootMap) {
-      result.push(this.get_value(key));
+      if (this.keyMatchesContext(key)) {
+        result.push(this.get_value(key));
+      }
     }
     // Add temporal values
     result.push(this.get_value('$date'));
@@ -1069,7 +1250,9 @@ export class MindCache {
   entries(): Array<[string, any]> {
     const result: Array<[string, any]> = [];
     for (const [key] of this.rootMap) {
-      result.push([key, this.get_value(key)]);
+      if (this.keyMatchesContext(key)) {
+        result.push([key, this.get_value(key)]);
+      }
     }
     // Add temporal entries
     result.push(['$date', this.get_value('$date')]);
@@ -1427,11 +1610,15 @@ export class MindCache {
 
   /**
    * Helper to get sorted keys (by zIndex).
+   * Respects context filtering when set.
    */
   private getSortedKeys(): string[] {
     const entries: Array<{ key: string; zIndex: number }> = [];
 
     for (const [key, val] of this.rootMap) {
+      if (!this.keyMatchesContext(key)) {
+        continue;
+      }
       const entryMap = val as Y.Map<any>;
       const attributes = entryMap.get('attributes') as KeyAttributes;
       entries.push({ key, zIndex: attributes?.zIndex ?? 0 });
@@ -1994,6 +2181,11 @@ export class MindCache {
         continue;
       }
 
+      // Skip keys that don't match context
+      if (!this.keyMatchesContext(key)) {
+        continue;
+      }
+
       const entryMap = val as Y.Map<any>;
       const attributes = entryMap.get('attributes') as KeyAttributes;
 
@@ -2152,6 +2344,11 @@ export class MindCache {
     for (const [key, val] of this.rootMap) {
       // Skip system keys for now, add them at the end
       if (key.startsWith('$')) {
+        continue;
+      }
+
+      // Skip keys that don't match context
+      if (!this.keyMatchesContext(key)) {
         continue;
       }
 

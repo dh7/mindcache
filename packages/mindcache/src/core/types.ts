@@ -1,9 +1,23 @@
 /**
  * Access level for MindCache operations
  * - 'user': Can only manage content tags (default)
- * - 'system': Can manage both content tags and system tags
+ * - 'admin': Can manage both content tags and system tags
  */
-export type AccessLevel = 'user' | 'system';
+export type AccessLevel = 'user' | 'admin';
+
+/**
+ * Context rules for filtering keys by contentTags.
+ * When context is set, only keys matching ALL specified tags are visible.
+ * Context is client-local and not persisted.
+ */
+export interface ContextRules {
+  /** Tags that a key must have (AND logic - all tags must match) */
+  tags: string[];
+  /** Default contentTags added to keys created via create_key() in this context */
+  defaultContentTags?: string[];
+  /** Default systemTags added to keys created via create_key() in this context */
+  defaultSystemTags?: SystemTag[];
+}
 
 /**
  * Known system tags that control key behavior

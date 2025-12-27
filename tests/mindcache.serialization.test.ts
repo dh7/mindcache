@@ -37,7 +37,7 @@ describe('MindCache Complete Serialization', () => {
     test('should exclude protected keys from serialization', () => {
       cache.set_value('normal_key', 'value');
 
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set_value('protected_key', 'protected_value');
       systemCache.systemAddTag('protected_key', 'protected');
 

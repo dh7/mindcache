@@ -233,9 +233,9 @@ describe('MindCache Tag System', () => {
       expect(cache.hasSystemAccess).toBe(false);
     });
 
-    test('should have system access when configured', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      expect(systemCache.accessLevel).toBe('system');
+    test('should have admin access when configured', () => {
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      expect(systemCache.accessLevel).toBe('admin');
       expect(systemCache.hasSystemAccess).toBe(true);
     });
   });
@@ -253,7 +253,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should add system tag with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
       const result = systemCache.systemAddTag('key', 'protected');
@@ -262,7 +262,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should not add duplicate system tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
       systemCache.systemAddTag('key', 'protected');
@@ -284,7 +284,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should remove system tag with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
       // Key has 'SystemPrompt' and 'LLMWrite' by default
 
@@ -307,7 +307,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should return system tags with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
       const tags = systemCache.systemGetTags('key');
@@ -327,7 +327,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should check system tag with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
       expect(systemCache.systemHasTag('key', 'SystemPrompt')).toBe(true);
@@ -347,7 +347,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should set all system tags at once with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
       const result = systemCache.systemSetTags('key', ['LLMRead', 'protected']);
@@ -368,7 +368,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should return keys with system tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key1', 'value1');
       systemCache.set('key2', 'value2');
       systemCache.systemAddTag('key1', 'protected');
@@ -415,7 +415,7 @@ describe('MindCache Tag System', () => {
     });
 
     test('should include systemTags in serialization', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
       systemCache.systemAddTag('key', 'protected');
 
@@ -458,7 +458,7 @@ describe('MindCache Tag System', () => {
         }
       };
 
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.deserialize(data);
 
       expect(systemCache.getTags('user')).toEqual(['person', 'admin']);

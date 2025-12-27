@@ -311,7 +311,7 @@ describe('MindCache Key Properties', () => {
     });
 
     test('can create custom protected keys with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set_value('custom_protected', 'protected_value');
       systemCache.systemAddTag('custom_protected', 'protected');
       const attributes = systemCache.get_attributes('custom_protected');
@@ -385,7 +385,7 @@ describe('MindCache Key Properties', () => {
 
     test('protected keys are not included in tools', () => {
       // Create a protected key that tries to be writable
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set_value('protected_tracker', 'tracking_value', {
         systemTags: ['SystemPrompt', 'LLMWrite']
       });
