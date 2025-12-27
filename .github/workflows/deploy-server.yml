@@ -6,6 +6,7 @@ on:
     paths:
       - 'packages/server/**'
       - 'packages/shared/**'
+      - 'packages/mindcache/**'
       - '.github/workflows/deploy-server.yml'
   workflow_dispatch:
     inputs:
@@ -88,6 +89,9 @@ jobs:
 
       - name: Build shared package
         run: pnpm --filter @mindcache/shared build
+
+      - name: Build mindcache SDK
+        run: pnpm --filter mindcache build
 
       - name: Check for pending migrations
         id: check_migrations
