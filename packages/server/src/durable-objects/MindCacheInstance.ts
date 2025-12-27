@@ -3,7 +3,8 @@ import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
-
+// @ts-ignore - workspace dependency
+import { MindCache } from 'mindcache/server';
 
 import type {
   ClientMessage,
@@ -350,7 +351,33 @@ export class MindCacheInstanceDO extends DurableObject {
       return Response.json({ success: true });
     }
 
+    // POST /import - Import Markdown content directly (Server-Side Hydration)
+    if (url.pathname === '/import' && request.method === 'POST') {
+      const body = await request.json() as { markdown: string };
+
+      if (typeof body.markdown !== 'string') {
+        return Response.json({ error: 'Markdown content required' }, { status: 400 });
+      }
+
+      // Use SDK with local doc for direct manipulation
+      const sdk = this.getSDK();
+      sdk.fromMarkdown(body.markdown);
+
+      // Persist state
+      await this.saveState();
+
+      return Response.json({ success: true, message: 'Imported successfully' });
+    }
+
     return Response.json({ error: 'Endpoint not found or method not allowed' }, { status: 404 });
+  }
+
+  // Helper to get SDK instance wrapping local doc
+  private getSDK(): MindCache {
+    return new MindCache({
+      doc: this.doc,
+      accessLevel: 'system'
+    });
   }
 
   private handleWebSocket(request: Request): Response {

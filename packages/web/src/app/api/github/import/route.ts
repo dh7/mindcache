@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getRepoTree, getFileContent } from '@/lib/github-api';
-import { MindCache } from 'mindcache/server';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL ||
-    API_URL.replace('http://', 'ws://').replace('https://', 'wss://');
 
 export async function POST(request: NextRequest) {
   try {
@@ -131,59 +128,26 @@ export async function POST(request: NextRequest) {
           instance.path
         );
 
-        // Connect to MindCache instance and import markdown
+        // Import via Server-Side Hydration API
         // eslint-disable-next-line no-console
-        console.log(`[GitHub Import] Connecting to instance ${newInstance.id}...`);
+        console.log(`[GitHub Import] Importing markdown for ${instance.name} via server...`);
 
-        const mc = new MindCache({
-          cloud: {
-            instanceId: newInstance.id,
-            projectId: project.id,
-            baseUrl: WS_BASE_URL,
-            tokenProvider: async () => {
-              // Fetch WS token from server
-              const res = await fetch(`${API_URL}/api/ws-token`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({ instanceId: newInstance.id })
-              });
-              if (!res.ok) {
-                throw new Error('Failed to get WS token');
-              }
-              const data = await res.json();
-              return data.token;
-            }
-          },
-          accessLevel: 'system'
-        });
-
-        // Wait for sync with timeout
-        // eslint-disable-next-line no-console
-        console.log('[GitHub Import] Waiting for sync...');
-
-        const syncTimeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Sync timeout after 10s')), 10000)
+        const importRes = await fetch(
+          `${API_URL}/api/instances/${newInstance.id}/import`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ markdown })
+          }
         );
 
-        try {
-          await Promise.race([mc.waitForSync(), syncTimeout]);
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.error('[GitHub Import] Sync failed:', e);
-          mc.disconnect();
-          throw e;
+        if (!importRes.ok) {
+          const err = await importRes.json().catch(() => ({}));
+          throw new Error(err.error || 'Import failed on server');
         }
-
-        // eslint-disable-next-line no-console
-        console.log(`[GitHub Import] Importing markdown for ${instance.name}...`);
-        mc.fromMarkdown(markdown);
-
-        // Give time for data to sync to DO
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        mc.disconnect();
 
         // eslint-disable-next-line no-console
         console.log(`[GitHub Import] Successfully imported ${instance.name}`);

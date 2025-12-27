@@ -743,6 +743,55 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       return Response.json(updated, { headers: corsHeaders });
     }
 
+    // Import Markdown (Server-Side Hydration)
+    const importMatch = path.match(/^\/api\/instances\/([\w-]+)\/import$/);
+    if (importMatch && request.method === 'POST') {
+      const instanceId = importMatch[1];
+      const body = await request.json() as { markdown: string };
+
+      if (!body.markdown) {
+        return Response.json({ error: 'Markdown content required' }, { status: 400, headers: corsHeaders });
+      }
+
+      // Check permissions (write access required)
+      const doId = env.MINDCACHE_INSTANCE.idFromName(instanceId).toString();
+
+      let hasAccess = false;
+      // Admin or Write permission required
+      if (await checkUserPermission(userId, doId, 'write', env.DB) ||
+        await checkUserPermission(userId, doId, 'admin', env.DB)) {
+        hasAccess = true;
+      } else {
+        // Fallback: Check ownership
+        const instance = await env.DB.prepare('SELECT owner_id FROM instances WHERE id = ?')
+          .bind(instanceId).first<{ owner_id: string }>();
+        if (instance && instance.owner_id === userId) {
+          hasAccess = true;
+        }
+      }
+
+      if (!hasAccess) {
+        return Response.json({ error: 'Access denied' }, { status: 403, headers: corsHeaders });
+      }
+
+      // Forward to Durable Object
+      const id = env.MINDCACHE_INSTANCE.idFromName(instanceId);
+      const stub = env.MINDCACHE_INSTANCE.get(id);
+
+      const response = await stub.fetch(new Request('http://do/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown: body.markdown })
+      }));
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Import failed' }));
+        return Response.json(err, { status: response.status, headers: corsHeaders });
+      }
+
+      return Response.json(await response.json(), { headers: corsHeaders });
+    }
+
     // ============= SHARES =============
 
     // List shares for a resource

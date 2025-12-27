@@ -3,27 +3,27 @@
 import { useState, useEffect } from 'react';
 
 interface Repo {
-    id: number;
-    name: string;
-    full_name: string;
-    private: boolean;
-    default_branch: string;
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
 }
 
 interface Branch {
-    name: string;
+  name: string;
 }
 
 interface TreeItem {
-    name: string;
-    path: string;
-    type: 'file' | 'dir';
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
 }
 
 interface GitHubImportModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onImportComplete: (projectId: string) => void;
+  isOpen: boolean;
+  onClose: () => void;
+  onImportComplete: (projectId: string) => void;
 }
 
 export function GitHubImportModal({
@@ -113,7 +113,7 @@ export function GitHubImportModal({
       const [owner, repoName] = selectedRepo.full_name.split('/');
       const res = await fetch(
         `/api/github/browse?action=tree&owner=${owner}&repo=${repoName}` +
-                `&branch=${selectedBranch}&path=${encodeURIComponent(path)}`
+        `&branch=${selectedBranch}&path=${encodeURIComponent(path)}`
       );
       if (!res.ok) {
         const data = await res.json();
@@ -139,7 +139,7 @@ export function GitHubImportModal({
       const [owner, repoName] = selectedRepo.full_name.split('/');
       const res = await fetch(
         `/api/github/browse?action=tree&owner=${owner}&repo=${repoName}` +
-                `&branch=${selectedBranch}&path=${encodeURIComponent(currentPath)}`
+        `&branch=${selectedBranch}&path=${encodeURIComponent(currentPath)}`
       );
       if (!res.ok) {
         const data = await res.json();
@@ -229,7 +229,7 @@ export function GitHubImportModal({
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Import from GitHub</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-white">
-                        ✕
+            ✕
           </button>
         </div>
 
@@ -269,7 +269,7 @@ export function GitHubImportModal({
           {step === 'branch' && (
             <div>
               <p className="text-zinc-400 text-sm mb-3">
-                                Select branch for <strong>{selectedRepo?.full_name}</strong>:
+                Select branch for <strong>{selectedRepo?.full_name}</strong>:
               </p>
               {loading ? (
                 <div className="text-zinc-500 text-center py-8">Loading...</div>
@@ -291,13 +291,13 @@ export function GitHubImportModal({
                       onClick={() => setStep('repo')}
                       className="px-4 py-2 bg-zinc-700 rounded hover:bg-zinc-600"
                     >
-                                            Back
+                      Back
                     </button>
                     <button
                       onClick={handleSelectBranch}
                       className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200"
                     >
-                                            Continue
+                      Continue
                     </button>
                   </div>
                 </>
@@ -309,11 +309,19 @@ export function GitHubImportModal({
           {step === 'folder' && (
             <div>
               <p className="text-zinc-400 text-sm mb-2">
-                                Navigate to the folder containing your instances:
+                Navigate to the folder containing your instances:
               </p>
-              <p className="text-xs text-zinc-500 mb-3">
-                                /{currentPath || '(root)'}
-              </p>
+
+              {/* Prominent Path Display */}
+              <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-3 mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <span className="text-zinc-500 flex-shrink-0">Current Path:</span>
+                  <span className="font-mono text-white font-medium truncate">
+                    /{currentPath}
+                  </span>
+                </div>
+              </div>
+
               {loading ? (
                 <div className="text-zinc-500 text-center py-8">Loading...</div>
               ) : (
@@ -322,11 +330,12 @@ export function GitHubImportModal({
                     {currentPath && (
                       <button
                         onClick={handleNavigateUp}
-                        className="w-full text-left px-3 py-1.5 rounded hover:bg-zinc-800 text-zinc-400"
+                        className="w-full text-left px-3 py-1.5 rounded hover:bg-zinc-800 text-zinc-400 font-mono text-sm"
                       >
-                                                ← ..
+                        ../
                       </button>
                     )}
+
                     {treeItems
                       .filter(item => item.type === 'dir')
                       .map(item => (
@@ -335,25 +344,28 @@ export function GitHubImportModal({
                           onClick={() => handleNavigateToFolder(item)}
                           className="w-full text-left px-3 py-1.5 rounded hover:bg-zinc-800 flex items-center gap-2"
                         >
-                                                    📁 {item.name}
+                          <span className="text-zinc-500">📁</span>
+                          <span>{item.name}</span>
                         </button>
                       ))}
                     {treeItems.filter(item => item.type === 'dir').length === 0 && (
-                      <p className="text-zinc-500 text-sm px-3 py-2">No folders</p>
+                      <p className="text-zinc-500 text-sm px-3 py-2 border-t border-zinc-800/50 mt-1 pt-2">
+                        No subfolders found
+                      </p>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 justify-between">
                     <button
                       onClick={() => setStep('branch')}
-                      className="px-4 py-2 bg-zinc-700 rounded hover:bg-zinc-600"
+                      className="px-4 py-2 bg-zinc-700 rounded hover:bg-zinc-600 transition"
                     >
-                                            Back
+                      Back
                     </button>
                     <button
                       onClick={handleConfirmFolder}
-                      className="px-4 py-2 bg-white text-black rounded hover:bg-gray-200"
+                      className="flex-1 px-4 py-2 bg-white text-black rounded hover:bg-gray-200 font-medium transition"
                     >
-                                            Use This Folder
+                      {currentPath ? `Use "/${currentPath}"` : 'Use Root Folder'}
                     </button>
                   </div>
                 </>
@@ -365,18 +377,18 @@ export function GitHubImportModal({
           {step === 'confirm' && (
             <div>
               <p className="text-zinc-400 text-sm mb-4">
-                                Found {instanceFolders.length} potential instance(s):
+                Found {instanceFolders.length} potential instance(s):
               </p>
               <div className="space-y-1 max-h-32 overflow-auto mb-4 border border-zinc-700 rounded p-2">
                 {instanceFolders.map(name => (
                   <div key={name} className="px-3 py-1 text-sm">
-                                        📦 {name}
+                    📦 {name}
                   </div>
                 ))}
               </div>
               <div className="mb-4">
                 <label className="block text-sm text-zinc-400 mb-1">
-                                    Project Name
+                  Project Name
                 </label>
                 <input
                   type="text"
@@ -390,7 +402,7 @@ export function GitHubImportModal({
                   onClick={() => setStep('folder')}
                   className="px-4 py-2 bg-zinc-700 rounded hover:bg-zinc-600"
                 >
-                                    Back
+                  Back
                 </button>
                 <button
                   onClick={handleImport}
