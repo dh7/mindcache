@@ -554,15 +554,12 @@ export default function InstanceEditorPage() {
   };
 
   const handleExportJSON = () => {
-    const exportData: Record<string, { value: unknown; attributes: KeyEntry['attributes'] }> = {};
-    Object.entries(keys).forEach(([key, entry]) => {
-      exportData[key] = {
-        value: entry.value,
-        attributes: entry.attributes
-      };
-    });
+    if (!mcRef.current) {
+      return;
+    }
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const json = mcRef.current.toJSON();
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -572,100 +569,11 @@ export default function InstanceEditorPage() {
   };
 
   const handleExportMarkdown = () => {
-    const now = new Date();
-    const lines: string[] = [];
-    const appendixEntries: Array<{
-      key: string;
-      type: string;
-      contentType: string;
-      base64: string;
-      label: string;
-    }> = [];
-    let appendixCounter = 0;
-
-    lines.push('# MindCache STM Export');
-    lines.push('');
-    lines.push(`Export Date: ${now.toISOString().split('T')[0]}`);
-    lines.push('');
-    lines.push('---');
-    lines.push('');
-    lines.push('## STM Entries');
-    lines.push('');
-
-    sortedKeys.forEach(([key, entry]) => {
-      if (entry.attributes.systemTags?.includes('protected')) {
-        return;
-      }
-
-      lines.push(`### ${key}`);
-      const entryType = entry.attributes.type || 'text';
-      lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **System Tags**: \`${entry.attributes.systemTags?.join(', ') || 'none'}\``);
-      lines.push(`- **Z-Index**: \`${entry.attributes.zIndex ?? 0}\``);
-
-      if (entry.attributes.contentTags && entry.attributes.contentTags.length > 0) {
-        lines.push(`- **Tags**: \`${entry.attributes.contentTags.join('`, `')}\``);
-      }
-
-      if (entry.attributes.contentType) {
-        lines.push(`- **Content Type**: \`${entry.attributes.contentType}\``);
-      }
-
-      if (entryType === 'image' || entryType === 'file') {
-        const label = String.fromCharCode(65 + appendixCounter);
-        appendixCounter++;
-        lines.push(`- **Value**: [See Appendix ${label}]`);
-
-        appendixEntries.push({
-          key,
-          type: entryType,
-          contentType: entry.attributes.contentType || 'application/octet-stream',
-          base64: typeof entry.value === 'string' ? entry.value : '',
-          label
-        });
-      } else if (entryType === 'json') {
-        lines.push('- **Value**:');
-        lines.push('```json');
-        try {
-          const jsonValue = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value, null, 2);
-          lines.push(jsonValue);
-        } catch {
-          lines.push(String(entry.value));
-        }
-        lines.push('```');
-      } else {
-        const valueStr = String(entry.value);
-        lines.push('- **Value**:');
-        lines.push('```');
-        lines.push(valueStr);
-        lines.push('```');
-      }
-
-      lines.push('');
-      lines.push('---');
-      lines.push('');
-    });
-
-    if (appendixEntries.length > 0) {
-      lines.push('## Appendix: Binary Data');
-      lines.push('');
-
-      appendixEntries.forEach(({ key, contentType, base64, label }) => {
-        lines.push(`### Appendix ${label}: ${key}`);
-        lines.push(`**Type**: ${contentType}`);
-        lines.push('');
-        lines.push('```');
-        lines.push(base64);
-        lines.push('```');
-        lines.push('');
-        lines.push('---');
-        lines.push('');
-      });
+    if (!mcRef.current) {
+      return;
     }
 
-    lines.push('*End of MindCache Export*');
-
-    const markdown = lines.join('\n');
+    const markdown = mcRef.current.toMarkdown();
     const blob = new Blob([markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -724,32 +632,16 @@ export default function InstanceEditorPage() {
     input.accept = 'application/json';
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) {
+      if (!file || !mcRef.current) {
         return;
       }
 
       try {
         const text = await file.text();
-        const importData = JSON.parse(text);
+        mcRef.current.fromJSON(text);
 
-        for (const [key, data] of Object.entries(importData)) {
-          const entry = data as { value: unknown; attributes: KeyEntry['attributes'] };
-          sendMessage({
-            type: 'set',
-            key,
-            value: entry.value,
-            attributes: {
-              type: entry.attributes.type || 'text',
-              contentType: entry.attributes.contentType,
-              contentTags: entry.attributes.contentTags || [],
-              systemTags: entry.attributes.systemTags || ['SystemPrompt', 'LLMWrite'],
-              zIndex: entry.attributes.zIndex ?? 0
-            },
-            timestamp: Date.now()
-          });
-        }
-
-        alert(`Imported ${Object.keys(importData).length} keys successfully`);
+        const keyCount = mcRef.current.keys().filter(k => !k.startsWith('$')).length;
+        alert(`Imported ${keyCount} keys successfully`);
       } catch (error) {
         console.error('Failed to import:', error);
         alert('Failed to import file. Please check the format.');
@@ -764,170 +656,17 @@ export default function InstanceEditorPage() {
     input.accept = '.md,.markdown,text/markdown';
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) {
+      if (!file || !mcRef.current) {
         return;
       }
 
       try {
         const markdown = await file.text();
-        const lines = markdown.split('\n');
-        let currentSection: 'header' | 'entries' | 'appendix' = 'header';
-        let currentKey: string | null = null;
-        let currentEntry: Partial<KeyEntry> | null = null;
-        let inCodeBlock = false;
-        let codeBlockContent: string[] = [];
-        let codeBlockType: 'value' | 'json' | 'base64' | null = null;
-        const appendixData: Record<string, { contentType: string; base64: string }> = {};
-        let currentAppendixKey: string | null = null;
-        const pendingEntries: Record<string, Partial<KeyEntry> & { appendixLabel?: string }> = {};
+        mcRef.current.fromMarkdown(markdown);
 
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          const trimmed = line.trim();
-
-          if (trimmed === '## STM Entries') {
-            currentSection = 'entries';
-            continue;
-          }
-          if (trimmed === '## Appendix: Binary Data') {
-            currentSection = 'appendix';
-            continue;
-          }
-
-          if (trimmed === '```' || trimmed === '```json') {
-            if (!inCodeBlock) {
-              inCodeBlock = true;
-              codeBlockContent = [];
-              codeBlockType = currentSection === 'appendix' ? 'base64' : (trimmed === '```json' ? 'json' : 'value');
-            } else {
-              inCodeBlock = false;
-              const content = codeBlockContent.join('\n');
-
-              if (currentSection === 'appendix' && currentAppendixKey) {
-                appendixData[currentAppendixKey].base64 = content;
-              } else if (currentEntry && codeBlockType === 'json') {
-                currentEntry.value = content;
-              } else if (currentEntry && codeBlockType === 'value') {
-                currentEntry.value = content;
-              }
-
-              codeBlockContent = [];
-              codeBlockType = null;
-            }
-            continue;
-          }
-
-          if (inCodeBlock) {
-            codeBlockContent.push(line);
-            continue;
-          }
-
-          if (currentSection === 'entries') {
-            if (trimmed.startsWith('### ')) {
-              if (currentKey && currentEntry && currentEntry.attributes) {
-                pendingEntries[currentKey] = currentEntry as KeyEntry & { appendixLabel?: string };
-              }
-
-              currentKey = trimmed.substring(4);
-              currentEntry = {
-                value: undefined,
-                attributes: {
-                  type: 'text',
-                  contentTags: [],
-                  systemTags: ['SystemPrompt', 'LLMWrite'],
-                  zIndex: 0
-                }
-              };
-            } else if (trimmed.startsWith('- **Type**: `')) {
-              const type = trimmed.match(/`([^`]+)`/)?.[1] as KeyEntry['attributes']['type'];
-              if (currentEntry && type) {
-                currentEntry.attributes!.type = type;
-              }
-            } else if (trimmed.startsWith('- **System Tags**: `')) {
-              const tagsStr = trimmed.match(/`([^`]+)`/)?.[1] || '';
-              if (currentEntry && tagsStr !== 'none') {
-                currentEntry.attributes!.systemTags = tagsStr.split(', ').filter(t => t) as any[];
-              }
-            } else if (trimmed.startsWith('- **Z-Index**: `')) {
-              const zIndexStr = trimmed.match(/`([^`]+)`/)?.[1];
-              if (currentEntry && zIndexStr) {
-                const zIndex = parseInt(zIndexStr, 10);
-                if (!isNaN(zIndex)) {
-                  currentEntry.attributes!.zIndex = zIndex;
-                }
-              }
-            } else if (trimmed.startsWith('- **Tags**: `')) {
-              const tagsStr = trimmed.substring(13, trimmed.length - 1);
-              if (currentEntry) {
-                currentEntry.attributes!.contentTags = tagsStr.split('`, `');
-              }
-            } else if (trimmed.startsWith('- **Content Type**: `')) {
-              const contentType = trimmed.match(/`([^`]+)`/)?.[1];
-              if (currentEntry && contentType) {
-                currentEntry.attributes!.contentType = contentType;
-              }
-            } else if (trimmed.startsWith('- **Value**: [See Appendix ')) {
-              const labelMatch = trimmed.match(/Appendix ([A-Z])\]/);
-              if (currentEntry && labelMatch && currentKey) {
-                (currentEntry as any).appendixLabel = labelMatch[1];
-                currentEntry.value = '';
-              }
-            }
-          }
-
-          if (currentSection === 'appendix') {
-            if (trimmed.startsWith('### Appendix ')) {
-              const match = trimmed.match(/### Appendix ([A-Z]): (.+)/);
-              if (match) {
-                const label = match[1];
-                const key = match[2];
-                currentAppendixKey = `${label}:${key}`;
-                appendixData[currentAppendixKey] = { contentType: '', base64: '' };
-              }
-            } else if (trimmed.startsWith('**Type**: ')) {
-              const contentType = trimmed.substring(10);
-              if (currentAppendixKey) {
-                appendixData[currentAppendixKey].contentType = contentType;
-              }
-            }
-          }
-        }
-
-        if (currentKey && currentEntry && currentEntry.attributes) {
-          pendingEntries[currentKey] = currentEntry as KeyEntry & { appendixLabel?: string };
-        }
-
-        Object.entries(pendingEntries).forEach(([key, entry]) => {
-          const appendixLabel = (entry as any).appendixLabel;
-          if (appendixLabel) {
-            const appendixKey = `${appendixLabel}:${key}`;
-            const appendixInfo = appendixData[appendixKey];
-            if (appendixInfo && appendixInfo.base64) {
-              entry.value = appendixInfo.base64;
-              if (!entry.attributes!.contentType && appendixInfo.contentType) {
-                entry.attributes!.contentType = appendixInfo.contentType;
-              }
-            }
-          }
-
-          if (entry.value !== undefined && entry.attributes) {
-            sendMessage({
-              type: 'set',
-              key,
-              value: entry.value,
-              attributes: {
-                type: entry.attributes.type || 'text',
-                contentType: entry.attributes.contentType,
-                contentTags: entry.attributes.contentTags || [],
-                systemTags: entry.attributes.systemTags || ['SystemPrompt', 'LLMWrite'],
-                zIndex: entry.attributes.zIndex ?? 0
-              },
-              timestamp: Date.now()
-            });
-          }
-        });
-
-        alert(`Imported ${Object.keys(pendingEntries).length} keys successfully`);
+        // Count imported keys
+        const keyCount = mcRef.current.keys().filter(k => !k.startsWith('$')).length;
+        alert(`Imported ${keyCount} keys successfully`);
       } catch (error) {
         console.error('Failed to import:', error);
         alert('Failed to import file. Please check the format.');

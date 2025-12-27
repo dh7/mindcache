@@ -1536,7 +1536,11 @@ export class MindCache {
         }
         lines.push('```');
       } else {
-        lines.push(`- **Value**: ${value}`);
+        // Use code blocks for ALL values to support multi-line content
+        lines.push('- **Value**:');
+        lines.push('```');
+        lines.push(String(value));
+        lines.push('```');
       }
 
       lines.push('');
@@ -1581,7 +1585,7 @@ export class MindCache {
       if (line.startsWith('### ') && !line.startsWith('### Appendix')) {
         // Save previous entry
         if (currentKey && currentValue !== null) {
-          this.set_value(currentKey, currentValue, currentAttributes);
+          this.set_value(currentKey, currentValue.trim(), currentAttributes);
         }
 
         currentKey = line.substring(4).trim();
@@ -1629,12 +1633,32 @@ export class MindCache {
         continue;
       }
       if (line.startsWith('- **Value**:') && !line.includes('[See Appendix')) {
-        currentValue = line.substring(12).trim();
+        // Value line - check what follows
+        const afterValue = line.substring(12).trim();
+
+        if (afterValue === '') {
+          // Empty - expect code block on next line
+          currentValue = '';
+        } else if (afterValue === '```' || afterValue === '```json') {
+          // Code block starts on this line, content on next
+          inCodeBlock = true;
+          codeBlockContent = [];
+          currentValue = '';
+        } else if (afterValue.startsWith('```')) {
+          // Code block with content on same line: ```mindmap or ```some text
+          inCodeBlock = true;
+          codeBlockContent = [afterValue.substring(3)]; // Capture content after ```
+          currentValue = '';
+        } else {
+          // Inline value (legacy format)
+          currentValue = afterValue;
+        }
         continue;
       }
 
-      // Handle code blocks
-      if (line === '```json' || line === '```') {
+      // Handle code blocks - check trimmed line for robustness
+      const trimmedLine = line.trim();
+      if (trimmedLine === '```json' || trimmedLine === '```') {
         if (inCodeBlock) {
           // End of code block
           inCodeBlock = false;
@@ -1644,18 +1668,37 @@ export class MindCache {
           codeBlockContent = [];
         } else {
           inCodeBlock = true;
+          codeBlockContent = [];
         }
         continue;
       }
 
       if (inCodeBlock) {
         codeBlockContent.push(line);
+      } else if (currentKey && currentValue !== null) {
+        currentValue += '\n' + line;
       }
     }
 
     // Save last entry
     if (currentKey && currentValue !== null) {
-      this.set_value(currentKey, currentValue, currentAttributes);
+      this.set_value(currentKey, currentValue.trim(), currentAttributes);
+    }
+
+    // If no keys were parsed but we have content, treat as unstructured text
+    // Detect if any keys were actually set during this import?
+    // We can check if rootMap was modified? Or just track if we parsed any keys.
+    // Simpler: track if we ever set currentKey.
+
+    // Check if we parsed any keys
+    const hasParsedKeys = lines.some(line => line.startsWith('### ') && !line.startsWith('### Appendix'));
+
+    if (!hasParsedKeys && markdown.trim().length > 0) {
+      this.set_value('imported_content', markdown.trim(), {
+        type: 'text',
+        systemTags: ['SystemPrompt', 'LLMWrite'], // Default assumptions
+        zIndex: 0
+      });
     }
   }
 
