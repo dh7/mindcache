@@ -36,7 +36,7 @@ export function ActionButtons({
           <button
             onClick={onExportToGitHub}
             disabled={isExportingToGitHub}
-            className="px-2 py-1.5 bg-zinc-800 text-white text-sm rounded hover:bg-zinc-700 transition flex items-center gap-1.5 disabled:opacity-50"
+            className="px-2 py-1.5 bg-zinc-700 text-white text-sm rounded hover:bg-zinc-600 transition flex items-center gap-1.5 disabled:opacity-50"
             title="Export to GitHub"
           >
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
