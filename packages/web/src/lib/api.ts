@@ -8,6 +8,9 @@ interface Project {
   id: string;
   name: string;
   description?: string;
+  github_repo?: string;
+  github_branch?: string;
+  github_path?: string;
   created_at: number;
   updated_at: number;
   defaultInstanceId?: string;
@@ -67,6 +70,23 @@ export async function createProject(
 
 export async function deleteProject(token: string, projectId: string): Promise<void> {
   await fetchApi(`/api/projects/${projectId}`, token, { method: 'DELETE' });
+}
+
+export async function updateProject(
+  token: string,
+  projectId: string,
+  updates: {
+    name?: string;
+    description?: string;
+    github_repo?: string | null;
+    github_branch?: string;
+    github_path?: string;
+  }
+): Promise<Project> {
+  return fetchApi<Project>(`/api/projects/${projectId}`, token, {
+    method: 'PATCH',
+    body: JSON.stringify(updates)
+  });
 }
 
 export async function listInstances(token: string, projectId: string): Promise<Instance[]> {

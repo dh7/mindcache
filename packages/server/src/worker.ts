@@ -477,7 +477,8 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     // List projects (owned + shared)
     if (path === '/api/projects' && request.method === 'GET') {
       const { results } = await env.DB.prepare(`
-      SELECT DISTINCT p.id, p.name, p.description, p.created_at, p.updated_at,
+      SELECT DISTINCT p.id, p.name, p.description, p.github_repo, p.github_branch, p.github_path,
+             p.created_at, p.updated_at,
              CASE WHEN p.owner_id = ? THEN 'owner' ELSE s.permission END as role
       FROM projects p
       LEFT JOIN shares s ON s.resource_type = 'project' AND s.resource_id = p.id 
@@ -501,31 +502,10 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(id, userId, body.name, body.description || null, now, now).run();
 
-      // Create default instance
-      const instanceId = crypto.randomUUID();
-      await env.DB.prepare(`
-      INSERT INTO instances (id, project_id, owner_id, name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(instanceId, id, userId, 'main', now, now).run();
-
-      // Create DO ownership and grant creator system permission
-      const doId = env.MINDCACHE_INSTANCE.idFromName(instanceId).toString();
-      await env.DB.prepare(`
-        INSERT INTO do_ownership (do_id, owner_user_id)
-        VALUES (?, ?)
-      `).bind(doId, userId).run();
-
-      await env.DB.prepare(`
-        INSERT INTO do_permissions 
-        (do_id, actor_id, actor_type, permission, granted_by_user_id)
-        VALUES (?, ?, 'user', 'admin', ?)
-      `).bind(doId, userId, userId).run();
-
       return Response.json({
         id,
         name: body.name,
         description: body.description,
-        defaultInstanceId: instanceId,
         created_at: now,
         updated_at: now
       }, { status: 201, headers: corsHeaders });
@@ -536,7 +516,8 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     if (projectMatch && request.method === 'GET') {
       const projectId = projectMatch[1];
       const project = await env.DB.prepare(`
-      SELECT DISTINCT p.id, p.name, p.description, p.created_at, p.updated_at,
+      SELECT DISTINCT p.id, p.name, p.description, p.github_repo, p.github_branch, p.github_path,
+             p.created_at, p.updated_at,
              CASE WHEN p.owner_id = ? THEN 'owner' ELSE s.permission END as role
       FROM projects p
       LEFT JOIN shares s ON s.resource_type = 'project' AND s.resource_id = p.id 
@@ -549,7 +530,7 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       return Response.json(project, { headers: corsHeaders });
     }
 
-    // Update project
+    // Update project (full update)
     if (projectMatch && request.method === 'PUT') {
       const projectId = projectMatch[1];
       const body = await request.json() as { name?: string; description?: string };
@@ -564,6 +545,67 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         return Response.json({ error: 'Project not found' }, { status: 404, headers: corsHeaders });
       }
       return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // Update project settings (partial update - used for GitHub sync settings)
+    if (projectMatch && request.method === 'PATCH') {
+      const projectId = projectMatch[1];
+      const body = await request.json() as {
+        name?: string;
+        description?: string;
+        github_repo?: string | null;
+        github_branch?: string;
+        github_path?: string;
+      };
+
+      // Build dynamic update query
+      const updates: string[] = [];
+      const values: (string | null)[] = [];
+
+      if (body.name !== undefined) {
+        updates.push('name = ?');
+        values.push(body.name);
+      }
+      if (body.description !== undefined) {
+        updates.push('description = ?');
+        values.push(body.description);
+      }
+      if (body.github_repo !== undefined) {
+        updates.push('github_repo = ?');
+        values.push(body.github_repo);
+      }
+      if (body.github_branch !== undefined) {
+        updates.push('github_branch = ?');
+        values.push(body.github_branch);
+      }
+      if (body.github_path !== undefined) {
+        updates.push('github_path = ?');
+        values.push(body.github_path);
+      }
+
+      if (updates.length === 0) {
+        return Response.json({ error: 'No fields to update' }, { status: 400, headers: corsHeaders });
+      }
+
+      updates.push('updated_at = unixepoch()');
+      values.push(projectId, userId);
+
+      const result = await env.DB.prepare(`
+        UPDATE projects SET ${updates.join(', ')}
+        WHERE id = ? AND owner_id = ?
+      `).bind(...values).run();
+
+      if (!result.meta.changes) {
+        return Response.json({ error: 'Project not found or not authorized' }, { status: 404, headers: corsHeaders });
+      }
+
+      // Return updated project
+      const project = await env.DB.prepare(`
+        SELECT id, name, description, github_repo, github_branch, github_path, created_at, updated_at
+        FROM projects WHERE id = ?
+      `).bind(projectId).first();
+
+      return Response.json(project, { headers: corsHeaders });
     }
 
     // Delete project
