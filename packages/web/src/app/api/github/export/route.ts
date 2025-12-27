@@ -24,8 +24,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: result });
   } catch (error: unknown) {
-    const err = error as Error;
-    console.error('GitHub export error:', err);
+    const err = error as Error & { status?: number; response?: { data?: { message?: string } } };
+    // eslint-disable-next-line no-console
+    console.error('GitHub export error:', {
+      message: err.message,
+      status: err.status,
+      response: err.response?.data
+    });
 
     if (err.message?.includes('not authenticated')) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
@@ -38,9 +43,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Include more details in the error response
+    const errorMessage = err.response?.data?.message || err.message || 'Failed to export to GitHub';
     return NextResponse.json(
-      { error: err.message || 'Failed to export to GitHub' },
-      { status: 500 }
+      { error: errorMessage },
+      { status: err.status || 500 }
     );
   }
 }
