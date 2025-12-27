@@ -81,3 +81,40 @@ export async function listUserRepos() {
     });
     return data;
 }
+
+/**
+ * Exports a MindCache instance to GitHub as a markdown file.
+ * Creates the file at: {basePath}/{instanceName}/mindcache.md
+ */
+export async function exportInstanceToGitHub({
+    owner,
+    repo,
+    branch = 'main',
+    basePath = '',
+    instanceName,
+    markdown,
+    commitMessage,
+}: {
+    owner: string;
+    repo: string;
+    branch?: string;
+    basePath?: string;
+    instanceName: string;
+    markdown: string;
+    commitMessage?: string;
+}) {
+    // Build the file path: basePath/instanceName/mindcache.md
+    const pathParts = [basePath, instanceName, 'mindcache.md'].filter(Boolean);
+    const filePath = pathParts.join('/').replace(/^\/+/, ''); // Remove leading slashes
+
+    const message = commitMessage || `Update ${instanceName} MindCache export`;
+
+    return commitFile({
+        owner,
+        repo,
+        path: filePath,
+        content: markdown,
+        message,
+        branch,
+    });
+}

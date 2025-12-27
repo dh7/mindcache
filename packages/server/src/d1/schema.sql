@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS projects (
   owner_id TEXT NOT NULL REFERENCES users(id),
   name TEXT NOT NULL,
   description TEXT,
+  github_repo TEXT,                                   -- "owner/repo" format
+  github_branch TEXT DEFAULT 'main',                  -- branch to commit to
+  github_path TEXT DEFAULT '',                        -- folder path in repo
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );

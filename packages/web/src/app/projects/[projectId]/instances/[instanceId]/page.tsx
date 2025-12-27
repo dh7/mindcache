@@ -8,6 +8,14 @@ import { InstanceHeader, ActionButtons, TagFilter, KeyPropertiesPanel, EditableK
 import ChatInterface from './components/ChatInterface';
 import { MindCache, STMEntry as KeyEntry, STM as SyncData } from 'mindcache';
 
+interface Project {
+  id: string;
+  name: string;
+  github_repo?: string;
+  github_branch?: string;
+  github_path?: string;
+}
+
 export default function InstanceEditorPage() {
   const params = useParams();
   const { getToken } = useAuth();
@@ -49,6 +57,10 @@ export default function InstanceEditorPage() {
   // Chat panel resizing
   const [leftPanelWidth, setLeftPanelWidth] = useState(30); // 30% width for chat
   const [isResizing, setIsResizing] = useState(false);
+
+  // Project data (for GitHub sync)
+  const [project, setProject] = useState<Project | null>(null);
+  const [isExportingToGitHub, setIsExportingToGitHub] = useState(false);
 
   // Handle panel resizing
   useEffect(() => {
@@ -104,6 +116,25 @@ export default function InstanceEditorPage() {
     };
     fetchInstance();
   }, [projectId, instanceId, getToken]);
+
+  // Fetch project data (for GitHub sync settings)
+  useEffect(() => {
+    const fetchProject = async () => {
+      try {
+        const token = await getToken() || 'dev';
+        const res = await fetch(`${API_URL}/api/projects/${projectId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setProject(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch project:', err);
+      }
+    };
+    fetchProject();
+  }, [projectId, getToken]);
 
   const handleUpdateInstanceName = async () => {
     if (!instanceName.trim() || instanceName === instance?.name) {
@@ -644,6 +675,49 @@ export default function InstanceEditorPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportToGitHub = async () => {
+    if (!project?.github_repo || !mcRef.current || !instance) {
+      return;
+    }
+
+    setIsExportingToGitHub(true);
+    try {
+      // Use MindCache's built-in toMarkdown method
+      const markdown = mcRef.current.toMarkdown();
+      const [owner, repo] = project.github_repo.split('/');
+
+      const res = await fetch('/api/github/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner,
+          repo,
+          branch: project.github_branch || 'main',
+          basePath: project.github_path || '',
+          instanceName: instance.name,
+          markdown
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Export failed' }));
+        throw new Error(errorData.error || 'Export failed');
+      }
+
+      alert(`Successfully exported to ${project.github_repo}`);
+    } catch (err) {
+      console.error('Failed to export to GitHub:', err);
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      if (message.includes('No GitHub OAuth token') || message.includes('GitHub not connected')) {
+        alert('GitHub not connected. Please reconnect your GitHub account.');
+      } else {
+        alert(`Failed to export to GitHub: ${message}`);
+      }
+    } finally {
+      setIsExportingToGitHub(false);
+    }
+  };
+
   const handleImportJSON = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -985,6 +1059,9 @@ export default function InstanceEditorPage() {
               onImportJSON={handleImportJSON}
               onExportMarkdown={handleExportMarkdown}
               onImportMarkdown={handleImportMarkdown}
+              onExportToGitHub={handleExportToGitHub}
+              gitHubConnected={!!project?.github_repo}
+              isExportingToGitHub={isExportingToGitHub}
             />
           )}
 
