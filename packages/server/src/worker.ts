@@ -502,31 +502,10 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(id, userId, body.name, body.description || null, now, now).run();
 
-      // Create default instance
-      const instanceId = crypto.randomUUID();
-      await env.DB.prepare(`
-      INSERT INTO instances (id, project_id, owner_id, name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(instanceId, id, userId, 'main', now, now).run();
-
-      // Create DO ownership and grant creator system permission
-      const doId = env.MINDCACHE_INSTANCE.idFromName(instanceId).toString();
-      await env.DB.prepare(`
-        INSERT INTO do_ownership (do_id, owner_user_id)
-        VALUES (?, ?)
-      `).bind(doId, userId).run();
-
-      await env.DB.prepare(`
-        INSERT INTO do_permissions 
-        (do_id, actor_id, actor_type, permission, granted_by_user_id)
-        VALUES (?, ?, 'user', 'admin', ?)
-      `).bind(doId, userId, userId).run();
-
       return Response.json({
         id,
         name: body.name,
         description: body.description,
-        defaultInstanceId: instanceId,
         created_at: now,
         updated_at: now
       }, { status: 201, headers: corsHeaders });

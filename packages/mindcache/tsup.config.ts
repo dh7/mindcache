@@ -3,7 +3,8 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
-    'cloud/index': 'src/cloud/index.ts',
+    server: 'src/server.ts',
+    'cloud/index': 'src/cloud/index.ts'
   },
   format: ['cjs', 'esm'],
   dts: true,
@@ -11,5 +12,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ['ai', 'zod'],
+  external: ['ai', 'zod']
 });

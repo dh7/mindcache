@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { listProjects, createProject, deleteProject, type Project } from '@/lib/api';
 import { ShareModal } from './ShareModal';
+import { GitHubImportModal } from './GitHubImportModal';
 
 export function ProjectList() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [sharingProject, setSharingProject] = useState<Project | null>(null);
 
   const fetchProjects = async () => {
@@ -74,12 +76,23 @@ export function ProjectList() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-semibold">Your Projects</h2>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition"
-        >
-          Create Project
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-4 py-2 bg-zinc-700 text-white rounded-lg hover:bg-zinc-600 transition flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.49.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z" />
+            </svg>
+            Import
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition"
+          >
+            Create Project
+          </button>
+        </div>
       </div>
 
       {projects.length === 0 ? (
@@ -157,6 +170,15 @@ export function ProjectList() {
           onClose={() => setSharingProject(null)}
         />
       )}
+
+      <GitHubImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportComplete={(projectId) => {
+          setShowImportModal(false);
+          router.push(`/projects/${projectId}`);
+        }}
+      />
     </div>
   );
 }

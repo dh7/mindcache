@@ -118,3 +118,88 @@ export async function exportInstanceToGitHub({
         branch,
     });
 }
+
+/**
+ * Lists branches for a repository.
+ */
+export async function listBranches(owner: string, repo: string) {
+    const octokit = await getOctokit();
+    const { data } = await octokit.repos.listBranches({
+        owner,
+        repo,
+        per_page: 100,
+    });
+    return data;
+}
+
+/**
+ * Gets the contents of a directory in a repository.
+ * Returns files and subdirectories.
+ */
+export async function getRepoTree(
+    owner: string,
+    repo: string,
+    branch: string,
+    path: string = ''
+) {
+    const octokit = await getOctokit();
+    try {
+        const { data } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path,
+            ref: branch,
+        });
+        // getContent returns an array for directories
+        if (Array.isArray(data)) {
+            return data.map(item => ({
+                name: item.name,
+                path: item.path,
+                type: item.type as 'file' | 'dir',
+                size: item.size,
+            }));
+        }
+        // Single file - return as array with one item
+        return [{
+            name: data.name,
+            path: data.path,
+            type: data.type as 'file' | 'dir',
+            size: data.size,
+        }];
+    } catch (error: unknown) {
+        const err = error as { status?: number };
+        if (err.status === 404) {
+            return []; // Empty directory or doesn't exist
+        }
+        throw error;
+    }
+}
+
+/**
+ * Gets the raw content of a file from a repository.
+ */
+export async function getFileContent(
+    owner: string,
+    repo: string,
+    branch: string,
+    path: string
+): Promise<string> {
+    const octokit = await getOctokit();
+    const { data } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+        ref: branch,
+    });
+
+    if (Array.isArray(data)) {
+        throw new Error('Path is a directory, not a file');
+    }
+
+    if (!('content' in data)) {
+        throw new Error('File content not available');
+    }
+
+    // Content is base64 encoded
+    return Buffer.from(data.content, 'base64').toString('utf-8');
+}

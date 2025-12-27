@@ -25,6 +25,7 @@ export class CloudAdapter {
   private token: string | null = null;
   private handleOnline: (() => void) | null = null;
   private handleOffline: (() => void) | null = null;
+  private _synced = false; // Track if initial sync is complete
 
   constructor(private config: CloudConfig) {
 
@@ -275,17 +276,20 @@ export class CloudAdapter {
           const decoder = decoding.createDecoder(new Uint8Array(event.data as ArrayBuffer));
 
           if (this.mindcache) {
-            syncProtocol.readSyncMessage(decoder, encoder, this.mindcache.doc, this);
+            const messageType = syncProtocol.readSyncMessage(decoder, encoder, this.mindcache.doc, this);
 
             // If response needed
             if (encoding.length(encoder) > 0) {
               this.sendBinary(encoding.toUint8Array(encoder));
             }
 
-            // Detect sync completion?
-            // Yjs doesn't explicit "sync complete" event in protocol.
-            // But usually after receive sync step 2.
-            // For now, we assume if we have data we are syncing.
+            // Emit synced after receiving first sync message from server
+            // messageType 0 = syncStep1, 1 = syncStep2, 2 = update
+            // After receiving syncStep2 (1) or any message if not yet synced
+            if (!this._synced && (messageType === 1 || messageType === 2)) {
+              this._synced = true;
+              this.emit('synced');
+            }
           }
         }
       } catch (error) {
