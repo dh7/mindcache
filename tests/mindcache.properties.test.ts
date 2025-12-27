@@ -12,11 +12,10 @@ describe('MindCache Key Properties', () => {
       cache.set_value('test_key', 'test_value');
       const attributes = cache.get_attributes('test_key');
 
-      // Check key properties - new format uses systemTags
+      // Check key properties - default has no systemTags (opt-in for LLM access)
       expect(attributes?.type).toBe('text');
       expect(attributes?.contentTags).toEqual([]);
-      expect(attributes?.systemTags).toContain('SystemPrompt'); // visible by default
-      expect(attributes?.systemTags).toContain('LLMWrite'); // writable by default
+      expect(attributes?.systemTags).toEqual([]); // Empty by default
     });
 
     test('should set value with custom attributes', () => {
@@ -139,11 +138,12 @@ describe('MindCache Key Properties', () => {
       cache.set_value('invisible_key', 'invisible_value', { systemTags: [] });
     });
 
-    test('invisible keys should not appear in injectSTM', () => {
+    test('injectSTM should access all keys (visibility only for getSTM)', () => {
       const template = 'Visible: {{visible_key}}, LLMRead: {{llm_read_key}}, Invisible: {{invisible_key}}';
       const result = cache.injectSTM(template);
 
-      expect(result).toBe('Visible: visible_value, LLMRead: llm_read_value, Invisible: ');
+      // injectSTM accesses all keys regardless of visibility tags
+      expect(result).toBe('Visible: visible_value, LLMRead: llm_read_value, Invisible: invisible_value');
     });
 
     test('invisible keys should not appear in getSTM', () => {
@@ -244,11 +244,12 @@ describe('MindCache Key Properties', () => {
       expect(stmString).not.toContain('{{username}}');
     });
 
-    test('template with missing keys should leave placeholders empty', () => {
+    test('template with missing keys should keep placeholder', () => {
       cache.set_value('incomplete_template', 'Hello {{missing_key}}!', { systemTags: ['ApplyTemplate'] });
 
       const result = cache.get_value('incomplete_template');
-      expect(result).toBe('Hello !');
+      // Missing keys keep their placeholder
+      expect(result).toBe('Hello {{missing_key}}!');
     });
 
     test('nested template processing should work', () => {
@@ -365,22 +366,14 @@ describe('MindCache Key Properties', () => {
       // Set using old method
       cache.set('old_key', 'old_value');
 
-      // Should have default attributes
+      // Should have default attributes (empty systemTags by default)
       const attributes = cache.get_attributes('old_key');
       expect(attributes?.type).toBe('text');
       expect(attributes?.contentTags).toEqual([]);
-      expect(attributes?.systemTags).toContain('SystemPrompt');
-      expect(attributes?.systemTags).toContain('LLMWrite');
+      expect(attributes?.systemTags).toEqual([]); // Empty by default
 
       // Old get should work
       expect(cache.get('old_key')).toBe('old_value');
-
-      // Should appear in tools and STM
-      const tools = cache.get_aisdk_tools();
-      expect(Object.keys(tools)).toContain('write_old_key');
-
-      const stmString = cache.getSTM();
-      expect(stmString).toContain('old_key: old_value');
     });
 
     test('protected keys are not included in tools', () => {

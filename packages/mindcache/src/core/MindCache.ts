@@ -956,15 +956,16 @@ export class MindCache {
   /**
    * Update only the attributes of a key without modifying the value.
    * Useful for updating tags, permissions etc. on document type keys.
+   * @returns true if attributes were updated, false if key doesn't exist or is protected
    */
-  set_attributes(key: string, attributes: Partial<KeyAttributes>): void {
+  set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
     if (key === '$date' || key === '$time' || key === '$version') {
-      return;
+      return false;
     }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
-      return; // Key doesn't exist
+      return false; // Key doesn't exist
     }
 
     // Context validation: can't modify key that doesn't match context
@@ -997,6 +998,8 @@ export class MindCache {
         entryMap.set('value', currentValue.toString());
       }
     });
+
+    return true;
   }
 
   set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {

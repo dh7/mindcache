@@ -285,8 +285,7 @@ describe('MindCache Tag System', () => {
 
     test('should remove system tag with system access', () => {
       const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set('key', 'value');
-      // Key has 'SystemPrompt' and 'LLMWrite' by default
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const result = systemCache.systemRemoveTag('key', 'SystemPrompt');
       expect(result).toBe(true);
@@ -308,10 +307,11 @@ describe('MindCache Tag System', () => {
 
     test('should return system tags with system access', () => {
       const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set('key', 'value');
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const tags = systemCache.systemGetTags('key');
-      expect(tags).toContain('SystemPrompt'); // Default system tag
+      expect(tags).toContain('SystemPrompt');
+      expect(tags).toContain('LLMWrite');
     });
   });
 
@@ -328,7 +328,7 @@ describe('MindCache Tag System', () => {
 
     test('should check system tag with system access', () => {
       const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set('key', 'value');
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       expect(systemCache.systemHasTag('key', 'SystemPrompt')).toBe(true);
       expect(systemCache.systemHasTag('key', 'protected')).toBe(false);
@@ -369,15 +369,16 @@ describe('MindCache Tag System', () => {
 
     test('should return keys with system tag', () => {
       const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set('key1', 'value1');
-      systemCache.set('key2', 'value2');
+      systemCache.set_value('key1', 'value1', { systemTags: ['SystemPrompt'] });
+      systemCache.set_value('key2', 'value2', { systemTags: ['SystemPrompt'] });
       systemCache.systemAddTag('key1', 'protected');
 
       const protectedKeys = systemCache.systemGetKeysByTag('protected');
       expect(protectedKeys).toEqual(['key1']);
 
       const systemPromptKeys = systemCache.systemGetKeysByTag('SystemPrompt');
-      expect(systemPromptKeys).toEqual(['key1', 'key2']); // Both have SystemPrompt by default
+      expect(systemPromptKeys).toContain('key1');
+      expect(systemPromptKeys).toContain('key2');
     });
   });
 
@@ -416,7 +417,7 @@ describe('MindCache Tag System', () => {
 
     test('should include systemTags in serialization', () => {
       const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set('key', 'value');
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt'] });
       systemCache.systemAddTag('key', 'protected');
 
       const serialized = systemCache.serialize();
