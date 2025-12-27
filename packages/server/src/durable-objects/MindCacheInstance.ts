@@ -4,7 +4,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 // @ts-ignore - workspace dependency
-import { MindCache } from '@mindcache/mindcache/server';
+import { MindCache } from 'mindcache/server';
 
 import type {
   ClientMessage,

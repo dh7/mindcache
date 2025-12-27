@@ -107,6 +107,9 @@ importers:
       lib0:
         specifier: ^0.2.115
         version: 0.2.115
+      mindcache:
+        specifier: workspace:*
+        version: link:../mindcache
       y-protocols:
         specifier: ^1.0.7
         version: 1.0.7(yjs@13.6.28)
