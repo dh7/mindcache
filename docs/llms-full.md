@@ -19,13 +19,14 @@
 13. [Cloud Sync](#cloud-sync)
 14. [Local Persistence (IndexedDB)](#local-persistence-indexeddb)
 15. [React Hook - useMindCache](#react-hook---usemindcache)
-16. [Integration Patterns](#integration-patterns)
-17. [Common Use Cases](#common-use-cases)
-18. [Error Handling](#error-handling)
-19. [TypeScript Types](#typescript-types)
-20. [Quick Reference](#quick-reference)
-21. [Complete App Examples](#complete-app-examples)
-22. [Best Practices Summary](#best-practices-summary)
+16. [Server-Side Usage](#server-side-usage)
+17. [Integration Patterns](#integration-patterns)
+18. [Common Use Cases](#common-use-cases)
+19. [Error Handling](#error-handling)
+20. [TypeScript Types](#typescript-types)
+21. [Quick Reference](#quick-reference)
+22. [Complete App Examples](#complete-app-examples)
+23. [Best Practices Summary](#best-practices-summary)
 
 ---
 
@@ -1381,6 +1382,165 @@ function FormComponent() {
 3. **Loading State** - Returns `isLoaded: false` until fully initialized
 4. **Error Handling** - Catches initialization errors
 5. **Cleanup** - Calls `disconnect()` on unmount
+
+---
+
+## Server-Side Usage
+
+MindCache provides a dedicated server export for use in Node.js, Cloudflare Workers, Durable Objects, and other server environments. This is useful for server-side import/hydration, background processing, and AI agent backends.
+
+### Server Import
+
+```typescript
+// Use the server-specific export (no browser dependencies)
+import { MindCache } from 'mindcache/server';
+
+const mc = new MindCache();
+mc.set_value('key', 'value');
+const prompt = mc.get_system_prompt();
+```
+
+The `mindcache/server` export excludes browser-specific code (WebSocket, IndexedDB) making it suitable for:
+- Node.js servers
+- Cloudflare Workers
+- Durable Objects
+- AWS Lambda
+- Vercel Edge Functions
+
+### Injecting an Existing Yjs Document
+
+For advanced scenarios where you already have a Yjs document (e.g., in a Durable Object or collaborative backend), you can inject it into MindCache. This allows MindCache to operate directly on your authoritative document.
+
+```typescript
+import { MindCache } from 'mindcache/server';
+import * as Y from 'yjs';
+
+// Your existing Yjs document
+const existingDoc: Y.Doc = getYourYjsDocument();
+
+// Create MindCache wrapping your document
+const mc = new MindCache({
+  doc: existingDoc,
+  accessLevel: 'system'  // Required for full access
+});
+
+// All operations apply directly to existingDoc
+mc.fromMarkdown(markdownContent);
+mc.set_value('imported', true);
+
+// Changes are in the original document - no sync needed
+```
+
+### MindCacheOptions for Server
+
+```typescript
+interface MindCacheOptions {
+  // Inject an existing Y.Doc (for Durable Objects, etc.)
+  doc?: Y.Doc;
+  
+  // Access level: 'user' (default) or 'system'
+  // 'system' is required when using doc injection
+  accessLevel?: 'user' | 'system';
+  
+  // Other options (cloud, indexedDB) are ignored in server context
+}
+```
+
+### Use Cases
+
+1. **Server-Side Import/Hydration**
+   ```typescript
+   // Import markdown directly into your data store
+   const mc = new MindCache({ doc: durableObjectDoc, accessLevel: 'system' });
+   mc.fromMarkdown(githubMarkdownContent);
+   // Data is now in your Durable Object's Y.Doc
+   ```
+
+2. **Background Processing**
+   ```typescript
+   // Process MindCache data in a worker/lambda
+   const mc = new MindCache();
+   mc.fromMarkdown(inputMarkdown);
+   
+   // Transform data
+   mc.set_value('processed', true);
+   mc.set_value('processedAt', new Date().toISOString());
+   
+   // Export result
+   return mc.toMarkdown();
+   ```
+
+3. **AI Agent Backends**
+   ```typescript
+   // Use MindCache in your AI service
+   const mc = new MindCache();
+   mc.set_value('userContext', userData);
+   mc.set_value('conversationHistory', messages);
+   
+   const tools = mc.get_aisdk_tools();
+   const systemPrompt = mc.get_system_prompt();
+   
+   const response = await generateText({
+     model: openai('gpt-4'),
+     tools,
+     system: systemPrompt,
+     prompt: userMessage
+   });
+   ```
+
+### Complete Example: Cloudflare Durable Object
+
+```typescript
+import { MindCache } from 'mindcache/server';
+import * as Y from 'yjs';
+
+export class MindCacheInstanceDO {
+  private doc: Y.Doc;
+  private state: DurableObjectState;
+
+  constructor(state: DurableObjectState) {
+    this.state = state;
+    this.doc = new Y.Doc();
+  }
+
+  // Create SDK instance for this request
+  private getSDK(): MindCache {
+    return new MindCache({
+      doc: this.doc,
+      accessLevel: 'system'
+    });
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === '/import' && request.method === 'POST') {
+      const { markdown } = await request.json();
+      const sdk = this.getSDK();
+      sdk.fromMarkdown(markdown);
+      await this.saveState();
+      return new Response(JSON.stringify({ success: true }));
+    }
+
+    if (url.pathname === '/keys' && request.method === 'GET') {
+      const sdk = this.getSDK();
+      return new Response(JSON.stringify(sdk.getAll()));
+    }
+
+    if (url.pathname === '/prompt') {
+      const sdk = this.getSDK();
+      return new Response(sdk.get_system_prompt());
+    }
+
+    return new Response('Not found', { status: 404 });
+  }
+
+  private async saveState(): Promise<void> {
+    const update = Y.encodeStateAsUpdate(this.doc);
+    await this.state.storage.put('yjs_state', update);
+  }
+}
+```
 
 ---
 

@@ -164,6 +164,89 @@ MindCache works in any TypeScript/JavaScript environment, including:
 - Browser applications
 - Node.js servers
 
+## Server-Side Usage
+
+MindCache provides a dedicated server export for use in Node.js, Cloudflare Workers, Durable Objects, and other server environments.
+
+### Server Import
+
+```typescript
+// Use the server-specific export (no browser dependencies)
+import { MindCache } from 'mindcache/server';
+
+const mc = new MindCache();
+mc.set_value('key', 'value');
+```
+
+### Advanced: Injecting an Existing Yjs Document
+
+For advanced server-side scenarios (e.g., Cloudflare Durable Objects, collaborative backends), you can inject an existing `Y.Doc` instance. This allows MindCache to operate directly on your authoritative document without creating a separate copy.
+
+```typescript
+import { MindCache } from 'mindcache/server';
+import * as Y from 'yjs';
+
+// Your existing Yjs document (e.g., from a Durable Object)
+const existingDoc: Y.Doc = getYourYjsDocument();
+
+// Create MindCache instance wrapping your document
+const mc = new MindCache({
+  doc: existingDoc,
+  accessLevel: 'system' // Required for full access when using doc injection
+});
+
+// All operations now apply directly to existingDoc
+mc.fromMarkdown(markdownContent);
+mc.set_value('imported', true);
+
+// Changes are reflected in the original document
+// No need to sync - you're operating on the source of truth
+```
+
+### Use Cases for Server-Side MindCache
+
+1. **Server-Side Import/Hydration**: Parse and import markdown content directly into your data store without network overhead.
+
+2. **Background Processing**: Process or transform MindCache data in serverless functions or workers.
+
+3. **AI Agent Backends**: Use MindCache in your AI service layer to manage agent memory server-side.
+
+4. **Durable Object Integration**: Wrap your Durable Object's Yjs document with MindCache for a higher-level API.
+
+### Example: Cloudflare Durable Object
+
+```typescript
+import { MindCache } from 'mindcache/server';
+import * as Y from 'yjs';
+
+export class MyDurableObject {
+  private doc: Y.Doc;
+
+  constructor(state: DurableObjectState) {
+    this.doc = new Y.Doc();
+  }
+
+  // Create a MindCache instance for this request
+  private getSDK(): MindCache {
+    return new MindCache({
+      doc: this.doc,
+      accessLevel: 'system'
+    });
+  }
+
+  async handleImport(markdown: string): Promise<void> {
+    const sdk = this.getSDK();
+    sdk.fromMarkdown(markdown);
+    // Changes are now in this.doc
+  }
+
+  async getValue(key: string): Promise<string | undefined> {
+    const sdk = this.getSDK();
+    return sdk.get_value(key);
+  }
+}
+```
+
 ## API Reference
 
 ### Core Methods
