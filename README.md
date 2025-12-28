@@ -82,20 +82,18 @@ const message = mindcache.injectSTM('Hello {{name}} from {{city}}!');
 // "Hello Alice from New York!"
 ```
 
-### Attributes & Metadata
+### System Tags & Attributes
 ```typescript
-// Set with attributes
-mindcache.set_value('apiKey', 'secret123', {
-  readonly: true,
-  visible: false,
-  tags: ['credentials']
+// Control LLM access with systemTags
+mindcache.set_value('userPrefs', '{"theme":"dark"}', {
+  type: 'json',
+  systemTags: ['SystemPrompt', 'LLMWrite']  // Visible in prompt, writable by LLM
 });
 
 // Mark as template for dynamic resolution
 mindcache.set_value('greeting', 'Hello {{name}}!', {
-  template: true
+  systemTags: ['ApplyTemplate']  // Templates are processed on read
 });
-```
 
 ### Image & File Support
 ```typescript
@@ -129,11 +127,17 @@ const markdown = mindcache.toMarkdown();
 mindcache.fromMarkdown(markdown);
 ```
 
-### Temporal Context
-Built-in `$date` and `$time` keys provide current date and time:
+### Context Filtering
 ```typescript
-mindcache.get('$date'); // "2025-01-15"
-mindcache.get('$time'); // "14:30:00"
+// Filter keys by tags during a session
+mindcache.setContext({ includeTags: ['user'] });
+mindcache.get_system_prompt(); // Only includes keys tagged 'user'
+mindcache.clearContext(); // Remove filter
+
+// Scoped context
+mindcache.withContext({ includeTags: ['admin'] }, () => {
+  const adminPrompt = mindcache.get_system_prompt();
+});
 ```
 
 ## Integration
@@ -266,9 +270,15 @@ export class MyDurableObject {
 - `toJSON()` - Serialize to JSON string
 - `fromJSON(jsonString)` - Deserialize from JSON string
 - `toMarkdown()` - Export to markdown format
-- `fromMarkdown(markdown)` - Import from markdown format
+- `fromMarkdown(markdown, merge?)` - Import from markdown format (merge=false clears first)
 - `serialize()` - Get complete state object
 - `deserialize(data)` - Restore complete state
+
+### Context Filtering
+- `setContext(rules)` - Filter keys by tags (includeTags, excludeTags)
+- `clearContext()` - Remove context filter
+- `withContext(rules, fn)` - Run function with temporary context
+- `getContext()` - Get current context rules
 
 ### Attributes & Tags
 - `set_attributes(key, attributes)` - Update key attributes

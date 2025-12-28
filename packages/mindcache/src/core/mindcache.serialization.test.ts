@@ -1,4 +1,5 @@
-import { MindCache, SystemTag } from 'mindcache';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { MindCache, SystemTag } from './MindCache';
 
 describe('MindCache Complete Serialization', () => {
   let cache: MindCache;
@@ -37,9 +38,9 @@ describe('MindCache Complete Serialization', () => {
     test('should exclude protected keys from serialization', () => {
       cache.set_value('normal_key', 'value');
 
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set_value('protected_key', 'protected_value');
-      systemCache.systemAddTag('protected_key', 'protected');
+      systemCache.systemAddTag('protected_key', 'LLMRead');
 
       const serialized = systemCache.serialize();
 
@@ -49,7 +50,7 @@ describe('MindCache Complete Serialization', () => {
       expect(serialized).not.toHaveProperty('$time');
     });
 
-    test('should exclude protected keys from deserialization', () => {
+    test('should import keys with protected tag (they are just undeletable)', () => {
       const testData = {
         normal_key: {
           value: 'normal_value',
@@ -65,7 +66,7 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             type: 'text' as const,
             contentTags: [],
-            systemTags: ['protected'] as SystemTag[],
+            systemTags: ['LLMRead'] as SystemTag[],
             zIndex: 0
           }
         }
@@ -73,11 +74,9 @@ describe('MindCache Complete Serialization', () => {
 
       cache.deserialize(testData);
 
-      // Normal key should be imported
+      // Both keys should be imported
       expect(cache.get_value('normal_key')).toBe('normal_value');
-
-      // Protected keys should NOT be imported
-      expect(cache.has('protected_key')).toBe(false);
+      expect(cache.get_value('protected_key')).toBe('protected_value');
     });
 
     test('should deserialize complete state correctly', () => {
@@ -149,9 +148,11 @@ describe('MindCache Complete Serialization', () => {
       // Should have migrated to new format
       const attrs = cache.get_attributes('user');
       expect(attrs?.contentTags).toEqual(['person', 'admin']);
+      // Default systemTags is now empty
+      expect(attrs?.systemTags).toEqual([]);
     });
 
-    test('should preserve system keys after deserialization', () => {
+    test('should work correctly after deserialization', () => {
       const testData = {
         user: {
           value: 'test',
@@ -166,16 +167,15 @@ describe('MindCache Complete Serialization', () => {
 
       cache.deserialize(testData);
 
-      // System keys should still be available
-      expect(cache.has('$date')).toBe(true);
-      expect(cache.has('$time')).toBe(true);
-      expect(cache.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(cache.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+      // Deserialized data should be available
+      expect(cache.has('user')).toBe(true);
+      expect(cache.get_value('user')).toBe('test');
+      expect(cache.get_attributes('user')?.systemTags).toContain('SystemPrompt');
     });
 
     test('should handle round-trip serialization correctly', () => {
       // Set up complex test data
-      cache.set_value('name', 'Bob');
+      cache.set_value('name', 'Bob', { systemTags: ['SystemPrompt'] });
       cache.set_value('secret', 'hidden', { systemTags: [] });
       cache.set_value('message', 'Welcome {{name}}!', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
 
@@ -241,7 +241,7 @@ describe('MindCache Complete Serialization', () => {
     });
 
     test('should handle invalid JSON gracefully', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
 
       cache.set_value('existing', 'value');
       cache.fromJSON('invalid json');
@@ -270,7 +270,7 @@ describe('MindCache Complete Serialization', () => {
       expect(newCache.get_attributes('greeting')?.systemTags).toContain('ApplyTemplate');
     });
 
-    test('should exclude protected keys from JSON deserialization', () => {
+    test('should import keys with protected tag from JSON (they are just undeletable)', () => {
       const jsonData = {
         normal_key: {
           value: 'normal_value',
@@ -286,7 +286,7 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             type: 'text',
             contentTags: [],
-            systemTags: ['protected'],
+            systemTags: ['LLMRead'],
             zIndex: 0
           }
         }
@@ -295,11 +295,9 @@ describe('MindCache Complete Serialization', () => {
       const jsonString = JSON.stringify(jsonData);
       cache.fromJSON(jsonString);
 
-      // Normal key should be imported
+      // Both keys should be imported
       expect(cache.get_value('normal_key')).toBe('normal_value');
-
-      // Protected keys should NOT be imported
-      expect(cache.has('protected_key')).toBe(false);
+      expect(cache.get_value('protected_key')).toBe('protected_value');
     });
   });
 
@@ -362,7 +360,7 @@ describe('MindCache Complete Serialization', () => {
 
   describe('ContentTags and SystemTags serialization', () => {
     test('should serialize both contentTags and systemTags', () => {
-      cache.set_value('key', 'value');
+      cache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
       cache.addTag('key', 'user-tag');
 
       const serialized = cache.serialize();

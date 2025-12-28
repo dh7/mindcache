@@ -376,7 +376,7 @@ export class MindCacheInstanceDO extends DurableObject {
   private getSDK(): MindCache {
     return new MindCache({
       doc: this.doc,
-      accessLevel: 'system'
+      accessLevel: 'admin'
     });
   }
 

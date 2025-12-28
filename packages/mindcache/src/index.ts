@@ -11,6 +11,7 @@ export type {
   KeyType,
   SystemTag,
   AccessLevel,
+  ContextRules,
   STM,
   STMEntry,
   STMEntry as KeyEntry, // Alias for compatibility

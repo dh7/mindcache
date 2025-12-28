@@ -1849,7 +1849,7 @@ class MindCache {
   toJSON(): string;
   fromJSON(json: string): void;
   toMarkdown(): string;
-  fromMarkdown(markdown: string): void;
+  fromMarkdown(markdown: string, merge?: boolean): void;
   serialize(): object;
   deserialize(data: object): void;
 

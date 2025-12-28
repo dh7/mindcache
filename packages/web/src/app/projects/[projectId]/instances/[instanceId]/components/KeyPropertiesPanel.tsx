@@ -42,9 +42,6 @@ export function KeyPropertiesPanel({
   const [newTagInput, setNewTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
 
-  // Derive protection state from systemTags
-  const isProtected = attributesForm.systemTags.includes('protected');
-
   // Reset form when entry changes
   useEffect(() => {
     setAttributesForm({
@@ -361,44 +358,28 @@ export function KeyPropertiesPanel({
         {/* LLMWrite */}
         <div className="flex items-center gap-1">
           <span className="text-yellow-400">[LW]</span>
-          {isProtected ? (
-            <span className="text-gray-500 font-mono">{attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}</span>
-          ) : (
-            <button
-              onClick={() => toggleSystemTag('LLMWrite')}
-              disabled={!canEdit}
-              className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
-              title="LLMWrite: LLM can write via tools"
-            >
-              {attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}
-            </button>
-          )}
+          <button
+            onClick={() => toggleSystemTag('LLMWrite')}
+            disabled={!canEdit}
+            className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+            title="LLMWrite: LLM can write via tools"
+          >
+            {attributesForm.systemTags.includes('LLMWrite') ? 'true' : 'false'}
+          </button>
         </div>
 
         {/* ApplyTemplate */}
         <div className="flex items-center gap-1">
           <span className="text-yellow-400">[AT]</span>
-          {isProtected ? (
-            <span className="text-gray-500 font-mono">{attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}</span>
-          ) : (
-            <button
-              onClick={() => toggleSystemTag('ApplyTemplate')}
-              disabled={!canEdit}
-              className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
-              title="ApplyTemplate: Process template injection"
-            >
-              {attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}
-            </button>
-          )}
+          <button
+            onClick={() => toggleSystemTag('ApplyTemplate')}
+            disabled={!canEdit}
+            className="text-cyan-400 font-mono hover:bg-cyan-900 hover:bg-opacity-20 px-1 rounded transition-colors disabled:opacity-50"
+            title="ApplyTemplate: Process template injection"
+          >
+            {attributesForm.systemTags.includes('ApplyTemplate') ? 'true' : 'false'}
+          </button>
         </div>
-
-        {/* Protected - just display if true */}
-        {isProtected && (
-          <div className="flex items-center gap-1">
-            <span className="text-yellow-400">[P]</span>
-            <span className="text-gray-500 font-mono">true</span>
-          </div>
-        )}
 
         {/* Z-Index - same pattern as key name: value + pen, click to edit with underline */}
         <div className="flex items-center gap-1">

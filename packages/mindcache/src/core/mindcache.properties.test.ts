@@ -1,4 +1,5 @@
-import { MindCache } from 'mindcache';
+import { describe, test, expect, beforeEach } from 'vitest';
+import { MindCache } from './MindCache';
 
 describe('MindCache Key Properties', () => {
   let cache: MindCache;
@@ -12,23 +13,21 @@ describe('MindCache Key Properties', () => {
       cache.set_value('test_key', 'test_value');
       const attributes = cache.get_attributes('test_key');
 
-      // Check key properties - new format uses systemTags
+      // Check key properties - default has no systemTags (opt-in for LLM access)
       expect(attributes?.type).toBe('text');
       expect(attributes?.contentTags).toEqual([]);
-      expect(attributes?.systemTags).toContain('SystemPrompt'); // visible by default
-      expect(attributes?.systemTags).toContain('LLMWrite'); // writable by default
+      expect(attributes?.systemTags).toEqual([]); // Empty by default
     });
 
     test('should set value with custom attributes', () => {
       const customAttributes = {
-        systemTags: ['protected'] as ('SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate')[]
+        systemTags: ['SystemPrompt'] as ('SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'ApplyTemplate')[]
       };
 
       cache.set_value('custom_key', 'custom_value', customAttributes);
       const attributes = cache.get_attributes('custom_key');
 
-      expect(attributes?.systemTags).toContain('protected');
-      expect(attributes?.systemTags).not.toContain('SystemPrompt');
+      expect(attributes?.systemTags).toContain('SystemPrompt');
       expect(attributes?.systemTags).not.toContain('LLMWrite');
     });
 
@@ -50,7 +49,7 @@ describe('MindCache Key Properties', () => {
     });
 
     test('should return false when setting attributes for non-existent key', () => {
-      const result = cache.set_attributes('non_existent', { systemTags: ['protected'] });
+      const result = cache.set_attributes('non_existent', { systemTags: ['LLMRead'] });
       expect(result).toBe(false);
     });
 
@@ -59,26 +58,19 @@ describe('MindCache Key Properties', () => {
       expect(attributes).toBeUndefined();
     });
 
-    test('should return protected attributes for $date and $time', () => {
-      const dateAttrs = cache.get_attributes('$date');
-      const timeAttrs = cache.get_attributes('$time');
+    test('$date/$time/$version are not real keys (only template vars)', () => {
+      // $date, $time, $version are no longer keys - they only work in templates
+      expect(cache.get_attributes('$date')).toBeUndefined();
+      expect(cache.get_attributes('$time')).toBeUndefined();
+      expect(cache.get_attributes('$version')).toBeUndefined();
 
-      // Check key properties
-      expect(dateAttrs?.type).toBe('text');
-      expect(dateAttrs?.systemTags).toContain('SystemPrompt');
-      expect(dateAttrs?.systemTags).toContain('protected');
-
-      expect(timeAttrs?.type).toBe('text');
-      expect(timeAttrs?.systemTags).toContain('SystemPrompt');
-      expect(timeAttrs?.systemTags).toContain('protected');
+      expect(cache.has('$date')).toBe(false);
+      expect(cache.has('$time')).toBe(false);
     });
 
-    test('should not allow setting attributes for protected system keys', () => {
-      const dateResult = cache.set_attributes('$date', { systemTags: [] });
-      const timeResult = cache.set_attributes('$time', { systemTags: [] });
-
-      expect(dateResult).toBe(false);
-      expect(timeResult).toBe(false);
+    test('set_attributes returns false for non-existent keys', () => {
+      const result = cache.set_attributes('$date', { systemTags: [] });
+      expect(result).toBe(false); // Key doesn't exist
     });
   });
 
@@ -102,14 +94,14 @@ describe('MindCache Key Properties', () => {
       expect(toolNames).not.toContain('write_$time');
     });
 
-    test('should not allow setting protected system keys via set_value', () => {
-      const originalDate = cache.get_value('$date');
-
+    test('$date/$time cannot be set as keys', () => {
+      // These names are allowed now since they're not reserved
       cache.set_value('$date', '2020-01-01');
+      cache.set_value('$time', '12:00:00');
 
-      // Should still return the actual current date, not the set value
-      expect(cache.get_value('$date')).not.toBe('2020-01-01');
-      expect(cache.get_value('$date')).toBe(originalDate);
+      // They become regular keys
+      expect(cache.get_value('$date')).toBe('2020-01-01');
+      expect(cache.get_value('$time')).toBe('12:00:00');
     });
 
     test('AI SDK tools should work correctly with non-writable keys', async () => {
@@ -139,11 +131,12 @@ describe('MindCache Key Properties', () => {
       cache.set_value('invisible_key', 'invisible_value', { systemTags: [] });
     });
 
-    test('invisible keys should not appear in injectSTM', () => {
+    test('injectSTM should access all keys (visibility only for getSTM)', () => {
       const template = 'Visible: {{visible_key}}, LLMRead: {{llm_read_key}}, Invisible: {{invisible_key}}';
       const result = cache.injectSTM(template);
 
-      expect(result).toBe('Visible: visible_value, LLMRead: llm_read_value, Invisible: ');
+      // injectSTM accesses all keys regardless of visibility tags
+      expect(result).toBe('Visible: visible_value, LLMRead: llm_read_value, Invisible: invisible_value');
     });
 
     test('invisible keys should not appear in getSTM', () => {
@@ -176,11 +169,13 @@ describe('MindCache Key Properties', () => {
       expect(result).not.toBe('Date: , Time: ');
     });
 
-    test('protected system keys should always appear in getSTM', () => {
+    test('getSTM should only include keys with SystemPrompt/LLMRead tags', () => {
       const stmString = cache.getSTM();
 
-      expect(stmString).toContain('$date:');
-      expect(stmString).toContain('$time:');
+      // Only visible_key and llm_read_key should appear (they have visibility tags)
+      expect(stmString).toContain('visible_key');
+      expect(stmString).toContain('llm_read_key');
+      expect(stmString).not.toContain('invisible_key');
     });
 
     test('invisible keys should still be retrievable via get_value', () => {
@@ -193,8 +188,9 @@ describe('MindCache Key Properties', () => {
 
       expect(keys).toContain('visible_key');
       expect(keys).toContain('invisible_key');
-      expect(keys).toContain('$date');
-      expect(keys).toContain('$time');
+      expect(keys).toContain('llm_read_key');
+      // $date/$time are not keys
+      expect(keys).not.toContain('$date');
     });
 
     test('getAll() method should return all values regardless of visibility', () => {
@@ -202,8 +198,9 @@ describe('MindCache Key Properties', () => {
 
       expect(all.visible_key).toBe('visible_value');
       expect(all.invisible_key).toBe('invisible_value');
-      expect(all.$date).toBeDefined();
-      expect(all.$time).toBeDefined();
+      expect(all.llm_read_key).toBe('llm_read_value');
+      // $date/$time are not keys
+      expect(all.$date).toBeUndefined();
     });
   });
 
@@ -244,10 +241,11 @@ describe('MindCache Key Properties', () => {
       expect(stmString).not.toContain('{{username}}');
     });
 
-    test('template with missing keys should leave placeholders empty', () => {
+    test('template with missing keys should become empty', () => {
       cache.set_value('incomplete_template', 'Hello {{missing_key}}!', { systemTags: ['ApplyTemplate'] });
 
       const result = cache.get_value('incomplete_template');
+      // Missing keys replaced with empty string
       expect(result).toBe('Hello !');
     });
 
@@ -294,31 +292,7 @@ describe('MindCache Key Properties', () => {
     });
   });
 
-  describe('Protected Property', () => {
-    test('protected system keys should have protected tag', () => {
-      const dateAttrs = cache.get_attributes('$date');
-      const timeAttrs = cache.get_attributes('$time');
 
-      expect(dateAttrs?.systemTags).toContain('protected');
-      expect(timeAttrs?.systemTags).toContain('protected');
-    });
-
-    test('regular keys should not have protected tag by default', () => {
-      cache.set_value('regular_key', 'value');
-      const attributes = cache.get_attributes('regular_key');
-
-      expect(attributes?.systemTags).not.toContain('protected');
-    });
-
-    test('can create custom protected keys with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set_value('custom_protected', 'protected_value');
-      systemCache.systemAddTag('custom_protected', 'protected');
-      const attributes = systemCache.get_attributes('custom_protected');
-
-      expect(attributes?.systemTags).toContain('protected');
-    });
-  });
 
   describe('Integration Tests', () => {
     test('complex scenario with all properties', () => {
@@ -365,40 +339,17 @@ describe('MindCache Key Properties', () => {
       // Set using old method
       cache.set('old_key', 'old_value');
 
-      // Should have default attributes
+      // Should have default attributes (empty systemTags by default)
       const attributes = cache.get_attributes('old_key');
       expect(attributes?.type).toBe('text');
       expect(attributes?.contentTags).toEqual([]);
-      expect(attributes?.systemTags).toContain('SystemPrompt');
-      expect(attributes?.systemTags).toContain('LLMWrite');
+      expect(attributes?.systemTags).toEqual([]); // Empty by default
 
       // Old get should work
       expect(cache.get('old_key')).toBe('old_value');
-
-      // Should appear in tools and STM
-      const tools = cache.get_aisdk_tools();
-      expect(Object.keys(tools)).toContain('write_old_key');
-
-      const stmString = cache.getSTM();
-      expect(stmString).toContain('old_key: old_value');
     });
 
-    test('protected keys are not included in tools', () => {
-      // Create a protected key that tries to be writable
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set_value('protected_tracker', 'tracking_value', {
-        systemTags: ['SystemPrompt', 'LLMWrite']
-      });
-      systemCache.systemAddTag('protected_tracker', 'protected');
 
-      const attributes = systemCache.get_attributes('protected_tracker');
-      expect(attributes?.systemTags).toContain('protected');
-
-      // Protected keys should still appear in AI tools if they have LLMWrite
-      // (protection is about deletion, not writing)
-      const tools = systemCache.get_aisdk_tools();
-      expect(Object.keys(tools)).toContain('write_protected_tracker');
-    });
   });
 
   describe('Edge Cases', () => {

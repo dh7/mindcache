@@ -2,8 +2,11 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import diff from 'fast-diff';
-import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions } from './types';
+import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions, ContextRules } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
+import { MarkdownSerializer } from './MarkdownSerializer';
+import { AIToolBuilder } from './AIToolBuilder';
+import { TagManager } from './TagManager';
 
 // Browser environment type declarations
 interface FileReaderType {
@@ -57,10 +60,12 @@ export interface MindCacheOptions {
   indexedDB?: MindCacheIndexedDBOptions;
   /** History tracking options (enabled in IndexedDB and Cloud modes) */
   history?: HistoryOptions;
-  /** Access level for tag operations. 'system' allows managing system tags. */
+  /** Access level for tag operations. 'admin' allows managing system tags. */
   accessLevel?: AccessLevel;
   /** Optional existing Y.Doc instance (for server-side hydration) */
   doc?: Y.Doc;
+  /** Context filtering rules. When set, only keys matching the rules are visible. */
+  context?: ContextRules;
 }
 
 // Connection state type
@@ -82,7 +87,7 @@ interface ICloudAdapter {
 export class MindCache {
   // Public doc for adapter access
   public doc: Y.Doc;
-  private rootMap: Y.Map<Y.Map<any>>; // Key -> EntryMap({value, attributes})
+  public rootMap: Y.Map<Y.Map<any>>; // Key -> EntryMap({value, attributes})
 
   // Cache listeners
   private listeners: { [key: string]: Listener[] } = {};
@@ -95,13 +100,13 @@ export class MindCache {
   // (Less critical with Yjs but kept for API compat)
 
 
-  private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
+  normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
     const seen = new Set<SystemTag>();
 
     for (const tag of tags) {
       // Only include valid SystemTag values, skip duplicates
-      if (['SystemPrompt', 'LLMRead', 'LLMWrite', 'protected', 'ApplyTemplate'].includes(tag)) {
+      if (['SystemPrompt', 'LLMRead', 'LLMWrite', 'ApplyTemplate'].includes(tag)) {
         if (!seen.has(tag)) {
           seen.add(tag);
           normalized.push(tag);
@@ -118,8 +123,11 @@ export class MindCache {
   private _isLoaded = true; // Default true for local mode
   private _cloudConfig: MindCacheCloudOptions | null = null;
 
-  // Access level for system operations
+  // Access level for admin operations
   private _accessLevel: AccessLevel = 'user';
+
+  // Context filtering (client-local, not persisted)
+  private _contextRules: ContextRules | null = null;
 
   private _initPromise: Promise<void> | null = null;
 
@@ -210,6 +218,11 @@ export class MindCache {
 
     if (options?.accessLevel) {
       this._accessLevel = options.accessLevel;
+    }
+
+    // Initialize context from options
+    if (options?.context) {
+      this._contextRules = options.context;
     }
 
     const initPromises: Promise<void>[] = [];
@@ -430,7 +443,134 @@ export class MindCache {
   }
 
   get hasSystemAccess(): boolean {
-    return this._accessLevel === 'system';
+    return this._accessLevel === 'admin';
+  }
+
+  // ============================================
+  // Context Methods (client-local filtering)
+  // ============================================
+
+  /**
+   * Check if context filtering is currently active.
+   */
+  get hasContext(): boolean {
+    return this._contextRules !== null;
+  }
+
+  /**
+   * Get current context rules, or null if no context is set.
+   */
+  get_context(): ContextRules | null {
+    return this._contextRules;
+  }
+
+  /**
+   * Set context filtering rules.
+   * When context is set, only keys with ALL specified tags are visible.
+   *
+   * @param rules - Context rules, or array of tags (shorthand for { tags: [...] })
+   */
+  set_context(rules: ContextRules | string[]): void {
+    if (Array.isArray(rules)) {
+      this._contextRules = { tags: rules };
+    } else {
+      this._contextRules = rules;
+    }
+  }
+
+  /**
+   * Clear context filtering. All keys become visible again.
+   */
+  reset_context(): void {
+    this._contextRules = null;
+  }
+
+  /**
+   * Check if a key matches the current context rules.
+   * Returns true if no context is set.
+   */
+  keyMatchesContext(key: string): boolean {
+    // System keys always match
+    if (key.startsWith('$')) {
+      return true;
+    }
+
+    // No context = all keys match
+    if (!this._contextRules) {
+      return true;
+    }
+
+    // If no tags required, all keys match
+    if (this._contextRules.tags.length === 0) {
+      return true;
+    }
+
+    const entryMap = this.rootMap.get(key);
+    if (!entryMap) {
+      return false;
+    }
+
+    const attrs = entryMap.get('attributes') as KeyAttributes;
+    const contentTags = attrs?.contentTags || [];
+
+    // AND logic: key must have ALL specified tags
+    return this._contextRules.tags.every(tag => contentTags.includes(tag));
+  }
+
+  /**
+   * Create a new key with optional default tags from context.
+   *
+   * @throws Error if key already exists
+   */
+  create_key(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
+
+    if (this.rootMap.has(key)) {
+      throw new Error(`Key already exists: ${key}. Use set_value to update.`);
+    }
+
+    // Merge context defaults with provided attributes
+    let finalAttributes: Partial<KeyAttributes> = { ...attributes };
+
+    if (this._contextRules) {
+      // Add default content tags from context
+      const contextContentTags = this._contextRules.defaultContentTags || this._contextRules.tags;
+      const existingContentTags = finalAttributes.contentTags || [];
+      finalAttributes.contentTags = [...new Set([...existingContentTags, ...contextContentTags])];
+
+      // Add default system tags from context
+      if (this._contextRules.defaultSystemTags) {
+        const existingSystemTags = finalAttributes.systemTags || [];
+        finalAttributes.systemTags = [...new Set([...existingSystemTags, ...this._contextRules.defaultSystemTags])] as SystemTag[];
+      }
+    }
+
+    // Create the key
+    const entryMap = new Y.Map();
+    this.rootMap.set(key, entryMap);
+
+    // Ensure UndoManager exists
+    this.getUndoManager(key);
+
+    this.doc.transact(() => {
+      const baseAttributes = {
+        ...DEFAULT_KEY_ATTRIBUTES,
+        ...finalAttributes
+      };
+
+      // Normalize system tags
+      if (baseAttributes.systemTags) {
+        baseAttributes.systemTags = this.normalizeSystemTags(baseAttributes.systemTags);
+      }
+
+      // Handle document type
+      let valueToSet = value;
+      if (baseAttributes.type === 'document' && !(valueToSet instanceof Y.Text)) {
+        valueToSet = new Y.Text(typeof value === 'string' ? value : String(value ?? ''));
+      }
+
+      entryMap.set('value', valueToSet);
+      entryMap.set('attributes', baseAttributes);
+    });
   }
 
   private async _initCloud(): Promise<void> {
@@ -652,11 +792,14 @@ export class MindCache {
         this.rootMap.set(key, entryMap);
         entryMap.set('value', entry.value);
         // Normalize attributes (fill in missing fields with defaults)
-        const attrs = entry.attributes || {};
+        // Type as any to allow accessing legacy 'tags' property for migration
+        const attrs: any = entry.attributes || {};
+        // Migrate legacy 'tags' to 'contentTags'
+        const contentTags = attrs.contentTags || attrs.tags || [];
         const normalizedAttrs: KeyAttributes = {
           type: attrs.type || 'text',
           contentType: attrs.contentType,
-          contentTags: attrs.contentTags || [],
+          contentTags: contentTags,
           systemTags: this.normalizeSystemTags(attrs.systemTags || []),
           zIndex: attrs.zIndex ?? 0
         };
@@ -703,10 +846,25 @@ export class MindCache {
   }
 
   // InjectSTM replacement (private helper)
+  // Handles special template variables: $date, $time, $version
   private _injectSTMInternal(template: string, _processingStack: Set<string>): string {
     return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
-      const val = this.get_value(key.trim(), _processingStack);
-      return val !== undefined ? String(val) : `{{${key}}}`;
+      const trimmedKey = key.trim();
+
+      // Handle special template variables
+      if (trimmedKey === '$date') {
+        return new Date().toISOString().split('T')[0];
+      }
+      if (trimmedKey === '$time') {
+        return new Date().toTimeString().split(' ')[0];
+      }
+      if (trimmedKey === '$version') {
+        return this.version;
+      }
+
+      const val = this.get_value(trimmedKey, _processingStack);
+      // Replace missing keys with empty string (standard template engine behavior)
+      return val !== undefined ? String(val) : '';
     });
   }
 
@@ -724,11 +882,10 @@ export class MindCache {
   getAll(): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [key] of this.rootMap) {
-      result[key] = this.get_value(key);
+      if (this.keyMatchesContext(key)) {
+        result[key] = this.get_value(key);
+      }
     }
-    // Add temporal keys
-    result['$date'] = this.get_value('$date');
-    result['$time'] = this.get_value('$time');
     return result;
   }
 
@@ -740,30 +897,25 @@ export class MindCache {
   getAllEntries(): STM {
     const result: STM = {};
     for (const [key] of this.rootMap) {
-      const value = this.get_value(key);
-      const attributes = this.get_attributes(key);
-      if (attributes) {
-        result[key] = { value, attributes };
+      if (this.keyMatchesContext(key)) {
+        const value = this.get_value(key);
+        const attributes = this.get_attributes(key);
+        if (attributes) {
+          result[key] = { value, attributes };
+        }
       }
     }
     return result;
   }
 
   get_value(key: string, _processingStack?: Set<string>): any {
-    if (key === '$date') {
-      const today = new Date();
-      return today.toISOString().split('T')[0];
-    }
-    if (key === '$time') {
-      const now = new Date();
-      return now.toTimeString().split(' ')[0];
-    }
-    if (key === '$version') {
-      return this.version;
-    }
-
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
+      return undefined;
+    }
+
+    // Check context filtering
+    if (!this.keyMatchesContext(key)) {
       return undefined;
     }
 
@@ -792,14 +944,6 @@ export class MindCache {
   }
 
   get_attributes(key: string): KeyAttributes | undefined {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return {
-        type: 'text',
-        contentTags: [],
-        systemTags: ['SystemPrompt', 'protected'],
-        zIndex: 999999
-      };
-    }
     const entryMap = this.rootMap.get(key);
     return entryMap ? entryMap.get('attributes') : undefined;
   }
@@ -807,15 +951,18 @@ export class MindCache {
   /**
    * Update only the attributes of a key without modifying the value.
    * Useful for updating tags, permissions etc. on document type keys.
+   * @returns true if attributes were updated, false if key doesn't exist or is protected
    */
-  set_attributes(key: string, attributes: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return;
-    }
+  set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
-      return; // Key doesn't exist
+      return false; // Key doesn't exist
+    }
+
+    // Context validation: can't modify key that doesn't match context
+    if (this._contextRules && !this.keyMatchesContext(key)) {
+      throw new Error(`Cannot modify key "${key}": does not match current context`);
     }
 
     this.doc.transact(() => {
@@ -843,16 +990,20 @@ export class MindCache {
         entryMap.set('value', currentValue.toString());
       }
     });
+
+    return true;
   }
 
   set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return;
-    }
 
     // For existing document type keys, use diff-based replace
     const existingEntry = this.rootMap.get(key);
     if (existingEntry) {
+      // Context validation: can't modify key that doesn't match context
+      if (this._contextRules && !this.keyMatchesContext(key)) {
+        throw new Error(`Cannot modify key "${key}": does not match current context`);
+      }
+
       const existingAttrs = existingEntry.get('attributes') as KeyAttributes;
       if (existingAttrs?.type === 'document') {
         // Route to _replaceDocumentText for smart diff handling
@@ -868,6 +1019,12 @@ export class MindCache {
           return;
         }
       }
+    }
+
+    // If key doesn't exist and context is set, use create_key
+    if (!existingEntry && this._contextRules) {
+      this.create_key(key, value, attributes);
+      return;
     }
 
     // If creating a NEW document type, use set_document
@@ -928,9 +1085,6 @@ export class MindCache {
    * Used by create_vercel_ai_tools() to prevent LLMs from escalating privileges.
    */
   llm_set_key(key: string, value: any): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -961,9 +1115,6 @@ export class MindCache {
   }
 
   delete_key(key: string): void {
-    if (key === '$date' || key === '$time') {
-      return;
-    }
     this.rootMap.delete(key);
   }
 
@@ -982,10 +1133,10 @@ export class MindCache {
    * Check if a key exists in MindCache.
    */
   has(key: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return true;
+    if (!this.rootMap.has(key)) {
+      return false;
     }
-    return this.rootMap.has(key);
+    return this.keyMatchesContext(key);
   }
 
   /**
@@ -993,9 +1144,6 @@ export class MindCache {
    * @returns true if the key existed and was deleted
    */
   delete(key: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
     if (!this.rootMap.has(key)) {
       return false;
     }
@@ -1024,9 +1172,7 @@ export class MindCache {
   update(data: Record<string, any>): void {
     this.doc.transact(() => {
       for (const [key, value] of Object.entries(data)) {
-        if (key !== '$date' && key !== '$time' && key !== '$version') {
-          this.set_value(key, value);
-        }
+        this.set_value(key, value);
       }
     });
     this.notifyGlobalListeners();
@@ -1036,44 +1182,52 @@ export class MindCache {
    * Get the number of keys in MindCache.
    */
   size(): number {
-    // Include temporal keys in count
-    return this.rootMap.size + 2; // +2 for $date and $time
+    // Count keys that match context
+    let count = 0;
+    for (const [key] of this.rootMap) {
+      if (this.keyMatchesContext(key)) {
+        count++;
+      }
+    }
+    return count;
   }
 
   /**
-   * Get all keys in MindCache (including temporal keys).
+   * Get all keys in MindCache.
    */
   keys(): string[] {
-    const keys = Array.from(this.rootMap.keys());
-    keys.push('$date', '$time');
+    const keys: string[] = [];
+    for (const [key] of this.rootMap) {
+      if (this.keyMatchesContext(key)) {
+        keys.push(key);
+      }
+    }
     return keys;
   }
 
   /**
-   * Get all values in MindCache (including temporal values).
+   * Get all values in MindCache.
    */
   values(): any[] {
     const result: any[] = [];
     for (const [key] of this.rootMap) {
-      result.push(this.get_value(key));
+      if (this.keyMatchesContext(key)) {
+        result.push(this.get_value(key));
+      }
     }
-    // Add temporal values
-    result.push(this.get_value('$date'));
-    result.push(this.get_value('$time'));
     return result;
   }
 
   /**
-   * Get all key-value entries (including temporal entries).
+   * Get all key-value entries.
    */
   entries(): Array<[string, any]> {
     const result: Array<[string, any]> = [];
     for (const [key] of this.rootMap) {
-      result.push([key, this.get_value(key)]);
+      if (this.keyMatchesContext(key)) {
+        result.push([key, this.get_value(key)]);
+      }
     }
-    // Add temporal entries
-    result.push(['$date', this.get_value('$date')]);
-    result.push(['$time', this.get_value('$time')]);
     return result;
   }
 
@@ -1097,7 +1251,6 @@ export class MindCache {
 
   /**
    * Get the STM as an object with values directly (no attributes).
-   * Includes system keys ($date, $time).
    * @deprecated Use getAll() for full STM format
    */
   getSTMObject(): Record<string, any> {
@@ -1105,9 +1258,6 @@ export class MindCache {
     for (const [key] of this.rootMap) {
       result[key] = this.get_value(key);
     }
-    // Add system keys
-    result['$date'] = this.get_value('$date');
-    result['$time'] = this.get_value('$time');
     return result;
   }
 
@@ -1116,33 +1266,7 @@ export class MindCache {
    * @returns true if the tag was added, false if key doesn't exist or tag already exists
    */
   addTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const contentTags = attributes?.contentTags || [];
-
-    if (contentTags.includes(tag)) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newContentTags = [...contentTags, tag];
-      entryMap.set('attributes', {
-        ...attributes,
-        contentTags: newContentTags,
-        tags: newContentTags // Sync legacy tags array
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.addTag(this, key, tag);
   }
 
   /**
@@ -1150,111 +1274,42 @@ export class MindCache {
    * @returns true if the tag was removed
    */
   removeTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const contentTags = attributes?.contentTags || [];
-    const tagIndex = contentTags.indexOf(tag);
-
-    if (tagIndex === -1) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newContentTags = contentTags.filter((t: string) => t !== tag);
-      entryMap.set('attributes', {
-        ...attributes,
-        contentTags: newContentTags,
-        tags: newContentTags // Sync legacy tags array
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.removeTag(this, key, tag);
   }
 
   /**
    * Get all content tags for a key.
    */
   getTags(key: string): string[] {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return [];
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return [];
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.contentTags || [];
+    return TagManager.getTags(this, key);
   }
 
   /**
    * Get all unique content tags across all keys.
    */
   getAllTags(): string[] {
-    const allTags = new Set<string>();
-
-    for (const [, val] of this.rootMap) {
-      const entryMap = val as Y.Map<any>;
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-      if (attributes?.contentTags) {
-        attributes.contentTags.forEach((tag: string) => allTags.add(tag));
-      }
-    }
-
-    return Array.from(allTags);
+    return TagManager.getAllTags(this);
   }
 
   /**
    * Check if a key has a specific content tag.
    */
   hasTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.contentTags?.includes(tag) || false;
+    return TagManager.hasTag(this, key, tag);
   }
 
   /**
    * Get all keys with a specific content tag as formatted string.
    */
   getTagged(tag: string): string {
-    const entries: Array<[string, any]> = [];
-
-    const keys = this.getSortedKeys();
-    keys.forEach(key => {
-      if (this.hasTag(key, tag)) {
-        entries.push([key, this.get_value(key)]);
-      }
-    });
-
-    return entries
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ');
+    return TagManager.getTagged(this, tag);
   }
 
   /**
    * Get array of keys with a specific content tag.
    */
   getKeysByTag(tag: string): string[] {
-    const keys = this.getSortedKeys();
-    return keys.filter(key => this.hasTag(key, tag));
+    return TagManager.getKeysByTag(this, tag);
   }
 
   // ============================================
@@ -1263,175 +1318,58 @@ export class MindCache {
 
   /**
    * Add a system tag to a key (requires system access).
-   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'readonly', 'protected', 'ApplyTemplate'
+   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'ApplyTemplate'
    */
   systemAddTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemAddTag requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const systemTags = attributes?.systemTags || [];
-
-    if (systemTags.includes(tag)) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newSystemTags = [...systemTags, tag];
-      const normalizedTags = this.normalizeSystemTags(newSystemTags);
-      entryMap.set('attributes', {
-        ...attributes,
-        systemTags: normalizedTags
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.systemAddTag(this, key, tag);
   }
 
   /**
    * Remove a system tag from a key (requires system access).
    */
   systemRemoveTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemRemoveTag requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const systemTags = attributes?.systemTags || [];
-    const tagIndex = systemTags.indexOf(tag);
-
-    if (tagIndex === -1) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newSystemTags = systemTags.filter((t: SystemTag) => t !== tag);
-      entryMap.set('attributes', {
-        ...attributes,
-        systemTags: newSystemTags
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.systemRemoveTag(this, key, tag);
   }
 
   /**
    * Get all system tags for a key (requires system access).
    */
   systemGetTags(key: string): SystemTag[] {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemGetTags requires system access level');
-      return [];
-    }
-
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return [];
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return [];
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.systemTags || [];
+    return TagManager.systemGetTags(this, key);
   }
 
   /**
    * Check if a key has a specific system tag (requires system access).
    */
   systemHasTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemHasTag requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.systemTags?.includes(tag) || false;
+    return TagManager.systemHasTag(this, key, tag);
   }
 
   /**
    * Set all system tags for a key at once (requires system access).
    */
   systemSetTags(key: string, tags: SystemTag[]): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemSetTags requires system access level');
-      return false;
-    }
-
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-      entryMap.set('attributes', {
-        ...attributes,
-        systemTags: [...tags]
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.systemSetTags(this, key, tags);
   }
 
   /**
    * Get all keys with a specific system tag (requires system access).
    */
   systemGetKeysByTag(tag: SystemTag): string[] {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemGetKeysByTag requires system access level');
-      return [];
-    }
-
-    const keys = this.getSortedKeys();
-    return keys.filter(key => this.systemHasTag(key, tag));
+    return TagManager.systemGetKeysByTag(this, tag);
   }
 
   /**
    * Helper to get sorted keys (by zIndex).
+   * Respects context filtering when set.
    */
-  private getSortedKeys(): string[] {
+  getSortedKeys(): string[] {
     const entries: Array<{ key: string; zIndex: number }> = [];
 
     for (const [key, val] of this.rootMap) {
+      if (!this.keyMatchesContext(key)) {
+        continue;
+      }
       const entryMap = val as Y.Map<any>;
       const attributes = entryMap.get('attributes') as KeyAttributes;
       entries.push({ key, zIndex: attributes?.zIndex ?? 0 });
@@ -1465,241 +1403,16 @@ export class MindCache {
    * Export to Markdown format.
    */
   toMarkdown(): string {
-    const now = new Date();
-    const lines: string[] = [];
-    const appendixEntries: Array<{
-      key: string;
-      type: string;
-      contentType: string;
-      base64: string;
-      label: string;
-    }> = [];
-    let appendixCounter = 0;
-
-    lines.push('# MindCache STM Export');
-    lines.push('');
-    lines.push(`Export Date: ${now.toISOString().split('T')[0]}`);
-    lines.push('');
-    lines.push('---');
-    lines.push('');
-    lines.push('## STM Entries');
-    lines.push('');
-
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entryMap = this.rootMap.get(key);
-      if (!entryMap) {
-        return;
-      }
-
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-      const value = entryMap.get('value');
-
-      if (attributes?.systemTags?.includes('protected')) {
-        return;
-      }
-
-      lines.push(`### ${key}`);
-      const entryType = attributes?.type || 'text';
-      lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **System Tags**: \`${attributes?.systemTags?.join(', ') || 'none'}\``);
-      lines.push(`- **Z-Index**: \`${attributes?.zIndex ?? 0}\``);
-
-      if (attributes?.contentTags && attributes.contentTags.length > 0) {
-        lines.push(`- **Tags**: \`${attributes.contentTags.join('`, `')}\``);
-      }
-
-      if (attributes?.contentType) {
-        lines.push(`- **Content Type**: \`${attributes.contentType}\``);
-      }
-
-      if (entryType === 'image' || entryType === 'file') {
-        const label = String.fromCharCode(65 + appendixCounter);
-        appendixCounter++;
-        lines.push(`- **Value**: [See Appendix ${label}]`);
-
-        appendixEntries.push({
-          key,
-          type: entryType,
-          contentType: attributes?.contentType || 'application/octet-stream',
-          base64: value as string,
-          label
-        });
-      } else if (entryType === 'json') {
-        lines.push('- **Value**:');
-        lines.push('```json');
-        try {
-          const jsonValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-          lines.push(jsonValue);
-        } catch {
-          lines.push(String(value));
-        }
-        lines.push('```');
-      } else {
-        // Use code blocks for ALL values to support multi-line content
-        lines.push('- **Value**:');
-        lines.push('```');
-        lines.push(String(value));
-        lines.push('```');
-      }
-
-      lines.push('');
-    });
-
-    // Add appendix for binary data
-    if (appendixEntries.length > 0) {
-      lines.push('---');
-      lines.push('');
-      lines.push('## Appendix: Binary Data');
-      lines.push('');
-
-      appendixEntries.forEach(entry => {
-        lines.push(`### Appendix ${entry.label}: ${entry.key}`);
-        lines.push(`- **Type**: \`${entry.type}\``);
-        lines.push(`- **Content Type**: \`${entry.contentType}\``);
-        lines.push('- **Base64 Data**:');
-        lines.push('```');
-        lines.push(entry.base64);
-        lines.push('```');
-        lines.push('');
-      });
-    }
-
-    return lines.join('\n');
+    return MarkdownSerializer.toMarkdown(this);
   }
 
   /**
    * Import from Markdown format.
+   * @param markdown The markdown string to import
+   * @param merge If false (default), clears existing data before importing. If true, merges with existing data.
    */
-  fromMarkdown(markdown: string): void {
-    const lines = markdown.split('\n');
-    let currentKey: string | null = null;
-    let currentAttributes: Partial<KeyAttributes> = {};
-    let currentValue: string | null = null;
-    let inCodeBlock = false;
-    let codeBlockContent: string[] = [];
-    const _appendixData: Record<string, string> = {};
-
-    for (const line of lines) {
-      // Parse key headers
-      if (line.startsWith('### ') && !line.startsWith('### Appendix')) {
-        // Save previous entry
-        if (currentKey && currentValue !== null) {
-          this.set_value(currentKey, currentValue.trim(), currentAttributes);
-        }
-
-        currentKey = line.substring(4).trim();
-        currentAttributes = {};
-        currentValue = null;
-        continue;
-      }
-
-      // Parse appendix
-      if (line.startsWith('### Appendix ')) {
-        const match = line.match(/### Appendix ([A-Z]): (.+)/);
-        if (match) {
-          currentKey = match[2];
-        }
-        continue;
-      }
-
-      // Parse attributes
-      if (line.startsWith('- **Type**:')) {
-        const type = line.match(/`(.+)`/)?.[1] as KeyAttributes['type'];
-        if (type) {
-          currentAttributes.type = type;
-        }
-        continue;
-      }
-      if (line.startsWith('- **System Tags**:')) {
-        const tagsStr = line.match(/`([^`]+)`/)?.[1] || '';
-        if (tagsStr !== 'none') {
-          currentAttributes.systemTags = tagsStr.split(', ').filter(t => t) as SystemTag[];
-        }
-        continue;
-      }
-      if (line.startsWith('- **Z-Index**:')) {
-        const zIndex = parseInt(line.match(/`(\d+)`/)?.[1] || '0', 10);
-        currentAttributes.zIndex = zIndex;
-        continue;
-      }
-      if (line.startsWith('- **Tags**:')) {
-        const tags = line.match(/`([^`]+)`/g)?.map(t => t.slice(1, -1)) || [];
-        currentAttributes.contentTags = tags;
-        continue;
-      }
-      if (line.startsWith('- **Content Type**:')) {
-        currentAttributes.contentType = line.match(/`(.+)`/)?.[1];
-        continue;
-      }
-      if (line.startsWith('- **Value**:') && !line.includes('[See Appendix')) {
-        // Value line - check what follows
-        const afterValue = line.substring(12).trim();
-
-        if (afterValue === '') {
-          // Empty - expect code block on next line
-          currentValue = '';
-        } else if (afterValue === '```' || afterValue === '```json') {
-          // Code block starts on this line, content on next
-          inCodeBlock = true;
-          codeBlockContent = [];
-          currentValue = '';
-        } else if (afterValue.startsWith('```')) {
-          // Code block with content on same line: ```mindmap or ```some text
-          inCodeBlock = true;
-          codeBlockContent = [afterValue.substring(3)]; // Capture content after ```
-          currentValue = '';
-        } else {
-          // Inline value (legacy format)
-          currentValue = afterValue;
-        }
-        continue;
-      }
-
-      // Handle code blocks - check trimmed line for robustness
-      const trimmedLine = line.trim();
-      if (trimmedLine === '```json' || trimmedLine === '```') {
-        if (inCodeBlock) {
-          // End of code block
-          inCodeBlock = false;
-          if (currentKey && codeBlockContent.length > 0) {
-            currentValue = codeBlockContent.join('\n');
-          }
-          codeBlockContent = [];
-        } else {
-          inCodeBlock = true;
-          codeBlockContent = [];
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        codeBlockContent.push(line);
-      } else if (currentKey && currentValue !== null) {
-        currentValue += '\n' + line;
-      }
-    }
-
-    // Save last entry
-    if (currentKey && currentValue !== null) {
-      this.set_value(currentKey, currentValue.trim(), currentAttributes);
-    }
-
-    // If no keys were parsed but we have content, treat as unstructured text
-    // Detect if any keys were actually set during this import?
-    // We can check if rootMap was modified? Or just track if we parsed any keys.
-    // Simpler: track if we ever set currentKey.
-
-    // Check if we parsed any keys
-    const hasParsedKeys = lines.some(line => line.startsWith('### ') && !line.startsWith('### Appendix'));
-
-    if (!hasParsedKeys && markdown.trim().length > 0) {
-      this.set_value('imported_content', markdown.trim(), {
-        type: 'text',
-        systemTags: ['SystemPrompt', 'LLMWrite'], // Default assumptions
-        zIndex: 0
-      });
-    }
+  fromMarkdown(markdown: string, merge: boolean = false): void {
+    MarkdownSerializer.fromMarkdown(markdown, this, merge);
   }
 
   /**
@@ -1797,9 +1510,6 @@ export class MindCache {
    * Note: This exposes Yjs Y.Text directly for editor bindings (y-quill, y-codemirror, etc.)
    */
   set_document(key: string, initialText?: string, attributes?: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return;
-    }
 
     let entryMap = this.rootMap.get(key);
 
@@ -1873,11 +1583,11 @@ export class MindCache {
   }
 
   /**
-   * Replace all text in a document key (private - use set_value for public API).
+   * Replace all text in a document key.
    * Uses diff-based updates when changes are < diffThreshold (default 80%).
    * This preserves concurrent edits and provides better undo granularity.
    */
-  private _replaceDocumentText(key: string, newText: string, diffThreshold = 0.8): void {
+  _replaceDocumentText(key: string, newText: string, diffThreshold = 0.8): void {
     const yText = this.get_document(key);
     if (!yText) {
       return;
@@ -1958,23 +1668,18 @@ export class MindCache {
     this.globalListeners = this.globalListeners.filter(l => l !== listener);
   }
 
-  private notifyGlobalListeners(): void {
+  notifyGlobalListeners(): void {
     this.globalListeners.forEach(l => l());
   }
 
   // Sanitize key name for use in tool names
-  private sanitizeKeyForTool(key: string): string {
-    return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+  sanitizeKeyForTool(key: string): string {
+    return AIToolBuilder.sanitizeKeyForTool(key);
   }
 
   // Find original key from sanitized tool name
-  private findKeyFromSanitizedTool(sanitizedKey: string): string | undefined {
-    for (const [key] of this.rootMap) {
-      if (this.sanitizeKeyForTool(key) === sanitizedKey) {
-        return key;
-      }
-    }
-    return undefined;
+  findKeyFromSanitizedTool(sanitizedKey: string): string | undefined {
+    return AIToolBuilder.findKeyFromSanitizedTool(this, sanitizedKey);
   }
 
   /**
@@ -1986,153 +1691,7 @@ export class MindCache {
    * - Prevents LLMs from escalating privileges
    */
   create_vercel_ai_tools(): Record<string, any> {
-    const tools: Record<string, any> = {};
-
-    for (const [key, val] of this.rootMap) {
-      // Skip system keys
-      if (key.startsWith('$')) {
-        continue;
-      }
-
-      const entryMap = val as Y.Map<any>;
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-
-      // Check if key has LLMWrite access (writable by LLM)
-      const isWritable = attributes?.systemTags?.includes('LLMWrite');
-
-      if (!isWritable) {
-        continue;
-      }
-
-      const sanitizedKey = this.sanitizeKeyForTool(key);
-      const isDocument = attributes?.type === 'document';
-
-      // 1. write_ tool (for all writable keys)
-      tools[`write_${sanitizedKey}`] = {
-        description: isDocument
-          ? `Rewrite the entire "${key}" document`
-          : `Write a value to the STM key: ${key}`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            value: { type: 'string', description: isDocument ? 'New document content' : 'The value to write' }
-          },
-          required: ['value']
-        },
-        execute: async ({ value }: { value: any }) => {
-          // Use llm_set_key for security - only modifies value, not attributes
-          const success = this.llm_set_key(key, value);
-          if (success) {
-            return {
-              result: `Successfully wrote "${value}" to ${key}`,
-              key,
-              value
-            };
-          }
-          return {
-            result: `Failed to write to ${key} - permission denied or key not found`,
-            key,
-            error: true
-          };
-        }
-      };
-
-      // For document type, add additional tools
-      if (isDocument) {
-        // 2. append_ tool
-        tools[`append_${sanitizedKey}`] = {
-          description: `Append text to the end of "${key}" document`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              text: { type: 'string', description: 'Text to append' }
-            },
-            required: ['text']
-          },
-          execute: async ({ text }: { text: string }) => {
-            // Check permission first
-            if (!attributes?.systemTags?.includes('LLMWrite')) {
-              return { result: `Permission denied for ${key}`, key, error: true };
-            }
-            const yText = this.get_document(key);
-            if (yText) {
-              yText.insert(yText.length, text);
-              return {
-                result: `Successfully appended to ${key}`,
-                key,
-                appended: text
-              };
-            }
-            return { result: `Document ${key} not found`, key };
-          }
-        };
-
-        // 3. insert_ tool
-        tools[`insert_${sanitizedKey}`] = {
-          description: `Insert text at a position in "${key}" document`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              index: { type: 'number', description: 'Position to insert at (0 = start)' },
-              text: { type: 'string', description: 'Text to insert' }
-            },
-            required: ['index', 'text']
-          },
-          execute: async ({ index, text }: { index: number; text: string }) => {
-            // Check permission first
-            if (!attributes?.systemTags?.includes('LLMWrite')) {
-              return { result: `Permission denied for ${key}`, key, error: true };
-            }
-            this.insert_text(key, index, text);
-            return {
-              result: `Successfully inserted text at position ${index} in ${key}`,
-              key,
-              index,
-              inserted: text
-            };
-          }
-        };
-
-        // 4. edit_ tool (find and replace)
-        tools[`edit_${sanitizedKey}`] = {
-          description: `Find and replace text in "${key}" document`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              find: { type: 'string', description: 'Text to find' },
-              replace: { type: 'string', description: 'Replacement text' }
-            },
-            required: ['find', 'replace']
-          },
-          execute: async ({ find, replace }: { find: string; replace: string }) => {
-            // Check permission first
-            if (!attributes?.systemTags?.includes('LLMWrite')) {
-              return { result: `Permission denied for ${key}`, key, error: true };
-            }
-            const yText = this.get_document(key);
-            if (yText) {
-              const text = yText.toString();
-              const idx = text.indexOf(find);
-              if (idx !== -1) {
-                yText.delete(idx, find.length);
-                yText.insert(idx, replace);
-                return {
-                  result: `Successfully replaced "${find}" with "${replace}" in ${key}`,
-                  key,
-                  find,
-                  replace,
-                  index: idx
-                };
-              }
-              return { result: `Text "${find}" not found in ${key}`, key };
-            }
-            return { result: `Document ${key} not found`, key };
-          }
-        };
-      }
-    }
-
-    return tools;
+    return AIToolBuilder.createVercelAITools(this);
   }
 
   /**
@@ -2147,60 +1706,7 @@ export class MindCache {
    * Indicates which tools can be used to modify writable keys.
    */
   get_system_prompt(): string {
-    const lines: string[] = [];
-
-    for (const [key, val] of this.rootMap) {
-      // Skip system keys for now, add them at the end
-      if (key.startsWith('$')) {
-        continue;
-      }
-
-      const entryMap = val as Y.Map<any>;
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-
-      // Check visibility - key is visible if it has SystemPrompt or LLMRead tag
-      const isVisible = attributes?.systemTags?.includes('SystemPrompt') ||
-        attributes?.systemTags?.includes('LLMRead');
-
-      if (!isVisible) {
-        continue;
-      }
-
-      const value = this.get_value(key);
-      const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
-
-      // Check if writable - key is writable if it has LLMWrite tag
-      const isWritable = attributes?.systemTags?.includes('LLMWrite');
-
-      const isDocument = attributes?.type === 'document';
-      const sanitizedKey = this.sanitizeKeyForTool(key);
-
-      if (isWritable) {
-        if (isDocument) {
-          lines.push(
-            `${key}: ${displayValue}. ` +
-            `Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`
-          );
-        } else {
-          const oldValueHint = displayValue
-            ? ' This tool DOES NOT append — start your response ' +
-            `with the old value (${displayValue})`
-            : '';
-          lines.push(
-            `${key}: ${displayValue}. ` +
-            `You can rewrite "${key}" by using the write_${sanitizedKey} tool.${oldValueHint}`
-          );
-        }
-      } else {
-        lines.push(`${key}: ${displayValue}`);
-      }
-    }
-
-    // Add temporal keys
-    lines.push(`$date: ${this.get_value('$date')}`);
-    lines.push(`$time: ${this.get_value('$time')}`);
-
-    return lines.join(', ');
+    return AIToolBuilder.getSystemPrompt(this);
   }
 
   /**
@@ -2211,95 +1717,7 @@ export class MindCache {
     toolName: string,
     value: any
   ): { result: string; key: string; value?: any } | null {
-    // Parse tool name (format: action_keyname)
-    const match = toolName.match(/^(write|append|insert|edit)_(.+)$/);
-    if (!match) {
-      return null;
-    }
-
-    const [, action, sanitizedKey] = match;
-    const key = this.findKeyFromSanitizedTool(sanitizedKey);
-
-    if (!key) {
-      return null;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return null;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-
-    // Check if writable - key is writable if it has LLMWrite tag
-    const isWritable = attributes?.systemTags?.includes('LLMWrite');
-
-    if (!isWritable) {
-      return null;
-    }
-
-    const isDocument = attributes?.type === 'document';
-
-    switch (action) {
-      case 'write':
-        if (isDocument) {
-          this._replaceDocumentText(key, value);
-        } else {
-          this.set_value(key, value);
-        }
-        return {
-          result: `Successfully wrote "${value}" to ${key}`,
-          key,
-          value
-        };
-
-      case 'append':
-        if (isDocument) {
-          const yText = this.get_document(key);
-          if (yText) {
-            yText.insert(yText.length, value);
-            return {
-              result: `Successfully appended to ${key}`,
-              key,
-              value
-            };
-          }
-        }
-        return null;
-
-      case 'insert':
-        if (isDocument && typeof value === 'object' && value.index !== undefined && value.text) {
-          this.insert_text(key, value.index, value.text);
-          return {
-            result: `Successfully inserted at position ${value.index} in ${key}`,
-            key,
-            value: value.text
-          };
-        }
-        return null;
-
-      case 'edit':
-        if (isDocument && typeof value === 'object' && value.find && value.replace !== undefined) {
-          const yText = this.get_document(key);
-          if (yText) {
-            const text = yText.toString();
-            const idx = text.indexOf(value.find);
-            if (idx !== -1) {
-              yText.delete(idx, value.find.length);
-              yText.insert(idx, value.replace);
-              return {
-                result: `Successfully replaced "${value.find}" with "${value.replace}" in ${key}`,
-                key,
-                value: value.replace
-              };
-            }
-          }
-        }
-        return null;
-
-      default:
-        return null;
-    }
+    return AIToolBuilder.executeToolCall(this, toolName, value);
   }
 
   // Internal method stub for legacy compatibility

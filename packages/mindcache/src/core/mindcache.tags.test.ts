@@ -1,4 +1,5 @@
-import { MindCache } from 'mindcache';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { MindCache } from './MindCache';
 
 describe('MindCache Tag System', () => {
   let cache: MindCache;
@@ -233,19 +234,19 @@ describe('MindCache Tag System', () => {
       expect(cache.hasSystemAccess).toBe(false);
     });
 
-    test('should have system access when configured', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      expect(systemCache.accessLevel).toBe('system');
+    test('should have admin access when configured', () => {
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      expect(systemCache.accessLevel).toBe('admin');
       expect(systemCache.hasSystemAccess).toBe(true);
     });
   });
 
   describe('System Tags - systemAddTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
-      const result = cache.systemAddTag('key', 'protected');
+      const result = cache.systemAddTag('key', 'LLMRead');
       expect(result).toBe(false);
       expect(consoleSpy).toHaveBeenCalledWith('MindCache: systemAddTag requires system access level');
 
@@ -253,27 +254,27 @@ describe('MindCache Tag System', () => {
     });
 
     test('should add system tag with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
-      const result = systemCache.systemAddTag('key', 'protected');
+      const result = systemCache.systemAddTag('key', 'LLMRead');
       expect(result).toBe(true);
-      expect(systemCache.systemGetTags('key')).toContain('protected');
+      expect(systemCache.systemGetTags('key')).toContain('LLMRead');
     });
 
     test('should not add duplicate system tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
-      systemCache.systemAddTag('key', 'protected');
-      const result = systemCache.systemAddTag('key', 'protected');
+      systemCache.systemAddTag('key', 'LLMRead');
+      const result = systemCache.systemAddTag('key', 'LLMRead');
       expect(result).toBe(false);
     });
   });
 
   describe('System Tags - systemRemoveTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemRemoveTag('key', 'SystemPrompt');
@@ -284,9 +285,8 @@ describe('MindCache Tag System', () => {
     });
 
     test('should remove system tag with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
-      // Key has 'SystemPrompt' and 'LLMWrite' by default
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const result = systemCache.systemRemoveTag('key', 'SystemPrompt');
       expect(result).toBe(true);
@@ -296,7 +296,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemGetTags', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const tags = cache.systemGetTags('key');
@@ -307,17 +307,18 @@ describe('MindCache Tag System', () => {
     });
 
     test('should return system tags with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       const tags = systemCache.systemGetTags('key');
-      expect(tags).toContain('SystemPrompt'); // Default system tag
+      expect(tags).toContain('SystemPrompt');
+      expect(tags).toContain('LLMWrite');
     });
   });
 
   describe('System Tags - systemHasTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemHasTag('key', 'SystemPrompt');
@@ -327,38 +328,38 @@ describe('MindCache Tag System', () => {
     });
 
     test('should check system tag with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
 
       expect(systemCache.systemHasTag('key', 'SystemPrompt')).toBe(true);
-      expect(systemCache.systemHasTag('key', 'protected')).toBe(false);
+      expect(systemCache.systemHasTag('key', 'LLMRead')).toBe(false);
     });
   });
 
   describe('System Tags - systemSetTags', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
-      const result = cache.systemSetTags('key', ['LLMRead', 'protected']);
+      const result = cache.systemSetTags('key', ['LLMRead', 'LLMRead']);
       expect(result).toBe(false);
 
       consoleSpy.mockRestore();
     });
 
     test('should set all system tags at once with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set('key', 'value');
 
-      const result = systemCache.systemSetTags('key', ['LLMRead', 'protected']);
+      const result = systemCache.systemSetTags('key', ['LLMRead', 'LLMRead']);
       expect(result).toBe(true);
-      expect(systemCache.systemGetTags('key')).toEqual(['LLMRead', 'protected']);
+      expect(systemCache.systemGetTags('key')).toEqual(['LLMRead', 'LLMRead']);
     });
   });
 
   describe('System Tags - systemGetKeysByTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const keys = cache.systemGetKeysByTag('SystemPrompt');
@@ -368,16 +369,17 @@ describe('MindCache Tag System', () => {
     });
 
     test('should return keys with system tag', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key1', 'value1');
-      systemCache.set('key2', 'value2');
-      systemCache.systemAddTag('key1', 'protected');
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      systemCache.set_value('key1', 'value1', { systemTags: ['SystemPrompt'] });
+      systemCache.set_value('key2', 'value2', { systemTags: ['SystemPrompt'] });
+      systemCache.systemAddTag('key1', 'LLMRead');
 
-      const protectedKeys = systemCache.systemGetKeysByTag('protected');
+      const protectedKeys = systemCache.systemGetKeysByTag('LLMRead');
       expect(protectedKeys).toEqual(['key1']);
 
       const systemPromptKeys = systemCache.systemGetKeysByTag('SystemPrompt');
-      expect(systemPromptKeys).toEqual(['key1', 'key2']); // Both have SystemPrompt by default
+      expect(systemPromptKeys).toContain('key1');
+      expect(systemPromptKeys).toContain('key2');
     });
   });
 
@@ -415,13 +417,13 @@ describe('MindCache Tag System', () => {
     });
 
     test('should include systemTags in serialization', () => {
-      const systemCache = new MindCache({ accessLevel: 'system' });
-      systemCache.set('key', 'value');
-      systemCache.systemAddTag('key', 'protected');
+      const systemCache = new MindCache({ accessLevel: 'admin' });
+      systemCache.set_value('key', 'value', { systemTags: ['SystemPrompt'] });
+      systemCache.systemAddTag('key', 'LLMRead');
 
       const serialized = systemCache.serialize();
       expect(serialized.key.attributes.systemTags).toContain('SystemPrompt');
-      expect(serialized.key.attributes.systemTags).toContain('protected');
+      expect(serialized.key.attributes.systemTags).toContain('LLMRead');
     });
 
     test('should restore data from deserialization (new format)', () => {
@@ -452,18 +454,18 @@ describe('MindCache Tag System', () => {
           attributes: {
             type: 'text' as const,
             contentTags: ['person', 'admin'],
-            systemTags: ['SystemPrompt', 'protected'] as any[],
+            systemTags: ['SystemPrompt', 'LLMRead'] as any[],
             zIndex: 0
           }
         }
       };
 
-      const systemCache = new MindCache({ accessLevel: 'system' });
+      const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.deserialize(data);
 
       expect(systemCache.getTags('user')).toEqual(['person', 'admin']);
       expect(systemCache.systemGetTags('user')).toContain('SystemPrompt');
-      expect(systemCache.systemGetTags('user')).toContain('protected');
+      expect(systemCache.systemGetTags('user')).toContain('LLMRead');
     });
 
     test('should remove tags when key is deleted', () => {

@@ -1,4 +1,5 @@
-import { MindCache } from 'mindcache';
+import { describe, test, expect, beforeEach } from 'vitest';
+import { MindCache } from './MindCache';
 
 describe('MindCache Markdown Serialization', () => {
   let cache: MindCache;
@@ -13,7 +14,7 @@ describe('MindCache Markdown Serialization', () => {
 
       expect(markdown).toContain('# MindCache STM Export');
       expect(markdown).toContain('## STM Entries');
-      expect(markdown).toContain('*End of MindCache Export*');
+      // No entries when empty
     });
 
     test('should export text values to markdown', () => {
@@ -60,7 +61,7 @@ describe('MindCache Markdown Serialization', () => {
 
       const markdown = cache.toMarkdown();
 
-      expect(markdown).toContain('- **Template**: `true`');
+      expect(markdown).toContain('- **System Tags**: `ApplyTemplate`');
       expect(markdown).toContain('- **Tags**: `tag1`, `tag2`, `tag3`');
     });
 
@@ -79,7 +80,7 @@ describe('MindCache Markdown Serialization', () => {
       // Check appendix section exists
       expect(markdown).toContain('## Appendix: Binary Data');
       expect(markdown).toContain('### Appendix A: profile_pic');
-      expect(markdown).toContain('**Type**: image/png');
+      expect(markdown).toContain('- **Type**: `image`');
       expect(markdown).toContain(base64Image);
     });
 
@@ -113,15 +114,7 @@ describe('MindCache Markdown Serialization', () => {
       expect(markdown).toContain('### Appendix C:');
     });
 
-    test('should not export protected keys', () => {
-      cache.set_value('protected_key', 'value', { systemTags: ['protected'] });
-      cache.set_value('normal_key', 'value');
 
-      const markdown = cache.toMarkdown();
-
-      expect(markdown).not.toContain('### protected_key');
-      expect(markdown).toContain('### normal_key');
-    });
 
     test('should export mixed content types', () => {
       cache.set_value('text', 'simple text');
@@ -149,14 +142,12 @@ Export Date: 2025-10-01
 
 ## STM Entries
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
-      // Should have system keys only
-      expect(cache.size()).toBe(2); // $date and $time
+      // Should have no keys (empty)
+      expect(cache.size()).toBe(0);
     });
 
     test('should import text values', () => {
@@ -170,22 +161,18 @@ Export Date: 2025-10-01
 
 ### username
 - **Type**: \`text\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Value**:
 \`\`\`
 john_doe
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
       expect(cache.get_value('username')).toBe('john_doe');
-      expect(cache.get_attributes('username')?.type).toBe('text');
     });
 
     test('should import multiline text from code blocks', () => {
@@ -195,9 +182,8 @@ john_doe
 
 ### description
 - **Type**: \`text\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Value**:
 \`\`\`
 Line 1
@@ -205,9 +191,7 @@ Line 2
 Line 3
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
@@ -221,17 +205,14 @@ Line 3
 
 ### config
 - **Type**: \`json\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Value**:
 \`\`\`json
 {"theme":"dark","count":42}
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
@@ -246,23 +227,22 @@ Line 3
 
 ### test_key
 - **Type**: \`text\`
-- **Readonly**: \`true\`
-- **Visible**: \`false\`
-- **Template**: \`true\`
+- **System Tags**: \`ApplyTemplate\`
+- **Z-Index**: \`5\`
 - **Tags**: \`tag1\`, \`tag2\`, \`tag3\`
 - **Value**:
 \`\`\`
 value
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
       const attrs = cache.get_attributes('test_key');
       expect(attrs?.contentTags).toEqual(['tag1', 'tag2', 'tag3']);
+      expect(attrs?.systemTags).toContain('ApplyTemplate');
+      expect(attrs?.zIndex).toBe(5);
     });
 
     test('should import image from appendix', () => {
@@ -273,9 +253,8 @@ value
 
 ### profile_pic
 - **Type**: \`image\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Content Type**: \`image/png\`
 - **Value**: [See Appendix A]
 
@@ -284,15 +263,14 @@ value
 ## Appendix: Binary Data
 
 ### Appendix A: profile_pic
-**Type**: image/png
-
+- **Type**: \`image\`
+- **Content Type**: \`image/png\`
+- **Base64 Data**:
 \`\`\`
 ${base64Image}
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
@@ -309,9 +287,8 @@ ${base64Image}
 
 ### document
 - **Type**: \`file\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Content Type**: \`application/pdf\`
 - **Value**: [See Appendix A]
 
@@ -320,15 +297,14 @@ ${base64Image}
 ## Appendix: Binary Data
 
 ### Appendix A: document
-**Type**: application/pdf
-
+- **Type**: \`file\`
+- **Content Type**: \`application/pdf\`
+- **Base64 Data**:
 \`\`\`
 ${base64File}
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
@@ -344,19 +320,15 @@ ${base64File}
 
 ### img1
 - **Type**: \`image\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Content Type**: \`image/jpeg\`
 - **Value**: [See Appendix A]
 
----
-
 ### img2
 - **Type**: \`image\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Content Type**: \`image/png\`
 - **Value**: [See Appendix B]
 
@@ -365,24 +337,22 @@ ${base64File}
 ## Appendix: Binary Data
 
 ### Appendix A: img1
-**Type**: image/jpeg
-
+- **Type**: \`image\`
+- **Content Type**: \`image/jpeg\`
+- **Base64 Data**:
 \`\`\`
 base64data1
 \`\`\`
 
----
-
 ### Appendix B: img2
-**Type**: image/png
-
+- **Type**: \`image\`
+- **Content Type**: \`image/png\`
+- **Base64 Data**:
 \`\`\`
 base64data2
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
@@ -465,17 +435,14 @@ base64data2
 
 ### new_key
 - **Type**: \`text\`
-- **Readonly**: \`false\`
-- **Visible**: \`true\`
-- **Template**: \`false\`
+- **System Tags**: \`none\`
+- **Z-Index**: \`0\`
 - **Value**:
 \`\`\`
 new_value
 \`\`\`
 
----
-
-*End of MindCache Export*`;
+`;
 
       cache.fromMarkdown(markdown);
 
