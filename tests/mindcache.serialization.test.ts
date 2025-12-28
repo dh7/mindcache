@@ -39,7 +39,7 @@ describe('MindCache Complete Serialization', () => {
 
       const systemCache = new MindCache({ accessLevel: 'admin' });
       systemCache.set_value('protected_key', 'protected_value');
-      systemCache.systemAddTag('protected_key', 'protected');
+      systemCache.systemAddTag('protected_key', 'LLMRead');
 
       const serialized = systemCache.serialize();
 
@@ -65,7 +65,7 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             type: 'text' as const,
             contentTags: [],
-            systemTags: ['protected'] as SystemTag[],
+            systemTags: ['LLMRead'] as SystemTag[],
             zIndex: 0
           }
         }
@@ -285,7 +285,7 @@ describe('MindCache Complete Serialization', () => {
           attributes: {
             type: 'text',
             contentTags: [],
-            systemTags: ['protected'],
+            systemTags: ['LLMRead'],
             zIndex: 0
           }
         }

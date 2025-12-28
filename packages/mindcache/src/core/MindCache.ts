@@ -103,7 +103,7 @@ export class MindCache {
 
     for (const tag of tags) {
       // Only include valid SystemTag values, skip duplicates
-      if (['SystemPrompt', 'LLMRead', 'LLMWrite', 'protected', 'ApplyTemplate'].includes(tag)) {
+      if (['SystemPrompt', 'LLMRead', 'LLMWrite', 'ApplyTemplate'].includes(tag)) {
         if (!seen.has(tag)) {
           seen.add(tag);
           normalized.push(tag);
@@ -1398,7 +1398,7 @@ export class MindCache {
 
   /**
    * Add a system tag to a key (requires system access).
-   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'readonly', 'protected', 'ApplyTemplate'
+   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'readonly', 'ApplyTemplate'
    */
   systemAddTag(key: string, tag: SystemTag): boolean {
     if (!this.hasSystemAccess) {
@@ -1619,9 +1619,6 @@ export class MindCache {
       const attributes = entryMap.get('attributes') as KeyAttributes;
       const value = entryMap.get('value');
 
-      if (attributes?.systemTags?.includes('protected')) {
-        return;
-      }
 
       lines.push(`### ${key}`);
       const entryType = attributes?.type || 'text';

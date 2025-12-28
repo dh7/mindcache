@@ -24,10 +24,9 @@ export interface ContextRules {
  * - 'SystemPrompt': Include in system prompt (visible to LLM context)
  * - 'LLMRead': LLM can read this key via tools
  * - 'LLMWrite': LLM can write to this key via tools
- * - 'protected': Cannot be deleted
  * - 'ApplyTemplate': Process value through template injection
  */
-export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate';
+export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'ApplyTemplate';
 
 /**
  * Type of value stored in a MindCache key
@@ -124,10 +123,6 @@ export const SystemTagHelpers = {
   /** Check if key is included in system prompt */
   isInSystemPrompt: (attrs: KeyAttributes): boolean =>
     attrs.systemTags.includes('SystemPrompt'),
-
-  /** Check if key is protected from deletion */
-  isProtected: (attrs: KeyAttributes): boolean =>
-    attrs.systemTags.includes('protected'),
 
   /** Check if key uses template injection */
   hasTemplateInjection: (attrs: KeyAttributes): boolean =>

@@ -113,15 +113,7 @@ describe('MindCache Markdown Serialization', () => {
       expect(markdown).toContain('### Appendix C:');
     });
 
-    test('should not export protected keys', () => {
-      cache.set_value('protected_key', 'value', { systemTags: ['protected'] });
-      cache.set_value('normal_key', 'value');
 
-      const markdown = cache.toMarkdown();
-
-      expect(markdown).not.toContain('### protected_key');
-      expect(markdown).toContain('### normal_key');
-    });
 
     test('should export mixed content types', () => {
       cache.set_value('text', 'simple text');

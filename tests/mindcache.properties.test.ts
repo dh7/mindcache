@@ -20,14 +20,13 @@ describe('MindCache Key Properties', () => {
 
     test('should set value with custom attributes', () => {
       const customAttributes = {
-        systemTags: ['protected'] as ('SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate')[]
+        systemTags: ['SystemPrompt'] as ('SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'ApplyTemplate')[]
       };
 
       cache.set_value('custom_key', 'custom_value', customAttributes);
       const attributes = cache.get_attributes('custom_key');
 
-      expect(attributes?.systemTags).toContain('protected');
-      expect(attributes?.systemTags).not.toContain('SystemPrompt');
+      expect(attributes?.systemTags).toContain('SystemPrompt');
       expect(attributes?.systemTags).not.toContain('LLMWrite');
     });
 
@@ -49,7 +48,7 @@ describe('MindCache Key Properties', () => {
     });
 
     test('should return false when setting attributes for non-existent key', () => {
-      const result = cache.set_attributes('non_existent', { systemTags: ['protected'] });
+      const result = cache.set_attributes('non_existent', { systemTags: ['LLMRead'] });
       expect(result).toBe(false);
     });
 
@@ -292,32 +291,7 @@ describe('MindCache Key Properties', () => {
     });
   });
 
-  describe('Protected Property', () => {
-    test('protected tag can be added by admin', () => {
-      const adminCache = new MindCache({ accessLevel: 'admin' });
-      adminCache.set_value('key', 'value');
-      adminCache.systemAddTag('key', 'protected');
 
-      const attrs = adminCache.get_attributes('key');
-      expect(attrs?.systemTags).toContain('protected');
-    });
-
-    test('regular keys should not have protected tag by default', () => {
-      cache.set_value('regular_key', 'value');
-      const attributes = cache.get_attributes('regular_key');
-
-      expect(attributes?.systemTags).not.toContain('protected');
-    });
-
-    test('can create custom protected keys with system access', () => {
-      const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set_value('custom_protected', 'protected_value');
-      systemCache.systemAddTag('custom_protected', 'protected');
-      const attributes = systemCache.get_attributes('custom_protected');
-
-      expect(attributes?.systemTags).toContain('protected');
-    });
-  });
 
   describe('Integration Tests', () => {
     test('complex scenario with all properties', () => {
@@ -374,22 +348,7 @@ describe('MindCache Key Properties', () => {
       expect(cache.get('old_key')).toBe('old_value');
     });
 
-    test('protected keys are not included in tools', () => {
-      // Create a protected key that tries to be writable
-      const systemCache = new MindCache({ accessLevel: 'admin' });
-      systemCache.set_value('protected_tracker', 'tracking_value', {
-        systemTags: ['SystemPrompt', 'LLMWrite']
-      });
-      systemCache.systemAddTag('protected_tracker', 'protected');
 
-      const attributes = systemCache.get_attributes('protected_tracker');
-      expect(attributes?.systemTags).toContain('protected');
-
-      // Protected keys should still appear in AI tools if they have LLMWrite
-      // (protection is about deletion, not writing)
-      const tools = systemCache.get_aisdk_tools();
-      expect(Object.keys(tools)).toContain('write_protected_tracker');
-    });
   });
 
   describe('Edge Cases', () => {
