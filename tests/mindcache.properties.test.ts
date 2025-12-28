@@ -244,12 +244,12 @@ describe('MindCache Key Properties', () => {
       expect(stmString).not.toContain('{{username}}');
     });
 
-    test('template with missing keys should keep placeholder', () => {
+    test('template with missing keys should become empty', () => {
       cache.set_value('incomplete_template', 'Hello {{missing_key}}!', { systemTags: ['ApplyTemplate'] });
 
       const result = cache.get_value('incomplete_template');
-      // Missing keys keep their placeholder
-      expect(result).toBe('Hello {{missing_key}}!');
+      // Missing keys replaced with empty string
+      expect(result).toBe('Hello !');
     });
 
     test('nested template processing should work', () => {

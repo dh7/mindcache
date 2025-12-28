@@ -846,7 +846,8 @@ export class MindCache {
   private _injectSTMInternal(template: string, _processingStack: Set<string>): string {
     return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
       const val = this.get_value(key.trim(), _processingStack);
-      return val !== undefined ? String(val) : `{{${key}}}`;
+      // Replace missing keys with empty string (standard template engine behavior)
+      return val !== undefined ? String(val) : '';
     });
   }
 
@@ -2400,7 +2401,7 @@ export class MindCache {
     lines.push(`$date: ${this.get_value('$date')}`);
     lines.push(`$time: ${this.get_value('$time')}`);
 
-    return lines.join(', ');
+    return lines.join('\n');
   }
 
   /**

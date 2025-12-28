@@ -175,7 +175,7 @@ describe('MindCache Complete Serialization', () => {
 
     test('should handle round-trip serialization correctly', () => {
       // Set up complex test data
-      cache.set_value('name', 'Bob');
+      cache.set_value('name', 'Bob', { systemTags: ['SystemPrompt'] });
       cache.set_value('secret', 'hidden', { systemTags: [] });
       cache.set_value('message', 'Welcome {{name}}!', { systemTags: ['SystemPrompt', 'ApplyTemplate'] });
 
@@ -362,7 +362,7 @@ describe('MindCache Complete Serialization', () => {
 
   describe('ContentTags and SystemTags serialization', () => {
     test('should serialize both contentTags and systemTags', () => {
-      cache.set_value('key', 'value');
+      cache.set_value('key', 'value', { systemTags: ['SystemPrompt', 'LLMWrite'] });
       cache.addTag('key', 'user-tag');
 
       const serialized = cache.serialize();
