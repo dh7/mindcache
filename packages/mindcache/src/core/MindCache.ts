@@ -1694,8 +1694,10 @@ export class MindCache {
 
   /**
    * Import from Markdown format.
+   * @param markdown The markdown string to import
+   * @param merge If false (default), clears existing data before importing. If true, merges with existing data.
    */
-  fromMarkdown(markdown: string): void {
+  fromMarkdown(markdown: string, merge: boolean = false): void {
     const lines = markdown.split('\n');
     let currentKey: string | null = null;
     let currentAttributes: Partial<KeyAttributes> = {};
@@ -1703,6 +1705,11 @@ export class MindCache {
     let inCodeBlock = false;
     let codeBlockContent: string[] = [];
     const _appendixData: Record<string, string> = {};
+
+    // Clear existing data unless merging
+    if (!merge) {
+      this.clear();
+    }
 
     for (const line of lines) {
       // Parse key headers
@@ -1720,9 +1727,16 @@ export class MindCache {
 
       // Parse appendix
       if (line.startsWith('### Appendix ')) {
+        // Save previous appendix entry
+        if (currentKey && currentValue !== null) {
+          this.set_value(currentKey, currentValue.trim(), currentAttributes);
+        }
+
         const match = line.match(/### Appendix ([A-Z]): (.+)/);
         if (match) {
           currentKey = match[2];
+          currentAttributes = {};
+          currentValue = null;
         }
         continue;
       }
@@ -1756,9 +1770,25 @@ export class MindCache {
         currentAttributes.contentType = line.match(/`(.+)`/)?.[1];
         continue;
       }
-      if (line.startsWith('- **Value**:') && !line.includes('[See Appendix')) {
-        // Value line - check what follows
+      // Handle Base64 Data from appendix
+      if (line.startsWith('- **Base64 Data**:')) {
+        // Expect code block on next line
+        currentValue = '';
+        continue;
+      }
+      // Handle Value lines - including appendix references
+      if (line.startsWith('- **Value**:')) {
         const afterValue = line.substring(12).trim();
+
+        if (afterValue.includes('[See Appendix')) {
+          // This is an appendix reference - save the entry now with placeholder
+          // The value will be updated when we parse the appendix
+          if (currentKey) {
+            this.set_value(currentKey, '', currentAttributes);
+          }
+          currentValue = null; // Reset so we don't overwrite later
+          continue;
+        }
 
         if (afterValue === '') {
           // Empty - expect code block on next line
@@ -1800,7 +1830,16 @@ export class MindCache {
       if (inCodeBlock) {
         codeBlockContent.push(line);
       } else if (currentKey && currentValue !== null) {
-        currentValue += '\n' + line;
+        // Stop appending when we hit section markers
+        if (line.trim() === '---' || line.startsWith('## Appendix')) {
+          // Save the current entry and reset
+          this.set_value(currentKey, currentValue.trim(), currentAttributes);
+          currentKey = null;
+          currentValue = null;
+          currentAttributes = {};
+        } else {
+          currentValue += '\n' + line;
+        }
       }
     }
 
@@ -1810,14 +1849,13 @@ export class MindCache {
     }
 
     // If no keys were parsed but we have content, treat as unstructured text
-    // Detect if any keys were actually set during this import?
-    // We can check if rootMap was modified? Or just track if we parsed any keys.
-    // Simpler: track if we ever set currentKey.
+    // But skip if this is an STM export format (which might just be empty)
 
     // Check if we parsed any keys
     const hasParsedKeys = lines.some(line => line.startsWith('### ') && !line.startsWith('### Appendix'));
+    const isSTMExport = markdown.includes('# MindCache STM Export') || markdown.includes('## STM Entries');
 
-    if (!hasParsedKeys && markdown.trim().length > 0) {
+    if (!hasParsedKeys && !isSTMExport && markdown.trim().length > 0) {
       this.set_value('imported_content', markdown.trim(), {
         type: 'text',
         systemTags: ['SystemPrompt', 'LLMWrite'], // Default assumptions
