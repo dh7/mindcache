@@ -4,6 +4,9 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import diff from 'fast-diff';
 import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions, ContextRules } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
+import { MarkdownSerializer } from './MarkdownSerializer';
+import { AIToolBuilder } from './AIToolBuilder';
+import { TagManager } from './TagManager';
 
 // Browser environment type declarations
 interface FileReaderType {
@@ -84,7 +87,7 @@ interface ICloudAdapter {
 export class MindCache {
   // Public doc for adapter access
   public doc: Y.Doc;
-  private rootMap: Y.Map<Y.Map<any>>; // Key -> EntryMap({value, attributes})
+  public rootMap: Y.Map<Y.Map<any>>; // Key -> EntryMap({value, attributes})
 
   // Cache listeners
   private listeners: { [key: string]: Listener[] } = {};
@@ -97,7 +100,7 @@ export class MindCache {
   // (Less critical with Yjs but kept for API compat)
 
 
-  private normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
+  normalizeSystemTags(tags: SystemTag[]): SystemTag[] {
     const normalized: SystemTag[] = [];
     const seen = new Set<SystemTag>();
 
@@ -486,7 +489,7 @@ export class MindCache {
    * Check if a key matches the current context rules.
    * Returns true if no context is set.
    */
-  private keyMatchesContext(key: string): boolean {
+  keyMatchesContext(key: string): boolean {
     // System keys always match
     if (key.startsWith('$')) {
       return true;
@@ -1263,30 +1266,7 @@ export class MindCache {
    * @returns true if the tag was added, false if key doesn't exist or tag already exists
    */
   addTag(key: string, tag: string): boolean {
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const contentTags = attributes?.contentTags || [];
-
-    if (contentTags.includes(tag)) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newContentTags = [...contentTags, tag];
-      entryMap.set('attributes', {
-        ...attributes,
-        contentTags: newContentTags,
-        tags: newContentTags // Sync legacy tags array
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.addTag(this, key, tag);
   }
 
   /**
@@ -1294,102 +1274,42 @@ export class MindCache {
    * @returns true if the tag was removed
    */
   removeTag(key: string, tag: string): boolean {
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const contentTags = attributes?.contentTags || [];
-    const tagIndex = contentTags.indexOf(tag);
-
-    if (tagIndex === -1) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newContentTags = contentTags.filter((t: string) => t !== tag);
-      entryMap.set('attributes', {
-        ...attributes,
-        contentTags: newContentTags,
-        tags: newContentTags // Sync legacy tags array
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.removeTag(this, key, tag);
   }
 
   /**
    * Get all content tags for a key.
    */
   getTags(key: string): string[] {
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return [];
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.contentTags || [];
+    return TagManager.getTags(this, key);
   }
 
   /**
    * Get all unique content tags across all keys.
    */
   getAllTags(): string[] {
-    const allTags = new Set<string>();
-
-    for (const [, val] of this.rootMap) {
-      const entryMap = val as Y.Map<any>;
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-      if (attributes?.contentTags) {
-        attributes.contentTags.forEach((tag: string) => allTags.add(tag));
-      }
-    }
-
-    return Array.from(allTags);
+    return TagManager.getAllTags(this);
   }
 
   /**
    * Check if a key has a specific content tag.
    */
   hasTag(key: string, tag: string): boolean {
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.contentTags?.includes(tag) || false;
+    return TagManager.hasTag(this, key, tag);
   }
 
   /**
    * Get all keys with a specific content tag as formatted string.
    */
   getTagged(tag: string): string {
-    const entries: Array<[string, any]> = [];
-
-    const keys = this.getSortedKeys();
-    keys.forEach(key => {
-      if (this.hasTag(key, tag)) {
-        entries.push([key, this.get_value(key)]);
-      }
-    });
-
-    return entries
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ');
+    return TagManager.getTagged(this, tag);
   }
 
   /**
    * Get array of keys with a specific content tag.
    */
   getKeysByTag(tag: string): string[] {
-    const keys = this.getSortedKeys();
-    return keys.filter(key => this.hasTag(key, tag));
+    return TagManager.getKeysByTag(this, tag);
   }
 
   // ============================================
@@ -1398,158 +1318,52 @@ export class MindCache {
 
   /**
    * Add a system tag to a key (requires system access).
-   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'readonly', 'ApplyTemplate'
+   * System tags: 'SystemPrompt', 'LLMRead', 'LLMWrite', 'ApplyTemplate'
    */
   systemAddTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemAddTag requires system access level');
-      return false;
-    }
-
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const systemTags = attributes?.systemTags || [];
-
-    if (systemTags.includes(tag)) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newSystemTags = [...systemTags, tag];
-      const normalizedTags = this.normalizeSystemTags(newSystemTags);
-      entryMap.set('attributes', {
-        ...attributes,
-        systemTags: normalizedTags
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.systemAddTag(this, key, tag);
   }
 
   /**
    * Remove a system tag from a key (requires system access).
    */
   systemRemoveTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemRemoveTag requires system access level');
-      return false;
-    }
-
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    const systemTags = attributes?.systemTags || [];
-    const tagIndex = systemTags.indexOf(tag);
-
-    if (tagIndex === -1) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const newSystemTags = systemTags.filter((t: SystemTag) => t !== tag);
-      entryMap.set('attributes', {
-        ...attributes,
-        systemTags: newSystemTags
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.systemRemoveTag(this, key, tag);
   }
 
   /**
    * Get all system tags for a key (requires system access).
    */
   systemGetTags(key: string): SystemTag[] {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemGetTags requires system access level');
-      return [];
-    }
-
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return [];
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.systemTags || [];
+    return TagManager.systemGetTags(this, key);
   }
 
   /**
    * Check if a key has a specific system tag (requires system access).
    */
   systemHasTag(key: string, tag: SystemTag): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemHasTag requires system access level');
-      return false;
-    }
-
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-    return attributes?.systemTags?.includes(tag) || false;
+    return TagManager.systemHasTag(this, key, tag);
   }
 
   /**
    * Set all system tags for a key at once (requires system access).
    */
   systemSetTags(key: string, tags: SystemTag[]): boolean {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemSetTags requires system access level');
-      return false;
-    }
-
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return false;
-    }
-
-    this.doc.transact(() => {
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-      entryMap.set('attributes', {
-        ...attributes,
-        systemTags: [...tags]
-      });
-    });
-
-    this.notifyGlobalListeners();
-    return true;
+    return TagManager.systemSetTags(this, key, tags);
   }
 
   /**
    * Get all keys with a specific system tag (requires system access).
    */
   systemGetKeysByTag(tag: SystemTag): string[] {
-    if (!this.hasSystemAccess) {
-      console.warn('MindCache: systemGetKeysByTag requires system access level');
-      return [];
-    }
-
-    const keys = this.getSortedKeys();
-    return keys.filter(key => this.systemHasTag(key, tag));
+    return TagManager.systemGetKeysByTag(this, tag);
   }
 
   /**
    * Helper to get sorted keys (by zIndex).
    * Respects context filtering when set.
    */
-  private getSortedKeys(): string[] {
+  getSortedKeys(): string[] {
     const entries: Array<{ key: string; zIndex: number }> = [];
 
     for (const [key, val] of this.rootMap) {
@@ -1589,104 +1403,7 @@ export class MindCache {
    * Export to Markdown format.
    */
   toMarkdown(): string {
-    const now = new Date();
-    const lines: string[] = [];
-    const appendixEntries: Array<{
-      key: string;
-      type: string;
-      contentType: string;
-      base64: string;
-      label: string;
-    }> = [];
-    let appendixCounter = 0;
-
-    lines.push('# MindCache STM Export');
-    lines.push('');
-    lines.push(`Export Date: ${now.toISOString().split('T')[0]}`);
-    lines.push('');
-    lines.push('---');
-    lines.push('');
-    lines.push('## STM Entries');
-    lines.push('');
-
-    const sortedKeys = this.getSortedKeys();
-    sortedKeys.forEach(key => {
-      const entryMap = this.rootMap.get(key);
-      if (!entryMap) {
-        return;
-      }
-
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-      const value = entryMap.get('value');
-
-
-      lines.push(`### ${key}`);
-      const entryType = attributes?.type || 'text';
-      lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **System Tags**: \`${attributes?.systemTags?.join(', ') || 'none'}\``);
-      lines.push(`- **Z-Index**: \`${attributes?.zIndex ?? 0}\``);
-
-      if (attributes?.contentTags && attributes.contentTags.length > 0) {
-        lines.push(`- **Tags**: \`${attributes.contentTags.join('`, `')}\``);
-      }
-
-      if (attributes?.contentType) {
-        lines.push(`- **Content Type**: \`${attributes.contentType}\``);
-      }
-
-      if (entryType === 'image' || entryType === 'file') {
-        const label = String.fromCharCode(65 + appendixCounter);
-        appendixCounter++;
-        lines.push(`- **Value**: [See Appendix ${label}]`);
-
-        appendixEntries.push({
-          key,
-          type: entryType,
-          contentType: attributes?.contentType || 'application/octet-stream',
-          base64: value as string,
-          label
-        });
-      } else if (entryType === 'json') {
-        lines.push('- **Value**:');
-        lines.push('```json');
-        try {
-          const jsonValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-          lines.push(jsonValue);
-        } catch {
-          lines.push(String(value));
-        }
-        lines.push('```');
-      } else {
-        // Use code blocks for ALL values to support multi-line content
-        lines.push('- **Value**:');
-        lines.push('```');
-        lines.push(String(value));
-        lines.push('```');
-      }
-
-      lines.push('');
-    });
-
-    // Add appendix for binary data
-    if (appendixEntries.length > 0) {
-      lines.push('---');
-      lines.push('');
-      lines.push('## Appendix: Binary Data');
-      lines.push('');
-
-      appendixEntries.forEach(entry => {
-        lines.push(`### Appendix ${entry.label}: ${entry.key}`);
-        lines.push(`- **Type**: \`${entry.type}\``);
-        lines.push(`- **Content Type**: \`${entry.contentType}\``);
-        lines.push('- **Base64 Data**:');
-        lines.push('```');
-        lines.push(entry.base64);
-        lines.push('```');
-        lines.push('');
-      });
-    }
-
-    return lines.join('\n');
+    return MarkdownSerializer.toMarkdown(this);
   }
 
   /**
@@ -1695,170 +1412,7 @@ export class MindCache {
    * @param merge If false (default), clears existing data before importing. If true, merges with existing data.
    */
   fromMarkdown(markdown: string, merge: boolean = false): void {
-    const lines = markdown.split('\n');
-    let currentKey: string | null = null;
-    let currentAttributes: Partial<KeyAttributes> = {};
-    let currentValue: string | null = null;
-    let inCodeBlock = false;
-    let codeBlockContent: string[] = [];
-    const _appendixData: Record<string, string> = {};
-
-    // Clear existing data unless merging
-    if (!merge) {
-      this.clear();
-    }
-
-    for (const line of lines) {
-      // Parse key headers
-      if (line.startsWith('### ') && !line.startsWith('### Appendix')) {
-        // Save previous entry
-        if (currentKey && currentValue !== null) {
-          this.set_value(currentKey, currentValue.trim(), currentAttributes);
-        }
-
-        currentKey = line.substring(4).trim();
-        currentAttributes = {};
-        currentValue = null;
-        continue;
-      }
-
-      // Parse appendix
-      if (line.startsWith('### Appendix ')) {
-        // Save previous appendix entry
-        if (currentKey && currentValue !== null) {
-          this.set_value(currentKey, currentValue.trim(), currentAttributes);
-        }
-
-        const match = line.match(/### Appendix ([A-Z]): (.+)/);
-        if (match) {
-          currentKey = match[2];
-          currentAttributes = {};
-          currentValue = null;
-        }
-        continue;
-      }
-
-      // Parse attributes
-      if (line.startsWith('- **Type**:')) {
-        const type = line.match(/`(.+)`/)?.[1] as KeyAttributes['type'];
-        if (type) {
-          currentAttributes.type = type;
-        }
-        continue;
-      }
-      if (line.startsWith('- **System Tags**:')) {
-        const tagsStr = line.match(/`([^`]+)`/)?.[1] || '';
-        if (tagsStr !== 'none') {
-          currentAttributes.systemTags = tagsStr.split(', ').filter(t => t) as SystemTag[];
-        }
-        continue;
-      }
-      if (line.startsWith('- **Z-Index**:')) {
-        const zIndex = parseInt(line.match(/`(\d+)`/)?.[1] || '0', 10);
-        currentAttributes.zIndex = zIndex;
-        continue;
-      }
-      if (line.startsWith('- **Tags**:')) {
-        const tags = line.match(/`([^`]+)`/g)?.map(t => t.slice(1, -1)) || [];
-        currentAttributes.contentTags = tags;
-        continue;
-      }
-      if (line.startsWith('- **Content Type**:')) {
-        currentAttributes.contentType = line.match(/`(.+)`/)?.[1];
-        continue;
-      }
-      // Handle Base64 Data from appendix
-      if (line.startsWith('- **Base64 Data**:')) {
-        // Expect code block on next line
-        currentValue = '';
-        continue;
-      }
-      // Handle Value lines - including appendix references
-      if (line.startsWith('- **Value**:')) {
-        const afterValue = line.substring(12).trim();
-
-        if (afterValue.includes('[See Appendix')) {
-          // This is an appendix reference - save the entry now with placeholder
-          // The value will be updated when we parse the appendix
-          if (currentKey) {
-            this.set_value(currentKey, '', currentAttributes);
-          }
-          currentValue = null; // Reset so we don't overwrite later
-          continue;
-        }
-
-        if (afterValue === '') {
-          // Empty - expect code block on next line
-          currentValue = '';
-        } else if (afterValue === '```' || afterValue === '```json') {
-          // Code block starts on this line, content on next
-          inCodeBlock = true;
-          codeBlockContent = [];
-          currentValue = '';
-        } else if (afterValue.startsWith('```')) {
-          // Code block with content on same line: ```mindmap or ```some text
-          inCodeBlock = true;
-          codeBlockContent = [afterValue.substring(3)]; // Capture content after ```
-          currentValue = '';
-        } else {
-          // Inline value (legacy format)
-          currentValue = afterValue;
-        }
-        continue;
-      }
-
-      // Handle code blocks - check trimmed line for robustness
-      const trimmedLine = line.trim();
-      if (trimmedLine === '```json' || trimmedLine === '```') {
-        if (inCodeBlock) {
-          // End of code block
-          inCodeBlock = false;
-          if (currentKey && codeBlockContent.length > 0) {
-            currentValue = codeBlockContent.join('\n');
-          }
-          codeBlockContent = [];
-        } else {
-          inCodeBlock = true;
-          codeBlockContent = [];
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        codeBlockContent.push(line);
-      } else if (currentKey && currentValue !== null) {
-        // Stop appending when we hit section markers
-        if (line.trim() === '---' || line.startsWith('## Appendix')) {
-          // Save the current entry and reset
-          this.set_value(currentKey, currentValue.trim(), currentAttributes);
-          currentKey = null;
-          currentValue = null;
-          currentAttributes = {};
-        } else {
-          currentValue += '\n' + line;
-        }
-      }
-    }
-
-    // Save last entry
-    if (currentKey && currentValue !== null) {
-      this.set_value(currentKey, currentValue.trim(), currentAttributes);
-    }
-
-    // If no keys were parsed but we have content, treat as unstructured text
-    // But skip if this is an STM export format (which might just be empty)
-
-    // Check if we parsed any keys
-    const hasParsedKeys = lines.some(line => line.startsWith('### ') && !line.startsWith('### Appendix'));
-    const isSTMExport = markdown.includes('# MindCache STM Export') || markdown.includes('## STM Entries');
-
-    if (!hasParsedKeys && !isSTMExport && markdown.trim().length > 0) {
-      this.set_value('imported_content', markdown.trim(), {
-        type: 'text',
-        systemTags: ['SystemPrompt', 'LLMWrite'], // Default assumptions
-        zIndex: 0
-      });
-    }
+    MarkdownSerializer.fromMarkdown(markdown, this, merge);
   }
 
   /**
@@ -2029,11 +1583,11 @@ export class MindCache {
   }
 
   /**
-   * Replace all text in a document key (private - use set_value for public API).
+   * Replace all text in a document key.
    * Uses diff-based updates when changes are < diffThreshold (default 80%).
    * This preserves concurrent edits and provides better undo granularity.
    */
-  private _replaceDocumentText(key: string, newText: string, diffThreshold = 0.8): void {
+  _replaceDocumentText(key: string, newText: string, diffThreshold = 0.8): void {
     const yText = this.get_document(key);
     if (!yText) {
       return;
@@ -2114,23 +1668,18 @@ export class MindCache {
     this.globalListeners = this.globalListeners.filter(l => l !== listener);
   }
 
-  private notifyGlobalListeners(): void {
+  notifyGlobalListeners(): void {
     this.globalListeners.forEach(l => l());
   }
 
   // Sanitize key name for use in tool names
-  private sanitizeKeyForTool(key: string): string {
-    return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+  sanitizeKeyForTool(key: string): string {
+    return AIToolBuilder.sanitizeKeyForTool(key);
   }
 
   // Find original key from sanitized tool name
-  private findKeyFromSanitizedTool(sanitizedKey: string): string | undefined {
-    for (const [key] of this.rootMap) {
-      if (this.sanitizeKeyForTool(key) === sanitizedKey) {
-        return key;
-      }
-    }
-    return undefined;
+  findKeyFromSanitizedTool(sanitizedKey: string): string | undefined {
+    return AIToolBuilder.findKeyFromSanitizedTool(this, sanitizedKey);
   }
 
   /**
@@ -2142,158 +1691,7 @@ export class MindCache {
    * - Prevents LLMs from escalating privileges
    */
   create_vercel_ai_tools(): Record<string, any> {
-    const tools: Record<string, any> = {};
-
-    for (const [key, val] of this.rootMap) {
-      // Skip system keys
-      if (key.startsWith('$')) {
-        continue;
-      }
-
-      // Skip keys that don't match context
-      if (!this.keyMatchesContext(key)) {
-        continue;
-      }
-
-      const entryMap = val as Y.Map<any>;
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-
-      // Check if key has LLMWrite access (writable by LLM)
-      const isWritable = attributes?.systemTags?.includes('LLMWrite');
-
-      if (!isWritable) {
-        continue;
-      }
-
-      const sanitizedKey = this.sanitizeKeyForTool(key);
-      const isDocument = attributes?.type === 'document';
-
-      // 1. write_ tool (for all writable keys)
-      tools[`write_${sanitizedKey}`] = {
-        description: isDocument
-          ? `Rewrite the entire "${key}" document`
-          : `Write a value to the STM key: ${key}`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            value: { type: 'string', description: isDocument ? 'New document content' : 'The value to write' }
-          },
-          required: ['value']
-        },
-        execute: async ({ value }: { value: any }) => {
-          // Use llm_set_key for security - only modifies value, not attributes
-          const success = this.llm_set_key(key, value);
-          if (success) {
-            return {
-              result: `Successfully wrote "${value}" to ${key}`,
-              key,
-              value
-            };
-          }
-          return {
-            result: `Failed to write to ${key} - permission denied or key not found`,
-            key,
-            error: true
-          };
-        }
-      };
-
-      // For document type, add additional tools
-      if (isDocument) {
-        // 2. append_ tool
-        tools[`append_${sanitizedKey}`] = {
-          description: `Append text to the end of "${key}" document`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              text: { type: 'string', description: 'Text to append' }
-            },
-            required: ['text']
-          },
-          execute: async ({ text }: { text: string }) => {
-            // Check permission first
-            if (!attributes?.systemTags?.includes('LLMWrite')) {
-              return { result: `Permission denied for ${key}`, key, error: true };
-            }
-            const yText = this.get_document(key);
-            if (yText) {
-              yText.insert(yText.length, text);
-              return {
-                result: `Successfully appended to ${key}`,
-                key,
-                appended: text
-              };
-            }
-            return { result: `Document ${key} not found`, key };
-          }
-        };
-
-        // 3. insert_ tool
-        tools[`insert_${sanitizedKey}`] = {
-          description: `Insert text at a position in "${key}" document`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              index: { type: 'number', description: 'Position to insert at (0 = start)' },
-              text: { type: 'string', description: 'Text to insert' }
-            },
-            required: ['index', 'text']
-          },
-          execute: async ({ index, text }: { index: number; text: string }) => {
-            // Check permission first
-            if (!attributes?.systemTags?.includes('LLMWrite')) {
-              return { result: `Permission denied for ${key}`, key, error: true };
-            }
-            this.insert_text(key, index, text);
-            return {
-              result: `Successfully inserted text at position ${index} in ${key}`,
-              key,
-              index,
-              inserted: text
-            };
-          }
-        };
-
-        // 4. edit_ tool (find and replace)
-        tools[`edit_${sanitizedKey}`] = {
-          description: `Find and replace text in "${key}" document`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              find: { type: 'string', description: 'Text to find' },
-              replace: { type: 'string', description: 'Replacement text' }
-            },
-            required: ['find', 'replace']
-          },
-          execute: async ({ find, replace }: { find: string; replace: string }) => {
-            // Check permission first
-            if (!attributes?.systemTags?.includes('LLMWrite')) {
-              return { result: `Permission denied for ${key}`, key, error: true };
-            }
-            const yText = this.get_document(key);
-            if (yText) {
-              const text = yText.toString();
-              const idx = text.indexOf(find);
-              if (idx !== -1) {
-                yText.delete(idx, find.length);
-                yText.insert(idx, replace);
-                return {
-                  result: `Successfully replaced "${find}" with "${replace}" in ${key}`,
-                  key,
-                  find,
-                  replace,
-                  index: idx
-                };
-              }
-              return { result: `Text "${find}" not found in ${key}`, key };
-            }
-            return { result: `Document ${key} not found`, key };
-          }
-        };
-      }
-    }
-
-    return tools;
+    return AIToolBuilder.createVercelAITools(this);
   }
 
   /**
@@ -2308,61 +1706,7 @@ export class MindCache {
    * Indicates which tools can be used to modify writable keys.
    */
   get_system_prompt(): string {
-    const lines: string[] = [];
-
-    for (const [key, val] of this.rootMap) {
-      // Skip system keys for now, add them at the end
-      if (key.startsWith('$')) {
-        continue;
-      }
-
-      // Skip keys that don't match context
-      if (!this.keyMatchesContext(key)) {
-        continue;
-      }
-
-      const entryMap = val as Y.Map<any>;
-      const attributes = entryMap.get('attributes') as KeyAttributes;
-
-      // Check visibility - key is visible if it has SystemPrompt or LLMRead tag
-      const isVisible = attributes?.systemTags?.includes('SystemPrompt') ||
-        attributes?.systemTags?.includes('LLMRead');
-
-      if (!isVisible) {
-        continue;
-      }
-
-      const value = this.get_value(key);
-      const displayValue = typeof value === 'object' ? JSON.stringify(value) : value;
-
-      // Check if writable - key is writable if it has LLMWrite tag
-      const isWritable = attributes?.systemTags?.includes('LLMWrite');
-
-      const isDocument = attributes?.type === 'document';
-      const sanitizedKey = this.sanitizeKeyForTool(key);
-
-      if (isWritable) {
-        if (isDocument) {
-          lines.push(
-            `${key}: ${displayValue}. ` +
-            `Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`
-          );
-        } else {
-          const oldValueHint = displayValue
-            ? ' This tool DOES NOT append — start your response ' +
-            `with the old value (${displayValue})`
-            : '';
-          lines.push(
-            `${key}: ${displayValue}. ` +
-            `You can rewrite "${key}" by using the write_${sanitizedKey} tool.${oldValueHint}`
-          );
-        }
-      } else {
-        lines.push(`${key}: ${displayValue}`);
-      }
-    }
-
-    return lines.join('\n');
+    return AIToolBuilder.getSystemPrompt(this);
   }
 
   /**
@@ -2373,95 +1717,7 @@ export class MindCache {
     toolName: string,
     value: any
   ): { result: string; key: string; value?: any } | null {
-    // Parse tool name (format: action_keyname)
-    const match = toolName.match(/^(write|append|insert|edit)_(.+)$/);
-    if (!match) {
-      return null;
-    }
-
-    const [, action, sanitizedKey] = match;
-    const key = this.findKeyFromSanitizedTool(sanitizedKey);
-
-    if (!key) {
-      return null;
-    }
-
-    const entryMap = this.rootMap.get(key);
-    if (!entryMap) {
-      return null;
-    }
-
-    const attributes = entryMap.get('attributes') as KeyAttributes;
-
-    // Check if writable - key is writable if it has LLMWrite tag
-    const isWritable = attributes?.systemTags?.includes('LLMWrite');
-
-    if (!isWritable) {
-      return null;
-    }
-
-    const isDocument = attributes?.type === 'document';
-
-    switch (action) {
-      case 'write':
-        if (isDocument) {
-          this._replaceDocumentText(key, value);
-        } else {
-          this.set_value(key, value);
-        }
-        return {
-          result: `Successfully wrote "${value}" to ${key}`,
-          key,
-          value
-        };
-
-      case 'append':
-        if (isDocument) {
-          const yText = this.get_document(key);
-          if (yText) {
-            yText.insert(yText.length, value);
-            return {
-              result: `Successfully appended to ${key}`,
-              key,
-              value
-            };
-          }
-        }
-        return null;
-
-      case 'insert':
-        if (isDocument && typeof value === 'object' && value.index !== undefined && value.text) {
-          this.insert_text(key, value.index, value.text);
-          return {
-            result: `Successfully inserted at position ${value.index} in ${key}`,
-            key,
-            value: value.text
-          };
-        }
-        return null;
-
-      case 'edit':
-        if (isDocument && typeof value === 'object' && value.find && value.replace !== undefined) {
-          const yText = this.get_document(key);
-          if (yText) {
-            const text = yText.toString();
-            const idx = text.indexOf(value.find);
-            if (idx !== -1) {
-              yText.delete(idx, value.find.length);
-              yText.insert(idx, value.replace);
-              return {
-                result: `Successfully replaced "${value.find}" with "${value.replace}" in ${key}`,
-                key,
-                value: value.replace
-              };
-            }
-          }
-        }
-        return null;
-
-      default:
-        return null;
-    }
+    return AIToolBuilder.executeToolCall(this, toolName, value);
   }
 
   // Internal method stub for legacy compatibility

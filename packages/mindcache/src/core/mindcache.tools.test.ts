@@ -1,4 +1,5 @@
-import { MindCache } from 'mindcache';
+import { describe, test, expect, beforeEach } from 'vitest';
+import { MindCache } from './MindCache';
 
 describe('MindCache Tooling', () => {
   let cache: MindCache;

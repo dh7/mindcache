@@ -1,4 +1,5 @@
-import { MindCache, SystemTag } from 'mindcache';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { MindCache, SystemTag } from './MindCache';
 
 describe('MindCache Complete Serialization', () => {
   let cache: MindCache;
@@ -240,7 +241,7 @@ describe('MindCache Complete Serialization', () => {
     });
 
     test('should handle invalid JSON gracefully', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
 
       cache.set_value('existing', 'value');
       cache.fromJSON('invalid json');

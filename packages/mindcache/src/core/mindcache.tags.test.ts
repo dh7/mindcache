@@ -1,4 +1,5 @@
-import { MindCache } from 'mindcache';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { MindCache } from './MindCache';
 
 describe('MindCache Tag System', () => {
   let cache: MindCache;
@@ -242,7 +243,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemAddTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemAddTag('key', 'LLMRead');
@@ -273,7 +274,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemRemoveTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemRemoveTag('key', 'SystemPrompt');
@@ -295,7 +296,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemGetTags', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const tags = cache.systemGetTags('key');
@@ -317,7 +318,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemHasTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemHasTag('key', 'SystemPrompt');
@@ -337,7 +338,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemSetTags', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const result = cache.systemSetTags('key', ['LLMRead', 'LLMRead']);
@@ -358,7 +359,7 @@ describe('MindCache Tag System', () => {
 
   describe('System Tags - systemGetKeysByTag', () => {
     test('should fail without system access', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
       cache.set('key', 'value');
 
       const keys = cache.systemGetKeysByTag('SystemPrompt');

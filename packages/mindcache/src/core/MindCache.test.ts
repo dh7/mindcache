@@ -59,15 +59,21 @@ describe('MindCache', () => {
       expect(mc.get_value('test-key')).toBe('test-value');
     });
 
-    it('should handle reserved keys ($version, $date, $time)', () => {
+    it('$version, $date, $time are template-only (not accessible as keys)', () => {
       const mc = new MindCache();
-      expect(mc.get_value('$version')).toBe('3.3.2');
-      expect(mc.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/); // YYYY-MM-DD
-      expect(mc.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/); // HH:MM:SS
+      // These are NOT accessible as keys anymore
+      expect(mc.get_value('$version')).toBeUndefined();
+      expect(mc.get_value('$date')).toBeUndefined();
+      expect(mc.get_value('$time')).toBeUndefined();
 
-      // Should be read-only
-      mc.set_value('$version', '9.9.9');
-      expect(mc.get_value('$version')).toBe('3.3.2');
+      // But they work in templates
+      mc.set_value('test', 'Date: {{$date}}, Time: {{$time}}, Version: {{$version}}', {
+        systemTags: ['ApplyTemplate']
+      });
+      const result = mc.get_value('test') as string;
+      expect(result).toMatch(/Date: \d{4}-\d{2}-\d{2}/);
+      expect(result).toMatch(/Time: \d{2}:\d{2}:\d{2}/);
+      expect(result).toMatch(/Version: \d+\.\d+\.\d+/);
     });
 
     it('should get attributes for keys', () => {
@@ -80,37 +86,28 @@ describe('MindCache', () => {
   });
 
   describe('Yjs & History', () => {
-    it.skip('should support undo/redo', () => {
-
+    it('should support undo/redo for document types', () => {
       vi.useFakeTimers();
 
       const mc = new MindCache();
 
-      // First set creates the entry and is tracked
-      mc.set_value('key', '1');
+      // Create a document - undo manager is attached at creation
+      mc.set_document('doc', 'version 1');
       vi.advanceTimersByTime(600); // Flush capture timeout
 
-      // Update to '2'
-      mc.set_value('key', '2');
+      // Update document
+      mc.set_value('doc', 'version 2');
       vi.advanceTimersByTime(600);
 
-      expect(mc.get_value('key')).toBe('2');
+      expect(mc.get_value('doc')).toBe('version 2');
 
-      // Undo: '2' -> '1'
-      mc.undo('key');
-      expect(mc.get_value('key')).toBe('1');
+      // Undo: 'version 2' -> 'version 1'
+      mc.undo('doc');
+      expect(mc.get_value('doc')).toBe('version 1');
 
-      // Undo: '1' -> undefined (original state before any set_value)
-      mc.undo('key');
-      expect(mc.get_value('key')).toBeUndefined();
-
-      // Redo: undefined -> '1'
-      mc.redo('key');
-      expect(mc.get_value('key')).toBe('1');
-
-      // Redo: '1' -> '2'
-      mc.redo('key');
-      expect(mc.get_value('key')).toBe('2');
+      // Redo: 'version 1' -> 'version 2'
+      mc.redo('doc');
+      expect(mc.get_value('doc')).toBe('version 2');
 
       vi.useRealTimers();
     });
