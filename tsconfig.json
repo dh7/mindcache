@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM"],
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "module": "commonjs",
     "moduleResolution": "node",
     "strict": true,
@@ -12,18 +15,28 @@
     "allowSyntheticDefaultImports": true,
     "declaration": false,
     "noEmit": true,
-    "types": ["jest", "node"],
+    "types": [
+      "node"
+    ],
     "paths": {
-      "mindcache": ["./packages/mindcache/src/index.ts"]
-    },
-    "baseUrl": "."
+      "mindcache": [
+        "./packages/mindcache/src/index.ts"
+      ]
+    }
   },
-  "include": [
-    "tests/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "packages",
-    "examples"
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/mindcache"
+    },
+    {
+      "path": "./packages/server"
+    },
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/web"
+    }
   ]
 }
