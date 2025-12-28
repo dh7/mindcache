@@ -520,9 +520,6 @@ export class MindCache {
    * @throws Error if key already exists
    */
   create_key(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      throw new Error(`Cannot create reserved key: ${key}`);
-    }
 
     if (this.rootMap.has(key)) {
       throw new Error(`Key already exists: ${key}. Use set_value to update.`);
@@ -792,11 +789,14 @@ export class MindCache {
         this.rootMap.set(key, entryMap);
         entryMap.set('value', entry.value);
         // Normalize attributes (fill in missing fields with defaults)
-        const attrs = entry.attributes || {};
+        // Type as any to allow accessing legacy 'tags' property for migration
+        const attrs: any = entry.attributes || {};
+        // Migrate legacy 'tags' to 'contentTags'
+        const contentTags = attrs.contentTags || attrs.tags || [];
         const normalizedAttrs: KeyAttributes = {
           type: attrs.type || 'text',
           contentType: attrs.contentType,
-          contentTags: attrs.contentTags || [],
+          contentTags: contentTags,
           systemTags: this.normalizeSystemTags(attrs.systemTags || []),
           zIndex: attrs.zIndex ?? 0
         };
@@ -843,9 +843,23 @@ export class MindCache {
   }
 
   // InjectSTM replacement (private helper)
+  // Handles special template variables: $date, $time, $version
   private _injectSTMInternal(template: string, _processingStack: Set<string>): string {
     return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
-      const val = this.get_value(key.trim(), _processingStack);
+      const trimmedKey = key.trim();
+
+      // Handle special template variables
+      if (trimmedKey === '$date') {
+        return new Date().toISOString().split('T')[0];
+      }
+      if (trimmedKey === '$time') {
+        return new Date().toTimeString().split(' ')[0];
+      }
+      if (trimmedKey === '$version') {
+        return this.version;
+      }
+
+      const val = this.get_value(trimmedKey, _processingStack);
       // Replace missing keys with empty string (standard template engine behavior)
       return val !== undefined ? String(val) : '';
     });
@@ -869,9 +883,6 @@ export class MindCache {
         result[key] = this.get_value(key);
       }
     }
-    // Add temporal keys
-    result['$date'] = this.get_value('$date');
-    result['$time'] = this.get_value('$time');
     return result;
   }
 
@@ -895,18 +906,6 @@ export class MindCache {
   }
 
   get_value(key: string, _processingStack?: Set<string>): any {
-    if (key === '$date') {
-      const today = new Date();
-      return today.toISOString().split('T')[0];
-    }
-    if (key === '$time') {
-      const now = new Date();
-      return now.toTimeString().split(' ')[0];
-    }
-    if (key === '$version') {
-      return this.version;
-    }
-
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
       return undefined;
@@ -942,14 +941,6 @@ export class MindCache {
   }
 
   get_attributes(key: string): KeyAttributes | undefined {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return {
-        type: 'text',
-        contentTags: [],
-        systemTags: ['SystemPrompt', 'protected'],
-        zIndex: 999999
-      };
-    }
     const entryMap = this.rootMap.get(key);
     return entryMap ? entryMap.get('attributes') : undefined;
   }
@@ -960,9 +951,6 @@ export class MindCache {
    * @returns true if attributes were updated, false if key doesn't exist or is protected
    */
   set_attributes(key: string, attributes: Partial<KeyAttributes>): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1004,9 +992,6 @@ export class MindCache {
   }
 
   set_value(key: string, value: any, attributes?: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return;
-    }
 
     // For existing document type keys, use diff-based replace
     const existingEntry = this.rootMap.get(key);
@@ -1097,9 +1082,6 @@ export class MindCache {
    * Used by create_vercel_ai_tools() to prevent LLMs from escalating privileges.
    */
   llm_set_key(key: string, value: any): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1130,9 +1112,6 @@ export class MindCache {
   }
 
   delete_key(key: string): void {
-    if (key === '$date' || key === '$time') {
-      return;
-    }
     this.rootMap.delete(key);
   }
 
@@ -1151,9 +1130,6 @@ export class MindCache {
    * Check if a key exists in MindCache.
    */
   has(key: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return true;
-    }
     if (!this.rootMap.has(key)) {
       return false;
     }
@@ -1165,9 +1141,6 @@ export class MindCache {
    * @returns true if the key existed and was deleted
    */
   delete(key: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
     if (!this.rootMap.has(key)) {
       return false;
     }
@@ -1196,9 +1169,7 @@ export class MindCache {
   update(data: Record<string, any>): void {
     this.doc.transact(() => {
       for (const [key, value] of Object.entries(data)) {
-        if (key !== '$date' && key !== '$time' && key !== '$version') {
-          this.set_value(key, value);
-        }
+        this.set_value(key, value);
       }
     });
     this.notifyGlobalListeners();
@@ -1208,18 +1179,18 @@ export class MindCache {
    * Get the number of keys in MindCache.
    */
   size(): number {
-    // Count keys that match context + 2 temporal keys
+    // Count keys that match context
     let count = 0;
     for (const [key] of this.rootMap) {
       if (this.keyMatchesContext(key)) {
         count++;
       }
     }
-    return count + 2; // +2 for $date and $time
+    return count;
   }
 
   /**
-   * Get all keys in MindCache (including temporal keys).
+   * Get all keys in MindCache.
    */
   keys(): string[] {
     const keys: string[] = [];
@@ -1228,12 +1199,11 @@ export class MindCache {
         keys.push(key);
       }
     }
-    keys.push('$date', '$time');
     return keys;
   }
 
   /**
-   * Get all values in MindCache (including temporal values).
+   * Get all values in MindCache.
    */
   values(): any[] {
     const result: any[] = [];
@@ -1242,14 +1212,11 @@ export class MindCache {
         result.push(this.get_value(key));
       }
     }
-    // Add temporal values
-    result.push(this.get_value('$date'));
-    result.push(this.get_value('$time'));
     return result;
   }
 
   /**
-   * Get all key-value entries (including temporal entries).
+   * Get all key-value entries.
    */
   entries(): Array<[string, any]> {
     const result: Array<[string, any]> = [];
@@ -1258,9 +1225,6 @@ export class MindCache {
         result.push([key, this.get_value(key)]);
       }
     }
-    // Add temporal entries
-    result.push(['$date', this.get_value('$date')]);
-    result.push(['$time', this.get_value('$time')]);
     return result;
   }
 
@@ -1284,7 +1248,6 @@ export class MindCache {
 
   /**
    * Get the STM as an object with values directly (no attributes).
-   * Includes system keys ($date, $time).
    * @deprecated Use getAll() for full STM format
    */
   getSTMObject(): Record<string, any> {
@@ -1292,9 +1255,6 @@ export class MindCache {
     for (const [key] of this.rootMap) {
       result[key] = this.get_value(key);
     }
-    // Add system keys
-    result['$date'] = this.get_value('$date');
-    result['$time'] = this.get_value('$time');
     return result;
   }
 
@@ -1303,9 +1263,6 @@ export class MindCache {
    * @returns true if the tag was added, false if key doesn't exist or tag already exists
    */
   addTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1337,9 +1294,6 @@ export class MindCache {
    * @returns true if the tag was removed
    */
   removeTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1371,9 +1325,6 @@ export class MindCache {
    * Get all content tags for a key.
    */
   getTags(key: string): string[] {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return [];
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1405,9 +1356,6 @@ export class MindCache {
    * Check if a key has a specific content tag.
    */
   hasTag(key: string, tag: string): boolean {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1458,9 +1406,6 @@ export class MindCache {
       return false;
     }
 
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1496,9 +1441,6 @@ export class MindCache {
       return false;
     }
 
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1534,9 +1476,6 @@ export class MindCache {
       return [];
     }
 
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return [];
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1556,9 +1495,6 @@ export class MindCache {
       return false;
     }
 
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1578,9 +1514,6 @@ export class MindCache {
       return false;
     }
 
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return false;
-    }
 
     const entryMap = this.rootMap.get(key);
     if (!entryMap) {
@@ -1988,9 +1921,6 @@ export class MindCache {
    * Note: This exposes Yjs Y.Text directly for editor bindings (y-quill, y-codemirror, etc.)
    */
   set_document(key: string, initialText?: string, attributes?: Partial<KeyAttributes>): void {
-    if (key === '$date' || key === '$time' || key === '$version') {
-      return;
-    }
 
     let entryMap = this.rootMap.get(key);
 
@@ -2396,10 +2326,6 @@ export class MindCache {
         lines.push(`${key}: ${displayValue}`);
       }
     }
-
-    // Add temporal keys
-    lines.push(`$date: ${this.get_value('$date')}`);
-    lines.push(`$time: ${this.get_value('$time')}`);
 
     return lines.join('\n');
   }

@@ -49,7 +49,7 @@ describe('MindCache Complete Serialization', () => {
       expect(serialized).not.toHaveProperty('$time');
     });
 
-    test('should exclude protected keys from deserialization', () => {
+    test('should import keys with protected tag (they are just undeletable)', () => {
       const testData = {
         normal_key: {
           value: 'normal_value',
@@ -73,11 +73,9 @@ describe('MindCache Complete Serialization', () => {
 
       cache.deserialize(testData);
 
-      // Normal key should be imported
+      // Both keys should be imported
       expect(cache.get_value('normal_key')).toBe('normal_value');
-
-      // Protected keys should NOT be imported
-      expect(cache.has('protected_key')).toBe(false);
+      expect(cache.get_value('protected_key')).toBe('protected_value');
     });
 
     test('should deserialize complete state correctly', () => {
@@ -149,9 +147,11 @@ describe('MindCache Complete Serialization', () => {
       // Should have migrated to new format
       const attrs = cache.get_attributes('user');
       expect(attrs?.contentTags).toEqual(['person', 'admin']);
+      // Default systemTags is now empty
+      expect(attrs?.systemTags).toEqual([]);
     });
 
-    test('should preserve system keys after deserialization', () => {
+    test('should work correctly after deserialization', () => {
       const testData = {
         user: {
           value: 'test',
@@ -166,11 +166,10 @@ describe('MindCache Complete Serialization', () => {
 
       cache.deserialize(testData);
 
-      // System keys should still be available
-      expect(cache.has('$date')).toBe(true);
-      expect(cache.has('$time')).toBe(true);
-      expect(cache.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(cache.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+      // Deserialized data should be available
+      expect(cache.has('user')).toBe(true);
+      expect(cache.get_value('user')).toBe('test');
+      expect(cache.get_attributes('user')?.systemTags).toContain('SystemPrompt');
     });
 
     test('should handle round-trip serialization correctly', () => {
@@ -270,7 +269,7 @@ describe('MindCache Complete Serialization', () => {
       expect(newCache.get_attributes('greeting')?.systemTags).toContain('ApplyTemplate');
     });
 
-    test('should exclude protected keys from JSON deserialization', () => {
+    test('should import keys with protected tag from JSON (they are just undeletable)', () => {
       const jsonData = {
         normal_key: {
           value: 'normal_value',
@@ -295,11 +294,9 @@ describe('MindCache Complete Serialization', () => {
       const jsonString = JSON.stringify(jsonData);
       cache.fromJSON(jsonString);
 
-      // Normal key should be imported
+      // Both keys should be imported
       expect(cache.get_value('normal_key')).toBe('normal_value');
-
-      // Protected keys should NOT be imported
-      expect(cache.has('protected_key')).toBe(false);
+      expect(cache.get_value('protected_key')).toBe('protected_value');
     });
   });
 

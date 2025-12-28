@@ -87,8 +87,6 @@ describe('MindCache Context Filtering', () => {
             expect(keys).toContain('key-b1');
             expect(keys).toContain('key-both');
             expect(keys).toContain('key-none');
-            expect(keys).toContain('$date');
-            expect(keys).toContain('$time');
         });
 
         test('should filter keys by single tag context', () => {
@@ -100,9 +98,6 @@ describe('MindCache Context Filtering', () => {
             expect(keys).toContain('key-both'); // Has project-a too
             expect(keys).not.toContain('key-b1');
             expect(keys).not.toContain('key-none');
-            // Temporal keys always included
-            expect(keys).toContain('$date');
-            expect(keys).toContain('$time');
         });
 
         test('should filter keys with AND logic (multiple tags)', () => {
@@ -123,15 +118,14 @@ describe('MindCache Context Filtering', () => {
 
             expect(cache.has('key-a1')).toBe(true);
             expect(cache.has('key-b1')).toBe(false); // Filtered out
-            expect(cache.has('$date')).toBe(true); // Temporal keys always visible
         });
 
         test('size() should count only matching keys', () => {
             const fullSize = cache.size();
-            expect(fullSize).toBe(7); // 5 keys + $date + $time
+            expect(fullSize).toBe(5); // 5 keys
 
             cache.set_context(['project-a']);
-            expect(cache.size()).toBe(5); // 3 matching keys + $date + $time
+            expect(cache.size()).toBe(3); // 3 matching keys
         });
     });
 
@@ -154,10 +148,16 @@ describe('MindCache Context Filtering', () => {
             expect(cache.get_value('hidden-key')).toBeUndefined();
         });
 
-        test('should always return temporal key values', () => {
+        test('$date/$time/$version only work in templates', () => {
             cache.set_context(['allowed']);
-            expect(cache.get_value('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-            expect(cache.get_value('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+            // They are not real keys, so get_value returns undefined
+            expect(cache.get_value('$date')).toBeUndefined();
+            expect(cache.get_value('$time')).toBeUndefined();
+
+            // But they work in templates
+            cache.set_value('template', 'Date: {{$date}}', { systemTags: ['ApplyTemplate'] });
+            cache.addTag('template', 'allowed');
+            expect(cache.get_value('template')).toMatch(/Date: \d{4}-\d{2}-\d{2}/);
         });
     });
 
@@ -176,7 +176,6 @@ describe('MindCache Context Filtering', () => {
             const all = cache.getAll();
             expect(all['key-a']).toBe('value-a');
             expect(all['key-b']).toBeUndefined();
-            expect(all['$date']).toBeDefined();
         });
 
         test('getAllEntries() should respect context', () => {
@@ -339,10 +338,11 @@ describe('MindCache Context Filtering', () => {
             }).toThrow('Key already exists');
         });
 
-        test('should throw error for reserved keys', () => {
-            expect(() => cache.create_key('$date', 'value')).toThrow('Cannot create reserved key');
-            expect(() => cache.create_key('$time', 'value')).toThrow('Cannot create reserved key');
-            expect(() => cache.create_key('$version', 'value')).toThrow('Cannot create reserved key');
+        test('should allow creating keys with $ prefix if not reserved', () => {
+            // $date, $time, $version are now only template variables
+            // Users could create keys like $custom if they wanted
+            cache.create_key('$custom', 'value');
+            expect(cache.get_value('$custom')).toBe('value');
         });
     });
 

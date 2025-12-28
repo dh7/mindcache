@@ -58,26 +58,19 @@ describe('MindCache Key Properties', () => {
       expect(attributes).toBeUndefined();
     });
 
-    test('should return protected attributes for $date and $time', () => {
-      const dateAttrs = cache.get_attributes('$date');
-      const timeAttrs = cache.get_attributes('$time');
+    test('$date/$time/$version are not real keys (only template vars)', () => {
+      // $date, $time, $version are no longer keys - they only work in templates
+      expect(cache.get_attributes('$date')).toBeUndefined();
+      expect(cache.get_attributes('$time')).toBeUndefined();
+      expect(cache.get_attributes('$version')).toBeUndefined();
 
-      // Check key properties
-      expect(dateAttrs?.type).toBe('text');
-      expect(dateAttrs?.systemTags).toContain('SystemPrompt');
-      expect(dateAttrs?.systemTags).toContain('protected');
-
-      expect(timeAttrs?.type).toBe('text');
-      expect(timeAttrs?.systemTags).toContain('SystemPrompt');
-      expect(timeAttrs?.systemTags).toContain('protected');
+      expect(cache.has('$date')).toBe(false);
+      expect(cache.has('$time')).toBe(false);
     });
 
-    test('should not allow setting attributes for protected system keys', () => {
-      const dateResult = cache.set_attributes('$date', { systemTags: [] });
-      const timeResult = cache.set_attributes('$time', { systemTags: [] });
-
-      expect(dateResult).toBe(false);
-      expect(timeResult).toBe(false);
+    test('set_attributes returns false for non-existent keys', () => {
+      const result = cache.set_attributes('$date', { systemTags: [] });
+      expect(result).toBe(false); // Key doesn't exist
     });
   });
 
@@ -101,14 +94,14 @@ describe('MindCache Key Properties', () => {
       expect(toolNames).not.toContain('write_$time');
     });
 
-    test('should not allow setting protected system keys via set_value', () => {
-      const originalDate = cache.get_value('$date');
-
+    test('$date/$time cannot be set as keys', () => {
+      // These names are allowed now since they're not reserved
       cache.set_value('$date', '2020-01-01');
+      cache.set_value('$time', '12:00:00');
 
-      // Should still return the actual current date, not the set value
-      expect(cache.get_value('$date')).not.toBe('2020-01-01');
-      expect(cache.get_value('$date')).toBe(originalDate);
+      // They become regular keys
+      expect(cache.get_value('$date')).toBe('2020-01-01');
+      expect(cache.get_value('$time')).toBe('12:00:00');
     });
 
     test('AI SDK tools should work correctly with non-writable keys', async () => {
@@ -176,11 +169,13 @@ describe('MindCache Key Properties', () => {
       expect(result).not.toBe('Date: , Time: ');
     });
 
-    test('protected system keys should always appear in getSTM', () => {
+    test('getSTM should only include keys with SystemPrompt/LLMRead tags', () => {
       const stmString = cache.getSTM();
 
-      expect(stmString).toContain('$date:');
-      expect(stmString).toContain('$time:');
+      // Only visible_key and llm_read_key should appear (they have visibility tags)
+      expect(stmString).toContain('visible_key');
+      expect(stmString).toContain('llm_read_key');
+      expect(stmString).not.toContain('invisible_key');
     });
 
     test('invisible keys should still be retrievable via get_value', () => {
@@ -193,8 +188,9 @@ describe('MindCache Key Properties', () => {
 
       expect(keys).toContain('visible_key');
       expect(keys).toContain('invisible_key');
-      expect(keys).toContain('$date');
-      expect(keys).toContain('$time');
+      expect(keys).toContain('llm_read_key');
+      // $date/$time are not keys
+      expect(keys).not.toContain('$date');
     });
 
     test('getAll() method should return all values regardless of visibility', () => {
@@ -202,8 +198,9 @@ describe('MindCache Key Properties', () => {
 
       expect(all.visible_key).toBe('visible_value');
       expect(all.invisible_key).toBe('invisible_value');
-      expect(all.$date).toBeDefined();
-      expect(all.$time).toBeDefined();
+      expect(all.llm_read_key).toBe('llm_read_value');
+      // $date/$time are not keys
+      expect(all.$date).toBeUndefined();
     });
   });
 
@@ -296,12 +293,13 @@ describe('MindCache Key Properties', () => {
   });
 
   describe('Protected Property', () => {
-    test('protected system keys should have protected tag', () => {
-      const dateAttrs = cache.get_attributes('$date');
-      const timeAttrs = cache.get_attributes('$time');
+    test('protected tag can be added by admin', () => {
+      const adminCache = new MindCache({ accessLevel: 'admin' });
+      adminCache.set_value('key', 'value');
+      adminCache.systemAddTag('key', 'protected');
 
-      expect(dateAttrs?.systemTags).toContain('protected');
-      expect(timeAttrs?.systemTags).toContain('protected');
+      const attrs = adminCache.get_attributes('key');
+      expect(attrs?.systemTags).toContain('protected');
     });
 
     test('regular keys should not have protected tag by default', () => {

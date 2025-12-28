@@ -31,10 +31,6 @@ describe('MindCache System Prompt Generation', () => {
       // Should not include hidden keys (no SystemPrompt tag)
       expect(systemPrompt).not.toContain('hidden');
       expect(systemPrompt).not.toContain('secret');
-
-      // Should include system keys
-      expect(systemPrompt).toMatch(/\$date: \d{4}-\d{2}-\d{2}/);
-      expect(systemPrompt).toMatch(/\$time: \d{2}:\d{2}:\d{2}/);
     });
 
     test('should include LLMRead keys in system prompt like SystemPrompt', () => {
@@ -103,14 +99,14 @@ describe('MindCache System Prompt Generation', () => {
       expect(systemPrompt).toContain('user: Alice. You can rewrite "user" by using the write_user tool');
     });
 
-    test('should return only system keys when no visible keys exist', () => {
+    test('should return empty string when no visible keys exist', () => {
       cache.set_value('hidden1', 'value1', { systemTags: [] });
       cache.set_value('hidden2', 'value2', { systemTags: ['LLMWrite'] });
 
       const systemPrompt = cache.get_system_prompt();
 
-      // Should only contain system keys
-      expect(systemPrompt).toMatch(/^\$date: \d{4}-\d{2}-\d{2}\n\$time: \d{2}:\d{2}:\d{2}$/);
+      // Should be empty - no visible keys
+      expect(systemPrompt).toBe('');
       expect(systemPrompt).not.toContain('hidden1');
       expect(systemPrompt).not.toContain('hidden2');
     });
@@ -175,17 +171,9 @@ describe('MindCache System Prompt Generation', () => {
       const systemPrompt = cache.get_system_prompt();
       const lines = systemPrompt.split('\n');
 
-      // System keys should always be at the end
-      const dateLineIndex = lines.findIndex(line => line.startsWith('$date:'));
-      const timeLineIndex = lines.findIndex(line => line.startsWith('$time:'));
-
-      expect(dateLineIndex).toBeGreaterThan(-1);
-      expect(timeLineIndex).toBeGreaterThan(-1);
-      expect(timeLineIndex).toBe(dateLineIndex + 1); // time should be right after date
-
-      // System keys should be readonly format (no tool mention)
-      expect(lines[dateLineIndex]).toMatch(/^\$date: \d{4}-\d{2}-\d{2}$/);
-      expect(lines[timeLineIndex]).toMatch(/^\$time: \d{2}:\d{2}:\d{2}$/);
+      // Should contain our regular key
+      expect(lines.length).toBeGreaterThan(0);
+      expect(systemPrompt).toContain('regular_key:');
     });
 
     test('should handle template with system keys', () => {
@@ -195,12 +183,8 @@ describe('MindCache System Prompt Generation', () => {
 
       const systemPrompt = cache.get_system_prompt();
 
-      // Template should process system keys
+      // Template should process $date and $time substitutions
       expect(systemPrompt).toMatch(/today_message: Today is \d{4}-\d{2}-\d{2} at \d{2}:\d{2}:\d{2}/);
-
-      // Regular system keys should still appear
-      expect(systemPrompt).toMatch(/\$date: \d{4}-\d{2}-\d{2}/);
-      expect(systemPrompt).toMatch(/\$time: \d{2}:\d{2}:\d{2}/);
     });
 
     test('should generate consistent output format', () => {

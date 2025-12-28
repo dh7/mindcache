@@ -48,74 +48,52 @@ describe('MindCache', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
 
-      expect(cache.size()).toBe(4); // 2 custom + 2 temporal ($date, $time)
+      expect(cache.size()).toBe(2); // 2 custom keys
 
       cache.clear();
-      expect(cache.size()).toBe(2); // Only temporal keys remain
+      expect(cache.size()).toBe(0); // No keys remain
       expect(cache.get('key1')).toBeUndefined();
       expect(cache.get('key2')).toBeUndefined();
     });
   });
 
-  describe('Temporal Context ($date and $time)', () => {
-    test('should provide current date', () => {
-      const date = cache.get('$date');
-      const expectedDate = new Date().toISOString().split('T')[0];
-
-      expect(date).toBe(expectedDate);
-      expect(cache.has('$date')).toBe(true);
+  describe('Template Variables ($date, $time, $version)', () => {
+    test('should substitute $date in templates', () => {
+      cache.set_value('message', 'Today is {{$date}}', { systemTags: ['ApplyTemplate'] });
+      const result = cache.get_value('message');
+      expect(result).toMatch(/Today is \d{4}-\d{2}-\d{2}/);
     });
 
-    test('should provide current time', () => {
-      const time = cache.get('$time');
-      const expectedTime = new Date().toTimeString().split(' ')[0];
-
-      expect(time).toMatch(/^\d{2}:\d{2}:\d{2}$/); // HH:MM:SS format
-      expect(cache.has('$time')).toBe(true);
+    test('should substitute $time in templates', () => {
+      cache.set_value('message', 'The time is {{$time}}', { systemTags: ['ApplyTemplate'] });
+      const result = cache.get_value('message');
+      expect(result).toMatch(/The time is \d{2}:\d{2}:\d{2}/);
     });
 
-    test('should include temporal keys in keys() method', () => {
-      cache.set('custom', 'value');
-      const keys = cache.keys();
-
-      expect(keys).toContain('$date');
-      expect(keys).toContain('$time');
-      expect(keys).toContain('custom');
-      expect(keys.length).toBe(3);
+    test('should substitute $version in templates', () => {
+      cache.set_value('message', 'Version: {{$version}}', { systemTags: ['ApplyTemplate'] });
+      const result = cache.get_value('message');
+      expect(result).toMatch(/Version: \d+\.\d+\.\d+/);
     });
 
-    test('should include temporal values in values() method', () => {
-      cache.set('custom', 'value');
-      const values = cache.values();
+    test('$date/$time/$version are NOT real keys', () => {
+      // They don't exist as keys
+      expect(cache.has('$date')).toBe(false);
+      expect(cache.has('$time')).toBe(false);
+      expect(cache.has('$version')).toBe(false);
 
-      expect(values).toContain('value');
-      expect(values.length).toBe(3);
+      // They don't appear in keys/values
+      expect(cache.keys()).not.toContain('$date');
+      expect(cache.keys()).not.toContain('$time');
 
-      // Check that date and time values are present
-      const dateValue = values.find(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v));
-      const timeValue = values.find(v => typeof v === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(v));
-
-      expect(dateValue).toBeDefined();
-      expect(timeValue).toBeDefined();
-    });
-
-    test('should include temporal entries in entries() method', () => {
-      cache.set('custom', 'value');
-      const entries = cache.entries();
-
-      const dateEntry = entries.find(([key]) => key === '$date');
-      const timeEntry = entries.find(([key]) => key === '$time');
-      const customEntry = entries.find(([key]) => key === 'custom');
-
-      expect(dateEntry).toBeDefined();
-      expect(timeEntry).toBeDefined();
-      expect(customEntry).toEqual(['custom', 'value']);
-      expect(entries.length).toBe(3);
+      // get_value returns undefined
+      expect(cache.get_value('$date')).toBeUndefined();
+      expect(cache.get_value('$time')).toBeUndefined();
     });
   });
 
   describe('Bulk Operations', () => {
-    test('should get all context including temporal keys', () => {
+    test('should get all values', () => {
       cache.set('name', 'Bob');
       cache.set('age', 25);
 
@@ -123,8 +101,9 @@ describe('MindCache', () => {
 
       expect(all.name).toBe('Bob');
       expect(all.age).toBe(25);
-      expect(all.$date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(all.$time).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+      // No $date/$time - they're only template variables
+      expect(all.$date).toBeUndefined();
+      expect(all.$time).toBeUndefined();
     });
 
     test('should update context with multiple values', () => {
@@ -142,16 +121,16 @@ describe('MindCache', () => {
     });
 
     test('should return correct size', () => {
-      expect(cache.size()).toBe(2); // $date and $time
+      expect(cache.size()).toBe(0); // Empty
 
       cache.set('key1', 'value1');
-      expect(cache.size()).toBe(3);
+      expect(cache.size()).toBe(1);
 
       cache.set('key2', 'value2');
-      expect(cache.size()).toBe(4);
+      expect(cache.size()).toBe(2);
 
       cache.delete('key1');
-      expect(cache.size()).toBe(3);
+      expect(cache.size()).toBe(1);
     });
   });
 
@@ -271,9 +250,9 @@ describe('MindCache', () => {
       cache.set('username', 'Alice');
 
       const result = cache.injectSTM('User {{username}} has image {{profile_pic}} and file {{document}}');
-      // Images and files return their data URLs
+      // Images and files return their stored value when injected
       expect(result).toContain('User Alice has image');
-      expect(result).toContain('data:');
+      expect(result).toContain('base64data');
     });
 
     test('should return template unchanged if no placeholders', () => {
@@ -306,17 +285,13 @@ describe('MindCache', () => {
 
       expect(contextString).toContain('name: Henry');
       expect(contextString).toContain('age: 40');
-      expect(contextString).toContain('$date:');
-      expect(contextString).toContain('$time:');
     });
 
     test('should handle empty context', () => {
       const contextString = cache.getSTM();
 
-      expect(contextString).toContain('$date:');
-      expect(contextString).toContain('$time:');
-      // Only system keys when no visible keys
-      expect(contextString.split('\n')).toHaveLength(2);
+      // Empty when no visible keys
+      expect(contextString).toBe('');
     });
   });
 
@@ -349,16 +324,13 @@ describe('MindCache', () => {
       expect(serialized.name).toBe('Alice');
       expect(serialized.age).toBe(30);
       expect(serialized.preferences).toEqual({ theme: 'dark' });
-      expect(serialized.$date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(serialized.$time).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+      // No $date/$time - they're template-only variables
     });
 
-    test('should serialize empty STM with only temporal keys', () => {
-      const serialized = cache.getAll(); // Use getAll() for values-only format
+    test('should serialize empty STM', () => {
+      const serialized = cache.getAll();
 
-      expect(Object.keys(serialized)).toHaveLength(2);
-      expect(serialized.$date).toBeDefined();
-      expect(serialized.$time).toBeDefined();
+      expect(Object.keys(serialized)).toHaveLength(0);
     });
 
     test('should deserialize object data correctly', () => {
@@ -383,10 +355,6 @@ describe('MindCache', () => {
       expect(cache.get('name')).toBe('Bob');
       expect(cache.get('age')).toBe(25);
       expect(cache.get('settings')).toEqual({ notifications: true });
-
-      // System keys should still be available
-      expect(cache.get('$date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(cache.get('$time')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
 
       // Should have migrated to new tag format (with empty defaults)
       expect(cache.get_attributes('name')?.contentTags).toEqual([]);
@@ -501,15 +469,11 @@ describe('MindCache', () => {
       const newCache = new MindCache();
       newCache.deserialize(serialized);
 
-      // Verify all data transferred correctly (except temporal keys)
+      // Verify all data transferred correctly
       expect(newCache.get('name')).toBe('Eve');
       expect(newCache.get('age')).toBe(28);
       expect(newCache.get('preferences')).toEqual({ theme: 'light', lang: 'es' });
       expect(newCache.get('tags')).toEqual(['developer', 'designer']);
-
-      // Temporal keys should be current, not from original
-      expect(newCache.get('$date')).toBeDefined();
-      expect(newCache.get('$time')).toBeDefined();
     });
 
     test('should roundtrip JSON serialize/deserialize correctly', () => {
@@ -588,8 +552,7 @@ describe('MindCache', () => {
       expect(serialized.test.value).toBe('value');
       expect(serialized.test.attributes).toBeDefined();
       expect(stmObject.test).toBe('value');
-      expect(stmObject.$date).toBeDefined();
-      expect(stmObject.$time).toBeDefined();
+      // No $date/$time - they're template-only variables
     });
   });
 
