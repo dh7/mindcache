@@ -50,7 +50,7 @@ export default function InstanceEditorPage() {
 
   // Tag filtering
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [selectedSystemTags, setSelectedSystemTags] = useState<Array<'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'protected' | 'ApplyTemplate'>>([]);
+  const [selectedSystemTags, setSelectedSystemTags] = useState<Array<'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'ApplyTemplate'>>([]);
   const [showUntagged, setShowUntagged] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
@@ -726,9 +726,6 @@ export default function InstanceEditorPage() {
           }
           if (st === 'LLMWrite') {
             return keySystemTags.includes('LLMWrite');
-          }
-          if (st === 'protected') {
-            return keySystemTags.includes('protected');
           }
           if (st === 'ApplyTemplate') {
             return keySystemTags.includes('ApplyTemplate');
