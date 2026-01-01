@@ -6,6 +6,7 @@ import { useAuth } from '@clerk/nextjs';
 import { GitHubSyncSettings } from '@/components/GitHubSyncSettings';
 import { GitHubFileBrowser } from '@/components/GitHubFileBrowser';
 import { useGitStore } from '@/hooks/useGitStore';
+import { MindCache } from 'mindcache';
 
 interface Project {
   id: string;
@@ -44,6 +45,7 @@ export default function ProjectPage() {
   const [deleteInstance, setDeleteInstance] = useState<Instance | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showGitHubSettings, setShowGitHubSettings] = useState(false);
+  const [pushingToGitHub, setPushingToGitHub] = useState(false);
 
   // GitStore hook - creates a GitStore instance when project has GitHub configured
   const gitStore = useGitStore(project);
@@ -133,6 +135,110 @@ export default function ProjectPage() {
       alert((err as Error).message);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handlePushAllToGitHub = async () => {
+    if (!project?.github_repo || instances.length === 0) {
+      return;
+    }
+
+    setPushingToGitHub(true);
+    const results: { instance: string; success: boolean; error?: string }[] = [];
+
+    try {
+      const [owner, repo] = project.github_repo.split('/');
+
+      for (const instance of instances) {
+        try {
+          // Create a temporary MindCache to load this instance's data
+          const mc = new MindCache({
+            cloud: {
+              instanceId: instance.id,
+              baseUrl: API_URL,
+              tokenProvider: async () => {
+                const jwtToken = await getToken();
+                const res = await fetch(`${API_URL}/api/ws-token`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
+                  },
+                  body: JSON.stringify({ instanceId: instance.id })
+                });
+                if (!res.ok) {
+                  throw new Error('Failed to get token');
+                }
+                const { token } = await res.json();
+                return token;
+              }
+            }
+          });
+
+          // Wait for connection and initial sync
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Connection timeout')), 10000);
+            mc.subscribeToAll(() => {
+              if (mc.connectionState === 'connected') {
+                clearTimeout(timeout);
+                // Give it a moment to sync
+                setTimeout(resolve, 500);
+              } else if (mc.connectionState === 'error') {
+                clearTimeout(timeout);
+                reject(new Error('Connection error'));
+              }
+            });
+          });
+
+          // Export to markdown
+          const markdown = mc.toMarkdown();
+
+          // Push to GitHub
+          const res = await fetch('/api/github/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              owner,
+              repo,
+              branch: project.github_branch || 'main',
+              basePath: project.github_path || '',
+              instanceName: instance.name,
+              markdown
+            })
+          });
+
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ error: 'Export failed' }));
+            throw new Error(errorData.error || 'Export failed');
+          }
+
+          results.push({ instance: instance.name, success: true });
+
+          // Disconnect
+          mc.disconnect();
+        } catch (err) {
+          results.push({
+            instance: instance.name,
+            success: false,
+            error: err instanceof Error ? err.message : 'Unknown error'
+          });
+        }
+      }
+
+      // Show results
+      const successful = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success);
+
+      if (failed.length === 0) {
+        alert(`Successfully pushed ${successful} instance(s) to GitHub`);
+      } else {
+        const failedNames = failed.map(f => `${f.instance}: ${f.error}`).join('\n');
+        alert(`Pushed ${successful}/${results.length} instances.\n\nFailed:\n${failedNames}`);
+      }
+    } catch (err) {
+      alert(`Failed to push to GitHub: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setPushingToGitHub(false);
     }
   };
 
@@ -243,16 +349,14 @@ export default function ProjectPage() {
           <div className="flex items-center gap-3">
             {project.github_repo && gitStore && (
               <button
-                onClick={() => {
-                  // TODO: Implement push all instances to GitHub
-                  alert('Push to GitHub - coming soon!');
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 transition"
+                onClick={handlePushAllToGitHub}
+                disabled={pushingToGitHub || instances.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                Push to GitHub
+                {pushingToGitHub ? 'Pushing...' : 'Push All to GitHub'}
               </button>
             )}
             <button
