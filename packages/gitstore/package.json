@@ -1,0 +1,68 @@
+{
+    "name": "@mindcache/gitstore",
+    "version": "0.1.0",
+    "description": "Git repository abstraction for MindCache - list files, read/write with commits",
+    "main": "./dist/index.js",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist/**/*",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src/**/*.ts",
+        "test": "vitest run --passWithNoTests",
+        "test:watch": "vitest",
+        "clean": "rm -rf dist"
+    },
+    "keywords": [
+        "git",
+        "github",
+        "mindcache",
+        "storage",
+        "version-control"
+    ],
+    "author": "MindCache Team",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/dh7/mindcache.git",
+        "directory": "packages/gitstore"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@typescript-eslint/eslint-plugin": "^6.21.0",
+        "@typescript-eslint/parser": "^6.21.0",
+        "eslint": "^8.57.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.0.0",
+        "vitest": "^2.1.9"
+    },
+    "dependencies": {
+        "@octokit/rest": "^21.0.0"
+    },
+    "peerDependencies": {
+        "mindcache": ">=3.0.0"
+    },
+    "peerDependenciesMeta": {
+        "mindcache": {
+            "optional": true
+        }
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}
