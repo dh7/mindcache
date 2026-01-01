@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { GitHubSyncSettings } from '@/components/GitHubSyncSettings';
+import { GitHubFileBrowser } from '@/components/GitHubFileBrowser';
+import { useGitStore } from '@/hooks/useGitStore';
 
 interface Project {
   id: string;
@@ -42,6 +44,9 @@ export default function ProjectPage() {
   const [deleteInstance, setDeleteInstance] = useState<Instance | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showGitHubSettings, setShowGitHubSettings] = useState(false);
+
+  // GitStore hook - creates a GitStore instance when project has GitHub configured
+  const gitStore = useGitStore(project);
 
   const fetchData = async () => {
     try {
@@ -222,6 +227,34 @@ export default function ProjectPage() {
                 <span className="w-2 h-2 bg-green-500 rounded-full" title="Connected" />
               )}
             </button>
+          </div>
+        </div>
+
+        {/* GitHub File Browser */}
+        {project.github_repo && gitStore && (
+          <div className="mb-6">
+            <GitHubFileBrowser gitStore={gitStore} />
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-medium">Connected Instances:</h2>
+          <div className="flex items-center gap-3">
+            {project.github_repo && gitStore && (
+              <button
+                onClick={() => {
+                  // TODO: Implement push all instances to GitHub
+                  alert('Push to GitHub - coming soon!');
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Push to GitHub
+              </button>
+            )}
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition"
@@ -240,7 +273,7 @@ export default function ProjectPage() {
           <div className="rounded-xl overflow-hidden border border-zinc-800">
             {/* Table Header */}
             <div className="flex items-center px-6 py-3 border-b border-zinc-800 bg-zinc-900/50">
-              <div className="w-44 text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</div>
+              <div className="w-44 text-xs font-medium text-zinc-500 uppercase tracking-wider">Instance</div>
               <div className="flex-1 text-xs font-medium text-zinc-500 uppercase tracking-wider">Instance ID</div>
               <div className="w-24 text-xs font-medium text-zinc-500 uppercase tracking-wider">Mode</div>
               <div className="w-12"></div>
