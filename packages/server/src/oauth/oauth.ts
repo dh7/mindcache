@@ -9,34 +9,34 @@ import { hashSecret, generateSecureSecret } from '../auth/clerk';
 
 // Types
 export interface OAuthApp {
-    id: string;
-    owner_user_id: string;
-    name: string;
-    description: string | null;
-    client_id: string;
-    redirect_uris: string[];
-    scopes: string[];
-    logo_url: string | null;
-    homepage_url: string | null;
-    is_active: number;
-    created_at: number;
-    updated_at: number;
+  id: string;
+  owner_user_id: string;
+  name: string;
+  description: string | null;
+  client_id: string;
+  redirect_uris: string[];
+  scopes: string[];
+  logo_url: string | null;
+  homepage_url: string | null;
+  is_active: number;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface OAuthTokenResponse {
-    access_token: string;
-    token_type: 'Bearer';
-    expires_in: number;
-    refresh_token?: string;
-    scope: string;
-    instance_id?: string;
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+  refresh_token?: string;
+  scope: string;
+  instance_id?: string;
 }
 
 export interface OAuthUserInfo {
-    sub: string;          // User ID
-    email?: string;
-    name?: string;
-    instance_id?: string; // Auto-provisioned instance for this app
+  sub: string;          // User ID
+  email?: string;
+  name?: string;
+  instance_id?: string; // Auto-provisioned instance for this app
 }
 
 // Constants
@@ -116,7 +116,7 @@ function isValidRedirectUri(uri: string, allowedUris: string[]): boolean {
         try {
           const allowedParsed = new URL(allowed);
           return (allowedParsed.hostname === 'localhost' || allowedParsed.hostname === '127.0.0.1') &&
-                        allowedParsed.pathname === parsed.pathname;
+            allowedParsed.pathname === parsed.pathname;
         } catch {
           return false;
         }
@@ -192,16 +192,16 @@ export async function handleOAuthAuthorize(
     FROM oauth_apps
     WHERE client_id = ?
   `).bind(clientId).first<{
-        id: string;
-        name: string;
-        description: string | null;
-        client_id: string;
-        redirect_uris: string;
-        scopes: string;
-        logo_url: string | null;
-        homepage_url: string | null;
-        is_active: number;
-    }>();
+    id: string;
+    name: string;
+    description: string | null;
+    client_id: string;
+    redirect_uris: string;
+    scopes: string;
+    logo_url: string | null;
+    homepage_url: string | null;
+    is_active: number;
+  }>();
 
   if (!app || !app.is_active) {
     return oauthError('invalid_client', 'Unknown or inactive client', undefined, undefined, true);
@@ -223,11 +223,22 @@ export async function handleOAuthAuthorize(
     return oauthError('invalid_scope', 'No valid scopes requested', redirectUri, state || undefined);
   }
 
-  // If user is not logged in, redirect to login with return URL
+  // If user is not logged in, redirect to consent page (which handles login via Clerk)
   if (!userId) {
-    const loginUrl = new URL(`${webAppUrl}/sign-in`);
-    loginUrl.searchParams.set('redirect_url', request.url);
-    return Response.redirect(loginUrl.toString(), 302);
+    const consentUrl = new URL(`${webAppUrl}/oauth/consent`);
+    consentUrl.searchParams.set('client_id', clientId);
+    consentUrl.searchParams.set('redirect_uri', redirectUri);
+    consentUrl.searchParams.set('scope', grantedScopes.join(' '));
+    if (state) {
+      consentUrl.searchParams.set('state', state);
+    }
+    if (codeChallenge) {
+      consentUrl.searchParams.set('code_challenge', codeChallenge);
+    }
+    if (codeChallengeMethod) {
+      consentUrl.searchParams.set('code_challenge_method', codeChallengeMethod);
+    }
+    return Response.redirect(consentUrl.toString(), 302);
   }
 
   // Check if user has already authorized this app with these scopes
@@ -272,14 +283,14 @@ export async function handleOAuthAuthorizeApproval(
   userId: string
 ): Promise<Response> {
   const body = await request.json() as {
-        client_id: string;
-        redirect_uri: string;
-        scope: string;
-        state?: string;
-        code_challenge?: string;
-        code_challenge_method?: string;
-        approved: boolean;
-    };
+    client_id: string;
+    redirect_uri: string;
+    scope: string;
+    state?: string;
+    code_challenge?: string;
+    code_challenge_method?: string;
+    approved: boolean;
+  };
 
   if (!body.approved) {
     return oauthError('access_denied', 'User denied authorization', body.redirect_uri, body.state);
@@ -432,14 +443,14 @@ async function handleAuthorizationCodeGrant(
     FROM oauth_codes
     WHERE code_hash = ?
   `).bind(codeHash).first<{
-        client_id: string;
-        user_id: string;
-        redirect_uri: string;
-        scopes: string;
-        code_challenge: string | null;
-        code_challenge_method: string | null;
-        expires_at: number;
-    }>();
+    client_id: string;
+    user_id: string;
+    redirect_uri: string;
+    scopes: string;
+    code_challenge: string | null;
+    code_challenge_method: string | null;
+    expires_at: number;
+  }>();
 
   if (!authCode) {
     return Response.json(
@@ -548,14 +559,14 @@ async function handleRefreshTokenGrant(
     JOIN oauth_tokens at ON at.id = rt.access_token_id
     WHERE rt.token_hash = ? AND rt.client_id = ?
   `).bind(tokenHash, client_id).first<{
-        id: string;
-        access_token_id: string;
-        user_id: string;
-        expires_at: number | null;
-        revoked_at: number | null;
-        scopes: string;
-        instance_id: string | null;
-    }>();
+    id: string;
+    access_token_id: string;
+    user_id: string;
+    expires_at: number | null;
+    revoked_at: number | null;
+    scopes: string;
+    instance_id: string | null;
+  }>();
 
   if (!refreshTokenData || refreshTokenData.revoked_at) {
     return Response.json(
@@ -596,7 +607,7 @@ async function handleRefreshTokenGrant(
 
   // Get or ensure instance exists
   const instanceId = refreshTokenData.instance_id ||
-        await getOrCreateUserInstance(db, refreshTokenData.user_id, client_id, doNamespace);
+    await getOrCreateUserInstance(db, refreshTokenData.user_id, client_id, doNamespace);
 
   // Issue new tokens
   const scopes: string[] = JSON.parse(refreshTokenData.scopes);
@@ -799,12 +810,12 @@ export async function verifyOAuthToken(
     FROM oauth_tokens
     WHERE token_hash = ?
   `).bind(tokenHash).first<{
-        user_id: string;
-        client_id: string;
-        scopes: string;
-        instance_id: string | null;
-        expires_at: number;
-    }>();
+    user_id: string;
+    client_id: string;
+    scopes: string;
+    instance_id: string | null;
+    expires_at: number;
+  }>();
 
   if (!tokenData) {
     return null;
