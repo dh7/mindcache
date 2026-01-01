@@ -227,12 +227,6 @@ export default function ProjectPage() {
                 <span className="w-2 h-2 bg-green-500 rounded-full" title="Connected" />
               )}
             </button>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition"
-            >
-              + New Instance
-            </button>
           </div>
         </div>
 
@@ -242,6 +236,33 @@ export default function ProjectPage() {
             <GitHubFileBrowser gitStore={gitStore} />
           </div>
         )}
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-medium">Connected Instances:</h2>
+          <div className="flex items-center gap-3">
+            {project.github_repo && gitStore && (
+              <button
+                onClick={() => {
+                  // TODO: Implement push all instances to GitHub
+                  alert('Push to GitHub - coming soon!');
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Push to GitHub
+              </button>
+            )}
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition"
+            >
+              + New Instance
+            </button>
+          </div>
+        </div>
 
         {/* Instances Table */}
         {instances.length === 0 ? (
