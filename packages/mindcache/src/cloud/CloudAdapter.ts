@@ -259,10 +259,12 @@ export class CloudAdapter {
         if (typeof event.data === 'string') {
           // Handle JSON auth messages
           const msg = JSON.parse(event.data);
+          console.log('☁️ CloudAdapter: Received JSON message:', msg.type, msg);
           if (msg.type === 'auth_success') {
             this._state = 'connected';
             this.reconnectAttempts = 0;
             this.emit('connected');
+            console.log('☁️ Connected to MindCache cloud');
           } else if (msg.type === 'auth_error' || msg.type === 'error') {
             this._state = 'error';
             this.emit('error', new Error(msg.error));
@@ -272,6 +274,7 @@ export class CloudAdapter {
           }
         } else {
           // Handle Binary Yjs messages
+          console.log('☁️ CloudAdapter: Received binary message, length:', event.data.byteLength);
           const encoder = encoding.createEncoder();
           const decoder = decoding.createDecoder(new Uint8Array(event.data as ArrayBuffer));
 
@@ -289,6 +292,7 @@ export class CloudAdapter {
             if (!this._synced && (messageType === 1 || messageType === 2)) {
               this._synced = true;
               this.emit('synced');
+              console.log('☁️ Synced with cloud');
             }
           }
         }

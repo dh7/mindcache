@@ -27,7 +27,9 @@ export { DEFAULT_KEY_ATTRIBUTES, SystemTagHelpers } from './core';
 
 // Cloud exports (for advanced usage)
 export { CloudAdapter } from './cloud';
+export { OAuthClient, createOAuthClient } from './cloud/OAuthClient';
 export type { CloudConfig, ConnectionState, CloudAdapterEvents } from './cloud';
+export type { OAuthConfig, OAuthTokens, MindCacheUser } from './cloud/OAuthClient';
 
 // Local Persistence exports
 export { IndexedDBAdapter } from './local';
