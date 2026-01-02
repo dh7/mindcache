@@ -461,12 +461,15 @@ export class MindCacheInstanceDO extends DurableObject {
           this.doc.transact(() => {
             const entryMap = new Y.Map();
             entryMap.set('value', data.value);
-            entryMap.set('attributes', data.attributes || {
-              type: 'text',
-              contentTags: (data as any).attributes?.tags || [],
-              systemTags: [],
-              zIndex: 0
-            });
+            // Convert legacy 'tags' to 'contentTags' for new schema
+            const inAttrs = (data as any).attributes || {};
+            const attributes = {
+              type: inAttrs.type || 'text',
+              contentTags: inAttrs.tags || inAttrs.contentTags || [],
+              systemTags: inAttrs.systemTags || [],
+              zIndex: inAttrs.zIndex ?? 0
+            };
+            entryMap.set('attributes', attributes);
             rootMap.set(data.key, entryMap);
           }, ws);
 
