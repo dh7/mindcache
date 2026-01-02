@@ -376,7 +376,17 @@ async function issueAuthCode(
     callbackUrl.searchParams.set('state', state);
   }
 
-  return Response.redirect(callbackUrl.toString(), 302);
+  // Return JSON with redirect URL (fetch() can't follow cross-origin redirects)
+  return Response.json(
+    { redirect: callbackUrl.toString() },
+    {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json'
+      }
+    }
+  );
 }
 
 /**

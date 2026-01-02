@@ -132,37 +132,60 @@ export default {
         let wsPermission: 'read' | 'write' | 'admin' = 'read';
 
         if (token) {
-          // Verify short-lived token
-          const tokenData = await env.DB.prepare(`
-            SELECT user_id, instance_id, permission, expires_at 
-            FROM ws_tokens 
-            WHERE token_hash = ?
-          `).bind(await hashToken(token)).first<{
-            user_id: string;
-            instance_id: string;
-            permission: string;
-            expires_at: number;
-          }>();
+          // Check if it's an OAuth access token (mc_at_*)
+          if (token.startsWith('mc_at_')) {
+            // Verify OAuth access token
+            const oauthTokenData = await verifyOAuthToken(token, env.DB);
+            if (!oauthTokenData) {
+              return Response.json({ error: 'Invalid or expired OAuth token' }, { status: 401, headers: corsHeaders });
+            }
 
-          if (!tokenData) {
-            return Response.json({ error: 'Invalid token' }, { status: 401, headers: corsHeaders });
+            // Verify the token is for this instance
+            if (oauthTokenData.instanceId !== instanceId) {
+              return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
+            }
+
+            wsUserId = oauthTokenData.userId;
+            // OAuth tokens: check scopes for permission level
+            if (oauthTokenData.scopes.includes('admin')) {
+              wsPermission = 'admin';
+            } else if (oauthTokenData.scopes.includes('write')) {
+              wsPermission = 'write';
+            } else {
+              wsPermission = 'read';
+            }
+          } else {
+            // Verify short-lived ws_token
+            const tokenData = await env.DB.prepare(`
+              SELECT user_id, instance_id, permission, expires_at 
+              FROM ws_tokens 
+              WHERE token_hash = ?
+            `).bind(await hashToken(token)).first<{
+              user_id: string;
+              instance_id: string;
+              permission: string;
+              expires_at: number;
+            }>();
+
+            if (!tokenData) {
+              return Response.json({ error: 'Invalid token' }, { status: 401, headers: corsHeaders });
+            }
+
+            if (tokenData.expires_at < Math.floor(Date.now() / 1000)) {
+              return Response.json({ error: 'Token expired' }, { status: 401, headers: corsHeaders });
+            }
+
+            if (tokenData.instance_id !== instanceId) {
+              return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
+            }
+
+            wsUserId = tokenData.user_id;
+            wsPermission = tokenData.permission as 'read' | 'write' | 'admin';
+
+            // Delete used token (one-time use)
+            await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
+              .bind(await hashToken(token)).run();
           }
-
-          if (tokenData.expires_at < Math.floor(Date.now() / 1000)) {
-            return Response.json({ error: 'Token expired' }, { status: 401, headers: corsHeaders });
-          }
-
-          if (tokenData.instance_id !== instanceId) {
-            return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
-          }
-
-          wsUserId = tokenData.user_id;
-          // Token permission is 'read', 'write', or 'admin'
-          wsPermission = tokenData.permission as 'read' | 'write' | 'admin';
-
-          // Delete used token (one-time use)
-          await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
-            .bind(await hashToken(token)).run();
         } else {
           // Fallback: Check API key (browsers can't send headers with WebSocket)
           // First try query string, then Authorization header

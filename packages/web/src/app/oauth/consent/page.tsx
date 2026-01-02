@@ -7,11 +7,11 @@ import { useSearchParams } from 'next/navigation';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
 
 interface OAuthApp {
-    id: string;
-    name: string;
-    description: string | null;
-    logo_url: string | null;
-    homepage_url: string | null;
+  id: string;
+  name: string;
+  description: string | null;
+  logo_url: string | null;
+  homepage_url: string | null;
 }
 
 const SCOPE_DESCRIPTIONS: Record<string, { label: string; description: string }> = {
@@ -131,7 +131,8 @@ function ConsentPageContent() {
         window.location.href = data.redirect;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authorization failed');
+      console.error('OAuth authorize error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch');
     } finally {
       setSubmitting(false);
     }
@@ -187,7 +188,7 @@ function ConsentPageContent() {
                 onClick={() => window.history.back()}
                 className="text-gray-400 hover:text-white text-sm"
               >
-                                Go back
+                Go back
               </button>
             </div>
           ) : app ? (
@@ -224,7 +225,7 @@ function ConsentPageContent() {
               {/* Consent message */}
               <div className="mb-6">
                 <p className="text-gray-300 text-center mb-4">
-                                    This app wants to access your MindCache data
+                  This app wants to access your MindCache data
                 </p>
 
                 {/* Scopes */}
@@ -248,7 +249,7 @@ function ConsentPageContent() {
               <div className="mb-6 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg">
                 <p className="text-blue-300 text-sm">
                   <strong>Note:</strong> This app will have its own isolated data space.
-                                    It cannot access your other MindCache projects.
+                  It cannot access your other MindCache projects.
                 </p>
               </div>
 
@@ -259,7 +260,7 @@ function ConsentPageContent() {
                   disabled={submitting}
                   className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition disabled:opacity-50"
                 >
-                                    Deny
+                  Deny
                 </button>
                 <button
                   onClick={() => handleAuthorize(true)}
@@ -272,7 +273,7 @@ function ConsentPageContent() {
 
               {/* Privacy notice */}
               <p className="text-gray-500 text-xs text-center mt-4">
-                                By authorizing, you allow this app to use MindCache on your behalf.
+                By authorizing, you allow this app to use MindCache on your behalf.
               </p>
             </>
           ) : null}
