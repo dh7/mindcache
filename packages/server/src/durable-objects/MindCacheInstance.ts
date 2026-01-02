@@ -24,7 +24,7 @@ interface Env {
 
 const ENCODING_STATUS_KEY = 'yjs_encoded_state';
 const SCHEMA_VERSION_KEY = 'schema_version';
-const CURRENT_SCHEMA_VERSION = 2; // Bump when schema changes
+const CURRENT_SCHEMA_VERSION = 3; // Bump when schema changes
 
 export class MindCacheInstanceDO extends DurableObject {
   private sql: SqlStorage;
@@ -160,6 +160,9 @@ export class MindCacheInstanceDO extends DurableObject {
           try {
             this.sql.exec('ALTER TABLE keys ADD COLUMN system_tags TEXT');
           } catch { /* exists */ }
+          try {
+            this.sql.exec('ALTER TABLE keys ADD COLUMN z_index INTEGER NOT NULL DEFAULT 0');
+          } catch { /* exists */ }
 
           // Migrate data: convert legacy booleans to systemTags
           const rows = this.sql.exec('SELECT name, readonly, visible, hardcoded, template, tags FROM keys');
@@ -198,6 +201,19 @@ export class MindCacheInstanceDO extends DurableObject {
       } catch (e) {
         console.error('Migration error:', e);
       }
+
+      // Update version
+      this.sql.exec(
+        'INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)',
+        SCHEMA_VERSION_KEY,
+        String(CURRENT_SCHEMA_VERSION)
+      );
+    }
+
+    if (currentVersion < 3) {
+      try {
+        this.sql.exec('ALTER TABLE keys ADD COLUMN z_index INTEGER NOT NULL DEFAULT 0');
+      } catch { /* exists */ }
 
       // Update version
       this.sql.exec(
@@ -431,8 +447,43 @@ export class MindCacheInstanceDO extends DurableObject {
           // Mock auth
           const session: SessionData = { userId: 'dev-user', permission: 'write' };
           this.setSession(ws, session);
-          this.send(ws, { type: 'auth_success', instanceId: this.ctx.id.toString(), userId: 'dev', permission: 'write' });
+          this.send(ws, { type: 'auth_success', instanceId: this.ctx.id.toString(), userId: 'dev-user', permission: 'write' });
+
+          // Send legacy JSON sync for backward compatibility with tests
+          const allKeys = this.getAllKeys();
+          this.send(ws, { type: 'sync', instanceId: this.ctx.id.toString(), data: allKeys } as any);
+
+          // Also start Yjs sync for real clients
           this.startSync(ws);
+        } else if (data.type === 'set') {
+          // Handle legacy set message from tests
+          const rootMap = this.doc.getMap('mindcache');
+          this.doc.transact(() => {
+            const entryMap = new Y.Map();
+            entryMap.set('value', data.value);
+            entryMap.set('attributes', data.attributes || {
+              type: 'text',
+              contentTags: (data as any).attributes?.tags || [],
+              systemTags: [],
+              zIndex: 0
+            });
+            rootMap.set(data.key, entryMap);
+          }, ws);
+
+          // Broadcast to other clients
+          this.broadcast({ type: 'key_updated', key: data.key, value: data.value, attributes: data.attributes, updatedBy: 'dev-user', timestamp: Date.now() } as any);
+        } else if (data.type === 'delete') {
+          // Handle legacy delete message from tests
+          const rootMap = this.doc.getMap('mindcache');
+          this.doc.transact(() => {
+            rootMap.delete(data.key);
+          }, ws);
+
+          // Broadcast to other clients
+          this.broadcast({ type: 'key_deleted', key: data.key, deletedBy: 'dev-user', timestamp: Date.now() } as any);
+        } else if (data.type === 'ping') {
+          // Handle ping/pong
+          this.send(ws, { type: 'pong' });
         }
       } catch (error) {
         console.error('WebSocket message error:', error);

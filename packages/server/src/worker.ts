@@ -460,12 +460,23 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
             auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
           } catch (e) {
             console.error('JWT verification error:', e);
-            return Response.json({ error: 'JWT verification failed' }, { status: 401, headers: corsHeaders });
+            // In dev mode, fall back to dev-user on verification failure
+            if (env.ENVIRONMENT === 'development') {
+              userId = 'dev-user';
+            } else {
+              return Response.json({ error: 'JWT verification failed' }, { status: 401, headers: corsHeaders });
+            }
           }
-          if (!auth.valid) {
-            return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+          if (auth && !auth.valid) {
+            // In dev mode, fall back to dev-user on invalid JWT
+            if (env.ENVIRONMENT === 'development') {
+              userId = 'dev-user';
+            } else {
+              return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+            }
+          } else if (auth) {
+            userId = auth.userId!;
           }
-          userId = auth.userId!;
         }
       } else if (authData.type === 'delegate') {
         // Delegate authentication: ApiKey delegateId:secret
