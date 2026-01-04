@@ -24,6 +24,14 @@ import {
   handleGenerateImageRequest,
   handleAnalyzeImageRequest
 } from './ai';
+import {
+  handleOAuthAuthorize,
+  handleOAuthAuthorizeApproval,
+  handleOAuthToken,
+  handleOAuthRevoke,
+  handleOAuthUserInfo,
+  verifyOAuthToken
+} from './oauth/oauth';
 
 export { MindCacheInstanceDO };
 
@@ -88,6 +96,11 @@ export default {
         return handleClerkWebhook(request, env);
       }
 
+      // OAuth endpoints (public, handled before auth check)
+      if (path.startsWith('/oauth/')) {
+        return handleOAuthRequest(request, env, path);
+      }
+
       // WebSocket upgrade for real-time sync
       if (path.startsWith('/sync/')) {
         const instanceId = path.split('/')[2];
@@ -119,37 +132,60 @@ export default {
         let wsPermission: 'read' | 'write' | 'admin' = 'read';
 
         if (token) {
-          // Verify short-lived token
-          const tokenData = await env.DB.prepare(`
-            SELECT user_id, instance_id, permission, expires_at 
-            FROM ws_tokens 
-            WHERE token_hash = ?
-          `).bind(await hashToken(token)).first<{
-            user_id: string;
-            instance_id: string;
-            permission: string;
-            expires_at: number;
-          }>();
+          // Check if it's an OAuth access token (mc_at_*)
+          if (token.startsWith('mc_at_')) {
+            // Verify OAuth access token
+            const oauthTokenData = await verifyOAuthToken(token, env.DB);
+            if (!oauthTokenData) {
+              return Response.json({ error: 'Invalid or expired OAuth token' }, { status: 401, headers: corsHeaders });
+            }
 
-          if (!tokenData) {
-            return Response.json({ error: 'Invalid token' }, { status: 401, headers: corsHeaders });
+            // Verify the token is for this instance
+            if (oauthTokenData.instanceId !== instanceId) {
+              return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
+            }
+
+            wsUserId = oauthTokenData.userId;
+            // OAuth tokens: check scopes for permission level
+            if (oauthTokenData.scopes.includes('admin')) {
+              wsPermission = 'admin';
+            } else if (oauthTokenData.scopes.includes('write')) {
+              wsPermission = 'write';
+            } else {
+              wsPermission = 'read';
+            }
+          } else {
+            // Verify short-lived ws_token
+            const tokenData = await env.DB.prepare(`
+              SELECT user_id, instance_id, permission, expires_at 
+              FROM ws_tokens 
+              WHERE token_hash = ?
+            `).bind(await hashToken(token)).first<{
+              user_id: string;
+              instance_id: string;
+              permission: string;
+              expires_at: number;
+            }>();
+
+            if (!tokenData) {
+              return Response.json({ error: 'Invalid token' }, { status: 401, headers: corsHeaders });
+            }
+
+            if (tokenData.expires_at < Math.floor(Date.now() / 1000)) {
+              return Response.json({ error: 'Token expired' }, { status: 401, headers: corsHeaders });
+            }
+
+            if (tokenData.instance_id !== instanceId) {
+              return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
+            }
+
+            wsUserId = tokenData.user_id;
+            wsPermission = tokenData.permission as 'read' | 'write' | 'admin';
+
+            // Delete used token (one-time use)
+            await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
+              .bind(await hashToken(token)).run();
           }
-
-          if (tokenData.expires_at < Math.floor(Date.now() / 1000)) {
-            return Response.json({ error: 'Token expired' }, { status: 401, headers: corsHeaders });
-          }
-
-          if (tokenData.instance_id !== instanceId) {
-            return Response.json({ error: 'Token not valid for this instance' }, { status: 403, headers: corsHeaders });
-          }
-
-          wsUserId = tokenData.user_id;
-          // Token permission is 'read', 'write', or 'admin'
-          wsPermission = tokenData.permission as 'read' | 'write' | 'admin';
-
-          // Delete used token (one-time use)
-          await env.DB.prepare('DELETE FROM ws_tokens WHERE token_hash = ?')
-            .bind(await hashToken(token)).run();
         } else {
           // Fallback: Check API key (browsers can't send headers with WebSocket)
           // First try query string, then Authorization header
@@ -275,6 +311,87 @@ export default {
   }
 };
 
+/**
+ * Handle OAuth requests
+ */
+async function handleOAuthRequest(request: Request, env: Env, path: string): Promise<Response> {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  };
+
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const webAppUrl = env.ENVIRONMENT === 'production'
+    ? 'https://app.mindcache.dev'
+    : 'http://localhost:3000';
+
+  try {
+    // GET /oauth/authorize - Authorization endpoint
+    if (path === '/oauth/authorize' && request.method === 'GET') {
+      // Try to get userId from Bearer token (if user is logged in via SDK)
+      let userId: string | null = null;
+      const authData = extractAuth(request);
+      if (authData?.type === 'jwt' && env.CLERK_SECRET_KEY) {
+        const auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
+        if (auth.valid) {
+          userId = auth.userId || null;
+        }
+      }
+      return handleOAuthAuthorize(request, env.DB, userId, webAppUrl);
+    }
+
+    // POST /oauth/authorize - User approved authorization
+    if (path === '/oauth/authorize' && request.method === 'POST') {
+      // Requires user authentication
+      const authData = extractAuth(request);
+      if (!authData) {
+        return Response.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders });
+      }
+
+      let userId: string;
+      if (authData.type === 'jwt' && env.CLERK_SECRET_KEY) {
+        const auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
+        if (!auth.valid) {
+          return Response.json({ error: auth.error }, { status: 401, headers: corsHeaders });
+        }
+        userId = auth.userId!;
+      } else {
+        return Response.json({ error: 'JWT authentication required' }, { status: 401, headers: corsHeaders });
+      }
+
+      return handleOAuthAuthorizeApproval(request, env.DB, userId);
+    }
+
+    // POST /oauth/token - Token exchange
+    if (path === '/oauth/token' && request.method === 'POST') {
+      return handleOAuthToken(request, env.DB, env.MINDCACHE_INSTANCE);
+    }
+
+    // POST /oauth/revoke - Token revocation
+    if (path === '/oauth/revoke' && request.method === 'POST') {
+      return handleOAuthRevoke(request, env.DB);
+    }
+
+    // GET /oauth/userinfo - User info endpoint
+    if (path === '/oauth/userinfo' && request.method === 'GET') {
+      return handleOAuthUserInfo(request, env.DB);
+    }
+
+    return Response.json({ error: 'Not found' }, { status: 404, headers: corsHeaders });
+  } catch (error) {
+    console.error('OAuth error:', error);
+    return Response.json(
+      { error: 'server_error', error_description: 'Internal server error' },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
 async function handleApiRequest(request: Request, env: Env, path: string): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -282,6 +399,38 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json'
   };
+
+  // Public OAuth app info endpoint (no auth required)
+  if (path === '/api/oauth/apps/info' && request.method === 'GET') {
+    const url = new URL(request.url);
+    const clientId = url.searchParams.get('client_id');
+
+    if (!clientId) {
+      return Response.json({ error: 'client_id required' }, { status: 400, headers: corsHeaders });
+    }
+
+    const app = await env.DB.prepare(`
+      SELECT name, description, logo_url, homepage_url, is_active
+      FROM oauth_apps WHERE client_id = ?
+    `).bind(clientId).first<{
+      name: string;
+      description: string | null;
+      logo_url: string | null;
+      homepage_url: string | null;
+      is_active: number;
+    }>();
+
+    if (!app || !app.is_active) {
+      return Response.json({ error: 'App not found' }, { status: 404, headers: corsHeaders });
+    }
+
+    return Response.json({
+      name: app.name,
+      description: app.description,
+      logo_url: app.logo_url,
+      homepage_url: app.homepage_url
+    }, { headers: corsHeaders });
+  }
 
   try {
     // Authenticate request
@@ -311,12 +460,23 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
             auth = await verifyClerkJWT(authData.token, env.CLERK_SECRET_KEY);
           } catch (e) {
             console.error('JWT verification error:', e);
-            return Response.json({ error: 'JWT verification failed' }, { status: 401, headers: corsHeaders });
+            // In dev mode, fall back to dev-user on verification failure
+            if (env.ENVIRONMENT === 'development') {
+              userId = 'dev-user';
+            } else {
+              return Response.json({ error: 'JWT verification failed' }, { status: 401, headers: corsHeaders });
+            }
           }
-          if (!auth.valid) {
-            return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+          if (auth && !auth.valid) {
+            // In dev mode, fall back to dev-user on invalid JWT
+            if (env.ENVIRONMENT === 'development') {
+              userId = 'dev-user';
+            } else {
+              return Response.json({ error: auth.error || 'Unauthorized' }, { status: 401, headers: corsHeaders });
+            }
+          } else if (auth) {
+            userId = auth.userId!;
           }
-          userId = auth.userId!;
         }
       } else if (authData.type === 'delegate') {
         // Delegate authentication: ApiKey delegateId:secret
@@ -331,6 +491,15 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
         userId = auth.parentUserId!;
         actorType = 'delegate';
         delegateId = delId;
+      } else if (authData.type === 'oauth') {
+        // OAuth access token verification
+        const oauthResult = await verifyOAuthToken(authData.token, env.DB);
+        if (!oauthResult) {
+          return Response.json({ error: 'Invalid or expired OAuth token' }, { status: 401, headers: corsHeaders });
+        }
+        userId = oauthResult.userId;
+        // OAuth tokens have limited scope - they can only access the instance provisioned for that app
+        // This is enforced in the individual API handlers
       } else {
         // Legacy API key
         auth = await verifyApiKey(authData.token, env.DB);
@@ -869,6 +1038,228 @@ async function handleApiRequest(request: Request, env: Env, path: string): Promi
       const shareId = shareDeleteMatch[1];
       await env.DB.prepare('DELETE FROM shares WHERE id = ?').bind(shareId).run();
       return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // ============= OAUTH APPS =============
+
+    // List OAuth apps (developer management)
+    if (path === '/api/oauth/apps' && request.method === 'GET') {
+      const { results } = await env.DB.prepare(`
+        SELECT id, name, description, client_id, redirect_uris, scopes, logo_url, homepage_url, is_active, created_at, updated_at
+        FROM oauth_apps WHERE owner_user_id = ?
+        ORDER BY created_at DESC
+      `).bind(userId).all();
+
+      // Parse JSON fields
+      const apps = results.map((app: any) => ({
+        ...app,
+        redirect_uris: JSON.parse(app.redirect_uris || '[]'),
+        scopes: JSON.parse(app.scopes || '["read"]')
+      }));
+
+      return Response.json({ apps }, { headers: corsHeaders });
+    }
+
+    // Create OAuth app
+    if (path === '/api/oauth/apps' && request.method === 'POST') {
+      const body = await request.json() as {
+        name: string;
+        description?: string;
+        redirect_uris: string[];
+        scopes?: string[];
+        logo_url?: string;
+        homepage_url?: string;
+      };
+
+      if (!body.name?.trim()) {
+        return Response.json({ error: 'Name is required' }, { status: 400, headers: corsHeaders });
+      }
+
+      if (!body.redirect_uris?.length) {
+        return Response.json({ error: 'At least one redirect URI is required' }, { status: 400, headers: corsHeaders });
+      }
+
+      // Generate client ID and secret
+      const clientId = `mc_app_${crypto.randomUUID().replace(/-/g, '').substring(0, 16)}`;
+      const clientSecret = `mc_secret_${generateSecureSecret(32)}`;
+      const clientSecretHash = await hashSecret(clientSecret);
+
+      const id = crypto.randomUUID();
+      const scopes = body.scopes || ['read', 'write'];
+
+      await env.DB.prepare(`
+        INSERT INTO oauth_apps (id, owner_user_id, name, description, client_id, client_secret_hash, redirect_uris, scopes, logo_url, homepage_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id,
+        userId,
+        body.name.trim(),
+        body.description || null,
+        clientId,
+        clientSecretHash,
+        JSON.stringify(body.redirect_uris),
+        JSON.stringify(scopes),
+        body.logo_url || null,
+        body.homepage_url || null
+      ).run();
+
+      // Return client secret only once
+      return Response.json({
+        id,
+        name: body.name,
+        client_id: clientId,
+        client_secret: clientSecret, // Only shown once!
+        redirect_uris: body.redirect_uris,
+        scopes,
+        logo_url: body.logo_url,
+        homepage_url: body.homepage_url
+      }, { status: 201, headers: corsHeaders });
+    }
+
+    // Get single OAuth app
+    const oauthAppMatch = path.match(/^\/api\/oauth\/apps\/([\w-]+)$/);
+    if (oauthAppMatch && request.method === 'GET') {
+      const appId = oauthAppMatch[1];
+      const app = await env.DB.prepare(`
+        SELECT id, name, description, client_id, redirect_uris, scopes, logo_url, homepage_url, is_active, created_at, updated_at
+        FROM oauth_apps WHERE id = ? AND owner_user_id = ?
+      `).bind(appId, userId).first();
+
+      if (!app) {
+        return Response.json({ error: 'App not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      return Response.json({
+        ...app,
+        redirect_uris: JSON.parse((app as any).redirect_uris || '[]'),
+        scopes: JSON.parse((app as any).scopes || '["read"]')
+      }, { headers: corsHeaders });
+    }
+
+    // Update OAuth app
+    if (oauthAppMatch && request.method === 'PATCH') {
+      const appId = oauthAppMatch[1];
+      const body = await request.json() as {
+        name?: string;
+        description?: string;
+        redirect_uris?: string[];
+        scopes?: string[];
+        logo_url?: string | null;
+        homepage_url?: string | null;
+        is_active?: boolean;
+      };
+
+      // Build dynamic update
+      const updates: string[] = [];
+      const values: (string | number | null)[] = [];
+
+      if (body.name !== undefined) {
+        updates.push('name = ?');
+        values.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        updates.push('description = ?');
+        values.push(body.description);
+      }
+      if (body.redirect_uris !== undefined) {
+        updates.push('redirect_uris = ?');
+        values.push(JSON.stringify(body.redirect_uris));
+      }
+      if (body.scopes !== undefined) {
+        updates.push('scopes = ?');
+        values.push(JSON.stringify(body.scopes));
+      }
+      if (body.logo_url !== undefined) {
+        updates.push('logo_url = ?');
+        values.push(body.logo_url);
+      }
+      if (body.homepage_url !== undefined) {
+        updates.push('homepage_url = ?');
+        values.push(body.homepage_url);
+      }
+      if (body.is_active !== undefined) {
+        updates.push('is_active = ?');
+        values.push(body.is_active ? 1 : 0);
+      }
+
+      if (updates.length === 0) {
+        return Response.json({ error: 'No fields to update' }, { status: 400, headers: corsHeaders });
+      }
+
+      updates.push('updated_at = unixepoch()');
+      values.push(appId, userId);
+
+      const result = await env.DB.prepare(`
+        UPDATE oauth_apps SET ${updates.join(', ')}
+        WHERE id = ? AND owner_user_id = ?
+      `).bind(...values).run();
+
+      if (!result.meta.changes) {
+        return Response.json({ error: 'App not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      // Return updated app
+      const app = await env.DB.prepare(`
+        SELECT id, name, description, client_id, redirect_uris, scopes, logo_url, homepage_url, is_active, created_at, updated_at
+        FROM oauth_apps WHERE id = ?
+      `).bind(appId).first();
+
+      return Response.json({
+        ...app,
+        redirect_uris: JSON.parse((app as any).redirect_uris || '[]'),
+        scopes: JSON.parse((app as any).scopes || '["read"]')
+      }, { headers: corsHeaders });
+    }
+
+    // Delete OAuth app
+    if (oauthAppMatch && request.method === 'DELETE') {
+      const appId = oauthAppMatch[1];
+
+      // Delete app and cascade (tokens, etc. should be cleaned up)
+      await env.DB.prepare(`
+        DELETE FROM oauth_apps WHERE id = ? AND owner_user_id = ?
+      `).bind(appId, userId).run();
+
+      // Also clean up associated tokens
+      const app = await env.DB.prepare(`
+        SELECT client_id FROM oauth_apps WHERE id = ?
+      `).bind(appId).first<{ client_id: string }>();
+
+      if (app) {
+        await env.DB.prepare('DELETE FROM oauth_tokens WHERE client_id = ?').bind(app.client_id).run();
+        await env.DB.prepare('DELETE FROM oauth_refresh_tokens WHERE client_id = ?').bind(app.client_id).run();
+        await env.DB.prepare('DELETE FROM oauth_authorizations WHERE client_id = ?').bind(app.client_id).run();
+      }
+
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // Regenerate client secret
+    const regenerateSecretMatch = path.match(/^\/api\/oauth\/apps\/([\w-]+)\/regenerate-secret$/);
+    if (regenerateSecretMatch && request.method === 'POST') {
+      const appId = regenerateSecretMatch[1];
+
+      // Verify ownership
+      const app = await env.DB.prepare(`
+        SELECT id FROM oauth_apps WHERE id = ? AND owner_user_id = ?
+      `).bind(appId, userId).first();
+
+      if (!app) {
+        return Response.json({ error: 'App not found' }, { status: 404, headers: corsHeaders });
+      }
+
+      // Generate new secret
+      const newSecret = `mc_secret_${generateSecureSecret(32)}`;
+      const newSecretHash = await hashSecret(newSecret);
+
+      await env.DB.prepare(`
+        UPDATE oauth_apps SET client_secret_hash = ?, updated_at = unixepoch()
+        WHERE id = ?
+      `).bind(newSecretHash, appId).run();
+
+      return Response.json({
+        client_secret: newSecret // Only shown once!
+      }, { headers: corsHeaders });
     }
 
     // ============= API KEYS =============

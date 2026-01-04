@@ -340,7 +340,7 @@ export async function verifyDelegate(
  * Extract auth from request headers
  */
 export function extractAuth(request: Request):
-  | { type: 'jwt' | 'api_key' | 'delegate'; token: string; parts?: string[] }
+  | { type: 'jwt' | 'api_key' | 'delegate' | 'oauth'; token: string; parts?: string[] }
   | null {
   const authHeader = request.headers.get('Authorization');
 
@@ -348,9 +348,13 @@ export function extractAuth(request: Request):
     return null;
   }
 
-  // Bearer token (Clerk JWT or legacy API key)
+  // Bearer token (Clerk JWT or legacy API key or OAuth token)
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
+    // Check if it's an OAuth access token (starts with mc_at_)
+    if (token.startsWith('mc_at_')) {
+      return { type: 'oauth', token };
+    }
     // Check if it's a legacy API key (starts with mc_)
     if (token.startsWith('mc_')) {
       return { type: 'api_key', token };

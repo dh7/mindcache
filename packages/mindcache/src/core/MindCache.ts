@@ -25,8 +25,8 @@ declare const FileReader: {
  * Cloud configuration options for MindCache constructor
  */
 export interface MindCacheCloudOptions {
-  /** Instance ID to connect to */
-  instanceId: string;
+  /** Instance ID to connect to (not needed for OAuth - auto-provisioned) */
+  instanceId?: string;
   /** Project ID (optional, defaults to 'default') */
   projectId?: string;
   /** API endpoint to fetch WS token (recommended for browser) */
@@ -37,6 +37,20 @@ export interface MindCacheCloudOptions {
   apiKey?: string;
   /** WebSocket base URL (defaults to production) */
   baseUrl?: string;
+  /**
+   * OAuth configuration for browser apps using "Sign in with MindCache"
+   * When set, user authentication and instance provisioning is automatic
+   */
+  oauth?: {
+    /** Client ID from MindCache developer portal */
+    clientId: string;
+    /** Redirect URI for OAuth callback (defaults to current URL) */
+    redirectUri?: string;
+    /** Scopes to request (default: ['read', 'write']) */
+    scopes?: string[];
+    /** Auto-redirect to login if not authenticated (default: false) */
+    autoLogin?: boolean;
+  };
 }
 
 export interface MindCacheIndexedDBOptions {
