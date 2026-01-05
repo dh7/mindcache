@@ -6,40 +6,40 @@
  */
 
 export interface OAuthConfig {
-    /** Client ID from developer portal */
-    clientId: string;
-    /** Redirect URI (defaults to current URL) */
-    redirectUri?: string;
-    /** Scopes to request (default: ['read', 'write']) */
-    scopes?: string[];
-    /** MindCache authorize URL (default: production) */
-    authUrl?: string;
-    /** MindCache token URL (default: production) */
-    tokenUrl?: string;
-    /** Use PKCE for security (default: true) */
-    usePKCE?: boolean;
-    /** Storage key prefix (default: 'mindcache_oauth') */
-    storagePrefix?: string;
+  /** Client ID from developer portal */
+  clientId: string;
+  /** 
+   * MindCache API base URL - REQUIRED!
+   * All OAuth endpoints are derived from this.
+   * - Production: 'https://api.mindcache.dev'
+   * - Local dev:  'http://localhost:8787'
+   */
+  baseUrl: string;
+  /** Redirect URI (defaults to current URL) */
+  redirectUri?: string;
+  /** Scopes to request (default: ['read', 'write']) */
+  scopes?: string[];
+  /** Use PKCE for security (default: true) */
+  usePKCE?: boolean;
+  /** Storage key prefix (default: 'mindcache_oauth') */
+  storagePrefix?: string;
 }
 
 export interface OAuthTokens {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt: number;
-    scopes: string[];
-    instanceId?: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+  scopes: string[];
+  instanceId?: string;
 }
 
 export interface MindCacheUser {
-    id: string;
-    email?: string;
-    name?: string;
-    instanceId?: string;
+  id: string;
+  email?: string;
+  name?: string;
+  instanceId?: string;
 }
 
-const DEFAULT_AUTH_URL = 'https://api.mindcache.dev/oauth/authorize';
-const DEFAULT_TOKEN_URL = 'https://api.mindcache.dev/oauth/token';
-const DEFAULT_USERINFO_URL = 'https://api.mindcache.dev/oauth/userinfo';
 const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // Refresh 5 min before expiry
 
 /**
@@ -109,6 +109,29 @@ export class OAuthClient {
   private refreshPromise: Promise<string> | null = null;
 
   constructor(config: OAuthConfig) {
+    // Validate required baseUrl
+    if (!config.baseUrl) {
+      throw new Error(
+        'MindCache OAuth: baseUrl is required!\n' +
+        '  For production: baseUrl: "https://api.mindcache.dev"\n' +
+        '  For local dev:  baseUrl: "http://localhost:8787"'
+      );
+    }
+
+    // Validate baseUrl format and warn about common mistakes
+    try {
+      const url = new URL(config.baseUrl);
+      if (url.hostname === 'mindcache.dev') {
+        console.error(
+          '❌ MindCache OAuth ERROR: baseUrl should be "api.mindcache.dev" not "mindcache.dev"\n' +
+          '   Current: ' + config.baseUrl + '\n' +
+          '   Correct: https://api.mindcache.dev'
+        );
+      }
+    } catch {
+      throw new Error('MindCache OAuth: Invalid baseUrl format: ' + config.baseUrl);
+    }
+
     // Determine redirect URI
     let redirectUri = config.redirectUri;
     if (!redirectUri && typeof window !== 'undefined') {
@@ -119,18 +142,73 @@ export class OAuthClient {
       redirectUri = url.toString();
     }
 
+    // Derive all URLs from baseUrl
+    const baseUrl = config.baseUrl.replace(/\/$/, ''); // Remove trailing slash
+
     this.config = {
       clientId: config.clientId,
+      baseUrl: baseUrl,
       redirectUri: redirectUri || '',
       scopes: config.scopes || ['read', 'write'],
-      authUrl: config.authUrl || DEFAULT_AUTH_URL,
-      tokenUrl: config.tokenUrl || DEFAULT_TOKEN_URL,
       usePKCE: config.usePKCE !== false, // Default true
       storagePrefix: config.storagePrefix || 'mindcache_oauth'
     };
 
+    // Log configuration for debugging
+    console.log('🔐 MindCache OAuth:', {
+      baseUrl: this.config.baseUrl,
+      authUrl: this.authUrl,
+      tokenUrl: this.tokenUrl,
+      clientId: this.config.clientId.substring(0, 20) + '...'
+    });
+
+    // Validate the API is reachable
+    this.validateApi();
+
     // Load stored tokens
     this.loadTokens();
+  }
+
+  /** Derived auth URL */
+  private get authUrl(): string {
+    return this.config.baseUrl + '/oauth/authorize';
+  }
+
+  /** Derived token URL */
+  private get tokenUrl(): string {
+    return this.config.baseUrl + '/oauth/token';
+  }
+
+  /** Derived userinfo URL */
+  private get userinfoUrl(): string {
+    return this.config.baseUrl + '/oauth/userinfo';
+  }
+
+  /**
+   * Validate the API is reachable
+   */
+  private async validateApi(): Promise<void> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/oauth/apps/info`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (response.status === 404) {
+        console.error(
+          '❌ MindCache OAuth ERROR: API not found at ' + this.config.baseUrl + '\n' +
+          '   The server returned 404. Common causes:\n' +
+          '   - Wrong domain: Use "api.mindcache.dev" not "mindcache.dev"\n' +
+          '   - Wrong port: Local dev server is usually on port 8787\n' +
+          '   - Server not running: Make sure the MindCache server is started'
+        );
+      }
+    } catch (error) {
+      console.error(
+        '❌ MindCache OAuth ERROR: Cannot reach API at ' + this.config.baseUrl + '\n' +
+        '   Error: ' + (error instanceof Error ? error.message : String(error))
+      );
+    }
   }
 
   /**
@@ -165,7 +243,7 @@ export class OAuthClient {
     this.setStorage('state', state);
 
     // Build authorization URL
-    const url = new URL(this.config.authUrl);
+    const url = new URL(this.authUrl);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', this.config.clientId);
     url.searchParams.set('redirect_uri', this.config.redirectUri);
@@ -249,7 +327,7 @@ export class OAuthClient {
     }
 
     // Exchange code for tokens
-    const response = await fetch(this.config.tokenUrl, {
+    const response = await fetch(this.tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -319,7 +397,7 @@ export class OAuthClient {
     }
 
     try {
-      const response = await fetch(this.config.tokenUrl, {
+      const response = await fetch(this.tokenUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -360,7 +438,7 @@ export class OAuthClient {
   async getUserInfo(): Promise<MindCacheUser> {
     const token = await this.getAccessToken();
 
-    const response = await fetch(DEFAULT_USERINFO_URL, {
+    const response = await fetch(this.userinfoUrl, {
       headers: {
         Authorization: `Bearer ${token}`
       }
@@ -386,7 +464,7 @@ export class OAuthClient {
     if (this.tokens?.accessToken) {
       try {
         // Try to revoke token (best effort)
-        await fetch(this.config.tokenUrl.replace('/token', '/revoke'), {
+        await fetch(this.tokenUrl.replace('/token', '/revoke'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -412,10 +490,44 @@ export class OAuthClient {
   }
 
   /**
-     * Token provider function for MindCache cloud config
-     * Use this with MindCacheCloudOptions.tokenProvider
-     */
+   * Token provider for MindCache cloud config
+   * This fetches a WebSocket token using the OAuth access token
+   * Use this with MindCacheCloudOptions.tokenProvider
+   */
   tokenProvider = async (): Promise<string> => {
+    const accessToken = await this.getAccessToken();
+    const instanceId = this.getInstanceId();
+
+    if (!instanceId) {
+      throw new Error('No instance ID available. Complete OAuth flow first.');
+    }
+
+    // Exchange OAuth access token for WebSocket token
+    const response = await fetch(`${this.config.baseUrl}/api/ws-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        instanceId,
+        permission: 'write'
+      })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to get WebSocket token');
+    }
+
+    const data = await response.json();
+    return data.token;
+  };
+
+  /**
+   * Get raw OAuth access token (for API calls, not WebSocket)
+   */
+  accessTokenProvider = async (): Promise<string> => {
     return this.getAccessToken();
   };
 

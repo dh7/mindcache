@@ -40,11 +40,10 @@ import { OAuthClient, MindCache } from 'mindcache';
 // Replace with your Client ID from Step 1
 const CLIENT_ID = 'mc_app_your_client_id_here';
 
-// For local development, point to local server
+// baseUrl is REQUIRED - set it explicitly!
 const oauth = new OAuthClient({
   clientId: CLIENT_ID,
-  authUrl: 'http://localhost:8787/oauth/authorize',
-  tokenUrl: 'http://localhost:8787/oauth/token',
+  baseUrl: 'http://localhost:8787',  // Local dev (or 'https://api.mindcache.dev' for production)
   scopes: ['read', 'write']
 });
 
@@ -202,22 +201,19 @@ Open http://localhost:3000 and click "Sign in with MindCache".
 
 ## Production Setup
 
-For production, update the OAuth config:
+For production, just change the baseUrl:
 
 ```tsx
 const oauth = new OAuthClient({
   clientId: CLIENT_ID,
-  // Use production URLs (default)
-  authUrl: 'https://api.mindcache.dev/oauth/authorize',
-  tokenUrl: 'https://api.mindcache.dev/oauth/token'
+  baseUrl: 'https://api.mindcache.dev'  // Production API
 });
 
-// And for MindCache connection:
 const instance = new MindCache({
   cloud: {
     instanceId,
-    tokenProvider: oauth.tokenProvider
-    // baseUrl defaults to production
+    tokenProvider: oauth.tokenProvider,
+    baseUrl: 'https://api.mindcache.dev'
   }
 });
 ```
