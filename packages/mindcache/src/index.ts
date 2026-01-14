@@ -21,9 +21,11 @@ export type {
   HistoryOptions,
   MindCacheOptions,
   MindCacheCloudOptions,
-  MindCacheIndexedDBOptions
+  MindCacheIndexedDBOptions,
+  CustomTypeDefinition,
+  CustomTypeField
 } from './core';
-export { DEFAULT_KEY_ATTRIBUTES, SystemTagHelpers } from './core';
+export { DEFAULT_KEY_ATTRIBUTES, SystemTagHelpers, SchemaParser } from './core';
 
 // Cloud exports (for advanced usage)
 export { CloudAdapter } from './cloud';

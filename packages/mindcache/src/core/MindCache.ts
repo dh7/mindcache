@@ -2,8 +2,9 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import diff from 'fast-diff';
-import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions, ContextRules } from './types';
+import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions, ContextRules, CustomTypeDefinition } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
+import { SchemaParser } from './SchemaParser';
 import { MarkdownSerializer } from './MarkdownSerializer';
 import { AIToolBuilder } from './AIToolBuilder';
 import { TagManager } from './TagManager';
@@ -158,6 +159,9 @@ export class MindCache {
   private _history: HistoryEntry[] = [];
   private _historyOptions: HistoryOptions = { maxEntries: 100, snapshotInterval: 10 };
   private _historyEnabled = false;
+
+  // Custom type registry
+  private _typeRegistry: Map<string, CustomTypeDefinition> = new Map();
 
   constructor(options?: MindCacheOptions) {
     // Initialize Yjs (use provided doc or create new)
@@ -1371,6 +1375,77 @@ export class MindCache {
    */
   systemGetKeysByTag(tag: SystemTag): string[] {
     return TagManager.systemGetKeysByTag(this, tag);
+  }
+
+  // ============================================
+  // Custom Type Methods
+  // ============================================
+
+  /**
+   * Register a custom type with a markdown schema definition.
+   *
+   * Schema format:
+   * ```
+   * #TypeName
+   * * fieldName: description of the field
+   * * anotherField: description
+   * ```
+   *
+   * @param name - Type name (e.g., 'Contact')
+   * @param schema - Markdown schema definition
+   * @throws Error if schema format is invalid
+   */
+  registerType(name: string, schema: string): void {
+    const typeDef = SchemaParser.parse(schema);
+    // Override name if different from schema header
+    typeDef.name = name;
+    this._typeRegistry.set(name, typeDef);
+  }
+
+  /**
+   * Assign a custom type to a key.
+   * The key must exist and the type must be registered.
+   *
+   * @param key - Key to assign type to
+   * @param typeName - Registered type name
+   * @throws Error if key doesn't exist or type is not registered
+   */
+  setType(key: string, typeName: string): void {
+    if (!this.rootMap.has(key)) {
+      throw new Error(`Key "${key}" does not exist`);
+    }
+    if (!this._typeRegistry.has(typeName)) {
+      throw new Error(`Type "${typeName}" is not registered. Use registerType() first.`);
+    }
+    this.set_attributes(key, { customType: typeName });
+  }
+
+  /**
+   * Get a registered type schema definition.
+   *
+   * @param typeName - Type name to look up
+   * @returns The type definition or undefined if not registered
+   */
+  getTypeSchema(typeName: string): CustomTypeDefinition | undefined {
+    return this._typeRegistry.get(typeName);
+  }
+
+  /**
+   * Get all registered type names.
+   */
+  getRegisteredTypes(): string[] {
+    return Array.from(this._typeRegistry.keys());
+  }
+
+  /**
+   * Get the custom type assigned to a key.
+   *
+   * @param key - Key to check
+   * @returns Type name or undefined if no custom type assigned
+   */
+  getKeyType(key: string): string | undefined {
+    const attrs = this.get_attributes(key);
+    return attrs?.customType;
   }
 
   /**

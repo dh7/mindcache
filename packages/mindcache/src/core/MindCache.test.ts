@@ -561,4 +561,100 @@ describe('MindCache', () => {
       expect(prompt).toContain('edit_notes');
     });
   });
+
+  describe('Custom Types', () => {
+    it('should register a type with markdown schema', () => {
+      const mc = new MindCache();
+      const schema = `
+#Contact
+* name: full name
+* email: email address
+`;
+      mc.registerType('Contact', schema);
+
+      const typeDef = mc.getTypeSchema('Contact');
+      expect(typeDef).toBeDefined();
+      expect(typeDef?.name).toBe('Contact');
+      expect(typeDef?.fields).toHaveLength(2);
+      expect(typeDef?.fields[0].name).toBe('name');
+      expect(typeDef?.fields[0].description).toBe('full name');
+      expect(typeDef?.fields[1].name).toBe('email');
+    });
+
+    it('should throw on invalid schema format', () => {
+      const mc = new MindCache();
+      expect(() => mc.registerType('Bad', 'no header')).toThrow();
+      expect(() => mc.registerType('Empty', '#Empty')).toThrow(/must have at least one field/);
+    });
+
+    it('should assign a type to a key via setType', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+`);
+      mc.set_value('john', '', { systemTags: ['LLMWrite'] });
+      mc.setType('john', 'Contact');
+
+      expect(mc.getKeyType('john')).toBe('Contact');
+      const attrs = mc.get_attributes('john');
+      expect(attrs?.customType).toBe('Contact');
+    });
+
+    it('should throw if setting type on non-existent key', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+`);
+      expect(() => mc.setType('nonexistent', 'Contact')).toThrow(/does not exist/);
+    });
+
+    it('should throw if setting unregistered type', () => {
+      const mc = new MindCache();
+      mc.set_value('test', 'value');
+      expect(() => mc.setType('test', 'Unknown')).toThrow(/not registered/);
+    });
+
+    it('should list all registered types', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: name');
+      mc.registerType('Note', '#Note\n* content: content');
+
+      const types = mc.getRegisteredTypes();
+      expect(types).toContain('Contact');
+      expect(types).toContain('Note');
+      expect(types).toHaveLength(2);
+    });
+
+    it('should include schema in write tool description for typed keys', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+* email: email address
+`);
+      mc.set_value('john', '', { systemTags: ['LLMWrite'] });
+      mc.setType('john', 'Contact');
+
+      const tools = mc.create_vercel_ai_tools();
+      expect(tools['write_john']).toBeDefined();
+      expect(tools['write_john'].description).toContain('name: full name');
+      expect(tools['write_john'].description).toContain('email: email address');
+    });
+
+    it('should include type info in system prompt for typed keys', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+`);
+      mc.set_value('john', 'John Doe', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      mc.setType('john', 'Contact');
+
+      const prompt = mc.get_system_prompt();
+      expect(prompt).toContain('john (type: Contact)');
+      expect(prompt).toContain('name: full name');
+    });
+  });
 });

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as Y from 'yjs';
-import type { KeyAttributes } from './types';
+import type { KeyAttributes, CustomTypeDefinition } from './types';
+import { SchemaParser } from './SchemaParser';
 
 /**
  * Interface for MindCache methods needed by AIToolBuilder.
@@ -21,6 +22,10 @@ export interface IAIToolBuildable {
     get_document(key: string): Y.Text | undefined;
     insert_text(key: string, index: number, text: string): void;
     _replaceDocumentText(key: string, newText: string, diffThreshold?: number): void;
+
+    // Custom type operations
+    getTypeSchema(typeName: string): CustomTypeDefinition | undefined;
+    getKeyType(key: string): string | undefined;
 }
 
 /**
@@ -80,15 +85,29 @@ export class AIToolBuilder {
       const sanitizedKey = AIToolBuilder.sanitizeKeyForTool(key);
       const isDocument = attributes?.type === 'document';
 
+      // Check for custom type schema
+      const customTypeName = mc.getKeyType(key);
+      const customType = customTypeName ? mc.getTypeSchema(customTypeName) : undefined;
+
+      // Build description with custom type guidance if applicable
+      let writeDescription: string;
+      if (customType) {
+        const schemaGuidance = SchemaParser.toPromptDescription(customType);
+        const example = SchemaParser.generateExample(customType);
+        writeDescription = `Write a value to "${key}" that must follow this schema:\n${schemaGuidance}\n\nExample format:\n${example}`;
+      } else if (isDocument) {
+        writeDescription = `Rewrite the entire "${key}" document`;
+      } else {
+        writeDescription = `Write a value to the STM key: ${key}`;
+      }
+
       // 1. write_ tool (for all writable keys)
       tools[`write_${sanitizedKey}`] = {
-        description: isDocument
-          ? `Rewrite the entire "${key}" document`
-          : `Write a value to the STM key: ${key}`,
+        description: writeDescription,
         inputSchema: {
           type: 'object',
           properties: {
-            value: { type: 'string', description: isDocument ? 'New document content' : 'The value to write' }
+            value: { type: 'string', description: customType ? `Value following ${customTypeName} schema` : (isDocument ? 'New document content' : 'The value to write') }
           },
           required: ['value']
         },
@@ -245,8 +264,20 @@ export class AIToolBuilder {
       const isDocument = attributes?.type === 'document';
       const sanitizedKey = AIToolBuilder.sanitizeKeyForTool(key);
 
+      // Check for custom type
+      const customTypeName = mc.getKeyType(key);
+      const customType = customTypeName ? mc.getTypeSchema(customTypeName) : undefined;
+
       if (isWritable) {
-        if (isDocument) {
+        if (customType) {
+          // Key with custom type - include schema in prompt
+          const schemaInfo = SchemaParser.toMarkdown(customType);
+          lines.push(
+            `${key} (type: ${customTypeName}): ${displayValue}\n` +
+            `Schema:\n${schemaInfo}\n` +
+            `Tool: write_${sanitizedKey}`
+          );
+        } else if (isDocument) {
           lines.push(
             `${key}: ${displayValue}. ` +
                         `Document tools: write_${sanitizedKey}, append_${sanitizedKey}, edit_${sanitizedKey}`
@@ -262,7 +293,11 @@ export class AIToolBuilder {
           );
         }
       } else {
-        lines.push(`${key}: ${displayValue}`);
+        if (customTypeName) {
+          lines.push(`${key} (type: ${customTypeName}): ${displayValue}`);
+        } else {
+          lines.push(`${key}: ${displayValue}`);
+        }
       }
     }
 
