@@ -8,7 +8,7 @@
 export interface OAuthConfig {
   /** Client ID from developer portal */
   clientId: string;
-  /** 
+  /**
    * MindCache API base URL - REQUIRED!
    * All OAuth endpoints are derived from this.
    * - Production: 'https://api.mindcache.dev'
