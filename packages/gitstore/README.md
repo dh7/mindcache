@@ -86,6 +86,70 @@ const store = new GitStore({
 });
 ```
 
+### With OAuth (Recommended for Web Apps)
+
+First, create a GitHub OAuth App at https://github.com/settings/developers
+
+**1. Setup auth helper (server-side):**
+
+```typescript
+import { GitStoreAuth } from '@mindcache/gitstore';
+
+const auth = new GitStoreAuth({
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+  redirectUri: 'https://myapp.com/api/auth/github/callback'
+});
+```
+
+**2. Login route - redirect user to GitHub:**
+
+```typescript
+// app/api/auth/github/route.ts (Next.js)
+export async function GET() {
+  const { url, state } = auth.getAuthUrl({ scopes: ['repo'] });
+  
+  // Store state in cookie for CSRF verification
+  const response = NextResponse.redirect(url);
+  response.cookies.set('oauth_state', state, { httpOnly: true });
+  return response;
+}
+```
+
+**3. Callback route - exchange code for token:**
+
+```typescript
+// app/api/auth/github/callback/route.ts
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get('code');
+  const state = searchParams.get('state');
+  
+  // Verify state matches (CSRF protection)
+  const storedState = cookies().get('oauth_state')?.value;
+  if (state !== storedState) {
+    return new Response('Invalid state', { status: 400 });
+  }
+  
+  // Exchange code for token
+  const tokens = await auth.handleCallback(code!);
+  
+  // Store token securely (database, encrypted cookie, etc.)
+  // Then redirect to app
+  return NextResponse.redirect('/dashboard');
+}
+```
+
+**4. Use the token:**
+
+```typescript
+const store = auth.createGitStore({
+  owner: 'myorg',
+  repo: 'myrepo',
+  token: userToken // retrieved from your storage
+});
+```
+
 ## API
 
 ### GitStore
@@ -112,6 +176,18 @@ const store = new GitStore({
 | `getHistory(limit?)` | Get commit history |
 | `enableAutoSync(debounceMs?)` | Enable auto-save |
 | `disableAutoSync()` | Disable auto-save |
+
+### GitStoreAuth
+
+| Method | Description |
+|--------|-------------|
+| `getAuthUrl(options?)` | Generate GitHub OAuth URL |
+| `handleCallback(code)` | Exchange auth code for token |
+| `refreshToken(token)` | Refresh an access token |
+| `getUser(token)` | Get authenticated user info |
+| `validateToken(token)` | Check if token is valid |
+| `revokeToken(token)` | Revoke an access token |
+| `createGitStore(options)` | Create GitStore with token |
 
 ## License
 
