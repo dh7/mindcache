@@ -26,6 +26,7 @@
 
 // Core exports
 export { GitStore } from './GitStore';
+export { GitStoreAuth } from './GitStoreAuth';
 export { MindCacheSync } from './MindCacheSync';
 
 // Type exports
@@ -35,7 +36,13 @@ export type {
   CommitResult,
   Commit,
   ReadOptions,
-  WriteOptions
+  WriteOptions,
+  // OAuth types
+  GitStoreAuthConfig,
+  GitHubScope,
+  AuthUrlOptions,
+  TokenResult,
+  GitHubUser
 } from './types';
 
 export type { MindCacheSyncOptions } from './MindCacheSync';
