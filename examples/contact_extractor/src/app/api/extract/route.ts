@@ -63,7 +63,10 @@ RULES:
 3. Only use create_key for people NOT already in the database
 4. When updating, MERGE new info with existing - don't lose existing fields!
 5. Value must be a JSON string with fields: name, email, phone, company, role, address, linkedin, twitter, birthday, notes
-6. When creating, always set type to "Contact"`,
+6. When creating, always set type to "Contact"
+7. If the information is in CSV format, you have to process it and create a new contact for each row.
+8. If the information is about a contact, you have to create a new contact or update the existing one.
+9. More generally, do what seems more appropriate.`,
       prompt: content,
     });
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MindCache } from 'mindcache';
-import { Upload, User, Mail, Phone, Building, FileText, Trash2, Sparkles, MapPin, Linkedin, Twitter, Calendar, ArrowDownAZ } from 'lucide-react';
+import { Upload, User, Mail, Phone, Building, FileText, Trash2, Sparkles, MapPin, Linkedin, Twitter, Calendar, ArrowDownAZ, Download } from 'lucide-react';
 
 // Contact type schema (matching our MindCache custom type)
 const CONTACT_SCHEMA = `
@@ -39,9 +39,11 @@ export default function Home() {
   const [inputText, setInputText] = useState('');
   const mindCacheRef = useRef<MindCache | null>(null);
 
-  // Initialize MindCache with Contact type
+  // Initialize MindCache with Contact type and IndexedDB persistence
   useEffect(() => {
-    const mc = new MindCache();
+    const mc = new MindCache({
+      indexedDB: { dbName: 'contact_extractor' }
+    });
     mc.registerType('Contact', CONTACT_SCHEMA);
     mindCacheRef.current = mc;
 
@@ -156,6 +158,23 @@ export default function Home() {
     keysToDelete.forEach(key => mc.delete_key(key));
   };
 
+  // Export contacts to Markdown file
+  const exportContacts = () => {
+    const mc = mindCacheRef.current;
+    if (!mc) return;
+
+    const markdown = mc.toMarkdown();
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `contacts_${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Sort contacts alphabetically by name using MindCache zIndex
   const sortContacts = () => {
     const mc = mindCacheRef.current;
@@ -254,6 +273,13 @@ export default function Home() {
           </h2>
           {contacts.size > 0 && (
             <div className="flex items-center gap-3">
+              <button
+                onClick={exportContacts}
+                className="text-sm text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </button>
               <button
                 onClick={sortContacts}
                 className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
