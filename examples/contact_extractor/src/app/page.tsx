@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MindCache } from 'mindcache';
-import { Upload, User, Mail, Phone, Building, FileText, Trash2, Sparkles, MapPin, Linkedin, Twitter, Calendar } from 'lucide-react';
+import { Upload, User, Mail, Phone, Building, FileText, Trash2, Sparkles, MapPin, Linkedin, Twitter, Calendar, ArrowDownAZ } from 'lucide-react';
 
 // Contact type schema (matching our MindCache custom type)
 const CONTACT_SCHEMA = `
@@ -45,10 +45,11 @@ export default function Home() {
     mc.registerType('Contact', CONTACT_SCHEMA);
     mindCacheRef.current = mc;
 
-    // Subscribe to all changes
+    // Subscribe to all changes - use getSortedKeys() for zIndex ordering
     const unsubscribe = mc.subscribeToAll(() => {
       const newContacts = new Map<string, Contact>();
-      for (const key of mc.keys()) {
+      // getSortedKeys() returns keys sorted by zIndex (ascending)
+      for (const key of mc.getSortedKeys()) {
         if (mc.getKeyType(key) === 'Contact') {
           const value = mc.get_value(key);
           if (value) {
@@ -110,6 +111,9 @@ export default function Home() {
         }
       }
 
+      // Sort contacts alphabetically after processing
+      sortContacts();
+
       setInputText('');
     } catch (error) {
       console.error('Failed to process:', error);
@@ -150,6 +154,36 @@ export default function Home() {
     if (!mc) return;
     const keysToDelete = mc.keys().filter(key => mc.getKeyType(key) === 'Contact');
     keysToDelete.forEach(key => mc.delete_key(key));
+  };
+
+  // Sort contacts alphabetically by name using MindCache zIndex
+  const sortContacts = () => {
+    const mc = mindCacheRef.current;
+    if (!mc) return;
+
+    // Get all contact keys with their names
+    const contactEntries: { key: string; name: string }[] = [];
+    for (const key of mc.keys()) {
+      if (mc.getKeyType(key) === 'Contact') {
+        const value = mc.get_value(key);
+        if (value) {
+          try {
+            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+            contactEntries.push({ key, name: parsed.name || '' });
+          } catch {
+            contactEntries.push({ key, name: '' });
+          }
+        }
+      }
+    }
+
+    // Sort alphabetically by name
+    contactEntries.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Update zIndex for each contact
+    contactEntries.forEach((entry, index) => {
+      mc.set_attributes(entry.key, { zIndex: index });
+    });
   };
 
   return (
@@ -219,13 +253,22 @@ export default function Home() {
             </span>
           </h2>
           {contacts.size > 0 && (
-            <button
-              onClick={clearAll}
-              className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-              Clear All
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={sortContacts}
+                className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+              >
+                <ArrowDownAZ className="w-4 h-4" />
+                Sort A-Z
+              </button>
+              <button
+                onClick={clearAll}
+                className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear All
+              </button>
+            </div>
           )}
         </div>
 
