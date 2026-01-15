@@ -41,30 +41,53 @@ Store any data type an LLM can process: text, JSON, images, and files. All data 
 - **Templates**: Enable dynamic value resolution with circular reference protection
 
 ### Automatic Tool Generation
-Tools are automatically generated for each writable key, allowing agents to read and write memory without manual tool definitions. Tools integrate seamlessly with Vercel AI SDK.
+Tools are automatically generated for each writable key, allowing agents to read and write memory without manual tool definitions. Tools integrate seamlessly with Vercel AI SDK and other AI frameworks.
+
+### Custom Types (v3.6+)
+Define structured data schemas using human-readable Markdown, then assign types to keys for consistent LLM output:
+
+```typescript
+// Define a custom type with Markdown schema
+mc.registerType('Contact', `
+#Contact
+* name: full name of the contact
+* email: email address
+* phone: phone number
+* notes: any additional context
+`);
+
+// Create a key with this type
+mc.set_value('contact_alice', JSON.stringify({ name: 'Alice', email: 'alice@example.com' }));
+mc.setType('contact_alice', 'Contact');
+
+// LLM tools will enforce the schema
+const tools = mc.create_vercel_ai_tools(); // For Vercel AI SDK
+// or
+const rawTools = mc.create_tools(); // For other frameworks (OpenAI, Anthropic, etc.)
+```
 
 ## Quick Start
 
 ```typescript
-import { mindcache } from 'mindcache';
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache();
 
 // Store values
-mindcache.set_value('userName', 'Alice');
-mindcache.set_value('favoriteColor', 'blue');
+mc.set_value('userName', 'Alice');
+mc.set_value('favoriteColor', 'blue');
 
 // Generate system prompt for your AI agent
-const systemPrompt = mindcache.get_system_prompt();
-// "userName: Alice. You can rewrite \"userName\" by using the write_userName tool..."
+const systemPrompt = mc.get_system_prompt();
 
 // Generate tools for Vercel AI SDK
-const tools = mindcache.get_aisdk_tools();
-// { write_userName: {...}, write_favoriteColor: {...} }
+const tools = mc.create_vercel_ai_tools();
 
 // Use with AI SDK
 import { generateText } from 'ai';
 const { text } = await generateText({
   model: openai('gpt-4'),
-  tools: tools,
+  tools,
   system: systemPrompt,
   prompt: 'Remember that I love green now, not blue.'
 });
@@ -145,16 +168,37 @@ mindcache.withContext({ includeTags: ['admin'] }, () => {
 ### Vercel AI SDK
 ```typescript
 import { streamText } from 'ai';
-import { mindcache } from 'mindcache';
+import { MindCache } from 'mindcache';
 
-const tools = mindcache.get_aisdk_tools();
-const systemPrompt = mindcache.get_system_prompt();
+const mc = new MindCache();
+mc.set_value('userName', 'Alice', { systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] });
+
+const tools = mc.create_vercel_ai_tools();
+const systemPrompt = mc.get_system_prompt();
 
 const result = await streamText({
   model: openai('gpt-4'),
-  tools: tools,
+  tools,
   system: systemPrompt,
   prompt: userMessage
+});
+```
+
+### Other AI Frameworks (OpenAI, Anthropic, LangChain)
+```typescript
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache();
+const tools = mc.create_tools(); // Raw JSON Schema tools
+
+// Use with OpenAI SDK
+const response = await openai.chat.completions.create({
+  model: 'gpt-4',
+  tools: Object.values(tools).map(t => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters }
+  })),
+  messages: [{ role: 'user', content: userMessage }]
 });
 ```
 
@@ -256,13 +300,24 @@ export class MyDurableObject {
 ### Core Methods
 - `set_value(key, value, attributes?)` - Store a value with optional attributes
 - `get_value(key)` - Retrieve a value (supports template processing)
-- `delete(key)` - Remove a key-value pair
+- `delete_key(key)` - Remove a key-value pair
 - `has(key)` - Check if a key exists
 - `clear()` - Clear all memory
+- `keys()` - Get all key names
+
+### Custom Types (v3.6+)
+- `registerType(name, markdownSchema)` - Register a custom type with Markdown schema
+- `setType(key, typeName)` - Assign a custom type to a key (also sets type to 'json')
+- `getKeyType(key)` - Get the custom type name for a key
+- `getTypeSchema(typeName)` - Get the parsed schema definition
+- `getRegisteredTypes()` - List all registered type names
+
+### LLM Tool Generation
+- `create_vercel_ai_tools()` - Generate Zod-based tools for Vercel AI SDK v5
+- `create_tools()` - Generate raw JSON Schema tools (OpenAI, Anthropic, LangChain)
+- `get_system_prompt()` - Generate system prompt from visible keys
 
 ### Memory Management
-- `get_system_prompt()` - Generate system prompt from visible keys
-- `get_aisdk_tools()` - Generate tools for Vercel AI SDK
 - `injectSTM(template)` - Inject memory values into template strings
 - `getSTM()` - Get formatted string of all visible entries
 
@@ -297,6 +352,7 @@ export class MyDurableObject {
 ## Examples
 
 See the [examples directory](./examples) for complete implementations:
+- **[Contact Extractor](./examples/contact_extractor)** - AI-powered contact extraction using custom types
 - Form management with AI assistant
 - Image processing workflows
 - Multi-step workflows with memory persistence
