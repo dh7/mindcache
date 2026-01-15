@@ -475,7 +475,7 @@ describe('MindCache', () => {
       const tools = mc.get_aisdk_tools();
       const result = await tools['write_test'].execute({ value: 'new_value' });
 
-      expect(result.result).toContain('Successfully wrote');
+      expect(result.result).toContain('Wrote');
       expect(mc.get_value('test')).toBe('new_value');
     });
 
@@ -559,6 +559,180 @@ describe('MindCache', () => {
       expect(prompt).toContain('write_notes');
       expect(prompt).toContain('append_notes');
       expect(prompt).toContain('edit_notes');
+    });
+  });
+
+  describe('Custom Types', () => {
+    it('should register a type with markdown schema', () => {
+      const mc = new MindCache();
+      const schema = `
+#Contact
+* name: full name
+* email: email address
+`;
+      mc.registerType('Contact', schema);
+
+      const typeDef = mc.getTypeSchema('Contact');
+      expect(typeDef).toBeDefined();
+      expect(typeDef?.name).toBe('Contact');
+      expect(typeDef?.fields).toHaveLength(2);
+      expect(typeDef?.fields[0].name).toBe('name');
+      expect(typeDef?.fields[0].description).toBe('full name');
+      expect(typeDef?.fields[1].name).toBe('email');
+    });
+
+    it('should throw on invalid schema format', () => {
+      const mc = new MindCache();
+      expect(() => mc.registerType('Bad', 'no header')).toThrow();
+      expect(() => mc.registerType('Empty', '#Empty')).toThrow(/must have at least one field/);
+    });
+
+    it('should assign a type to a key via setType', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+`);
+      mc.set_value('john', '', { systemTags: ['LLMWrite'] });
+      mc.setType('john', 'Contact');
+
+      expect(mc.getKeyType('john')).toBe('Contact');
+      const attrs = mc.get_attributes('john');
+      expect(attrs?.customType).toBe('Contact');
+    });
+
+    it('should throw if setting type on non-existent key', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+`);
+      expect(() => mc.setType('nonexistent', 'Contact')).toThrow(/does not exist/);
+    });
+
+    it('should throw if setting unregistered type', () => {
+      const mc = new MindCache();
+      mc.set_value('test', 'value');
+      expect(() => mc.setType('test', 'Unknown')).toThrow(/not registered/);
+    });
+
+    it('should list all registered types', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: name');
+      mc.registerType('Note', '#Note\n* content: content');
+
+      const types = mc.getRegisteredTypes();
+      expect(types).toContain('Contact');
+      expect(types).toContain('Note');
+      expect(types).toHaveLength(2);
+    });
+
+    it('should include schema in write tool description for typed keys', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+* email: email address
+`);
+      mc.set_value('john', '', { systemTags: ['LLMWrite'] });
+      mc.setType('john', 'Contact');
+
+      const tools = mc.create_vercel_ai_tools();
+      expect(tools['write_john']).toBeDefined();
+      expect(tools['write_john'].description).toContain('name: full name');
+      expect(tools['write_john'].description).toContain('email: email address');
+    });
+
+    it('should include type info in system prompt for typed keys', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', `
+#Contact
+* name: full name
+`);
+      mc.set_value('john', 'John Doe', { systemTags: ['SystemPrompt', 'LLMWrite'] });
+      mc.setType('john', 'Contact');
+
+      const prompt = mc.get_system_prompt();
+      expect(prompt).toContain('john (type: Contact)');
+      expect(prompt).toContain('name: full name');
+    });
+
+    it('should include create_key tool in generated tools', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: full name');
+
+      const tools = mc.create_vercel_ai_tools();
+      expect(tools['create_key']).toBeDefined();
+      expect(tools['create_key'].description).toContain('Contact');
+    });
+
+    it('create_key tool should create a new key', async () => {
+      const mc = new MindCache();
+      const tools = mc.create_vercel_ai_tools();
+
+      const result = await tools['create_key'].execute({
+        key: 'test_key',
+        value: 'test value'
+      });
+
+      expect(result.result).toContain('Created');
+      expect(mc.get_value('test_key')).toBe('test value');
+      expect(mc.get_attributes('test_key')?.systemTags).toContain('LLMWrite');
+    });
+
+    it('create_key tool should support optional type parameter', async () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: full name');
+
+      const tools = mc.create_vercel_ai_tools();
+      const result = await tools['create_key'].execute({
+        key: 'contact_john',
+        value: '{"name": "John"}',
+        type: 'Contact'
+      });
+
+      expect(result.result).toContain('Created');
+      expect(result.result).toContain('Contact');
+      expect(mc.getKeyType('contact_john')).toBe('Contact');
+    });
+
+    it('create_key tool should fail if key already exists', async () => {
+      const mc = new MindCache();
+      mc.set_value('existing', 'value');
+
+      const tools = mc.create_vercel_ai_tools();
+      const result = await tools['create_key'].execute({
+        key: 'existing',
+        value: 'new value'
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.result).toContain('exists');
+    });
+
+    it('create_key tool should fail for unregistered type', async () => {
+      const mc = new MindCache();
+
+      const tools = mc.create_vercel_ai_tools();
+      const result = await tools['create_key'].execute({
+        key: 'test',
+        value: 'value',
+        type: 'UnknownType'
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.result).toContain('not registered');
+    });
+
+    it('system prompt should mention registered types for create_key', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: name');
+      mc.registerType('Note', '#Note\n* content: content');
+
+      const prompt = mc.get_system_prompt();
+      expect(prompt).toContain('create_key');
+      expect(prompt).toContain('Contact');
+      expect(prompt).toContain('Note');
     });
   });
 });

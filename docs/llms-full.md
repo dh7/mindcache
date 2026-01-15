@@ -338,6 +338,140 @@ const history = mc.getGlobalHistory();
 
 ---
 
+## Custom Types (v3.6+)
+
+Define structured data schemas using human-readable Markdown. Custom types guide LLM output to follow consistent schemas.
+
+### Registering a Type
+
+```typescript
+import { MindCache } from 'mindcache';
+
+const mc = new MindCache();
+
+// Define a Contact type with Markdown schema
+mc.registerType('Contact', `
+#Contact
+* name: full name of the contact
+* email: email address (primary)
+* phone: phone number (mobile preferred)
+* company: company or organization name
+* role: job title or role
+* notes: any additional context about this person
+`);
+```
+
+### Assigning Types to Keys
+
+```typescript
+// Create a key and assign the type
+mc.set_value('contact_alice', JSON.stringify({
+  name: 'Alice Smith',
+  email: 'alice@example.com',
+  company: 'Acme Corp',
+  role: 'Engineer'
+}), {
+  systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite']
+});
+
+// Assign the custom type (also sets underlying type to 'json')
+mc.setType('contact_alice', 'Contact');
+```
+
+### Querying Types
+
+```typescript
+// Get the custom type for a key
+const typeName = mc.getKeyType('contact_alice');
+// Returns: 'Contact'
+
+// Get the schema definition
+const schema = mc.getTypeSchema('Contact');
+// Returns: { name: 'Contact', fields: [...], rawSchema: '...' }
+
+// List all registered types
+const types = mc.getRegisteredTypes();
+// Returns: ['Contact']
+```
+
+### LLM Tool Integration
+
+When a key has a custom type, the generated tools include schema guidance:
+
+```typescript
+// Generate tools - schema is embedded in tool descriptions
+const tools = mc.create_vercel_ai_tools();
+
+// The write_contact_alice tool description includes:
+// - The Contact schema fields
+// - Example JSON format
+// - Guidance for the LLM to follow the schema
+```
+
+### System Prompt with Types
+
+The system prompt automatically includes type information:
+
+```typescript
+const systemPrompt = mc.get_system_prompt();
+// Includes:
+// - Available types (Contact)
+// - Keys with their types
+// - Schema definitions for each typed key
+```
+
+### Framework-Agnostic Tools
+
+```typescript
+// For Vercel AI SDK v5 (uses Zod schemas + tool() helper)
+const vercelTools = mc.create_vercel_ai_tools();
+
+// For other frameworks (raw JSON Schema)
+const rawTools = mc.create_tools();
+// Works with: OpenAI SDK, Anthropic SDK, LangChain, etc.
+```
+
+### Complete Example: Contact Manager
+
+```typescript
+import { MindCache } from 'mindcache';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+
+const mc = new MindCache();
+
+// Register Contact type
+mc.registerType('Contact', `
+#Contact
+* name: full name
+* email: email address
+* phone: phone number
+* notes: additional context
+`);
+
+// Create initial contact
+mc.set_value('contact_bob', JSON.stringify({
+  name: 'Bob Jones',
+  email: 'bob@example.com'
+}), { systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] });
+mc.setType('contact_bob', 'Contact');
+
+// Let LLM update contact
+const tools = mc.create_vercel_ai_tools();
+const { text } = await generateText({
+  model: openai('gpt-4'),
+  tools,
+  system: mc.get_system_prompt(),
+  prompt: 'Add phone number 555-1234 to Bob'
+});
+
+// Contact is updated with proper schema
+console.log(mc.get_value('contact_bob'));
+// { name: 'Bob Jones', email: 'bob@example.com', phone: '555-1234' }
+```
+
+---
+
 ## Attributes & Metadata
 
 ### Available Attributes
@@ -601,13 +735,13 @@ const userEntries = Object.entries(mindcache.getAll())
 
 ## LLM Tool Generation
 
-MindCache automatically generates tools for Vercel AI SDK.
+MindCache automatically generates tools for AI frameworks.
 
-### Generating Tools
+### Generating Tools for Vercel AI SDK
 
 ```typescript
-// Signature
-get_aisdk_tools(): Record<string, Tool>
+// For Vercel AI SDK v5 (uses Zod schemas + tool() helper)
+const tools = mc.create_vercel_ai_tools();
 
 // Setup
 mindcache.set_value('userName', 'Alice');
@@ -1902,8 +2036,14 @@ const all = mindcache.getAll();
 const result = mindcache.injectSTM('Hello {{name}}!');
 
 // LLM tools
-const tools = mindcache.get_aisdk_tools();
+const tools = mindcache.create_vercel_ai_tools(); // For Vercel AI SDK
+const rawTools = mindcache.create_tools();        // For other frameworks
 const prompt = mindcache.get_system_prompt();
+
+// Custom types (v3.6+)
+mindcache.registerType('Contact', '#Contact\n* name: full name\n* email: email');
+mindcache.setType('contact_alice', 'Contact');
+const typeName = mindcache.getKeyType('contact_alice');
 
 // Tags
 mindcache.addTag('key', 'tagName');

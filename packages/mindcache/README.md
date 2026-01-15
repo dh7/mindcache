@@ -10,13 +10,38 @@ A TypeScript library for managing short-term memory in AI agents through an LLM-
 ## Quick Start
 
 ```typescript
-import { mindcache } from 'mindcache';
+import { MindCache } from 'mindcache';
 
-// Store values
-mindcache.set_value('userName', 'Alice');
+const mc = new MindCache();
+
+// Store values with LLM access
+mc.set_value('userName', 'Alice', { 
+  systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] 
+});
 
 // Generate tools for Vercel AI SDK
-const tools = mindcache.get_aisdk_tools();
+const tools = mc.create_vercel_ai_tools();
+
+// Or for other frameworks (OpenAI, Anthropic, LangChain)
+const rawTools = mc.create_tools();
+```
+
+## Custom Types (v3.6+)
+
+Define structured schemas for consistent LLM output:
+
+```typescript
+// Register a custom type with Markdown schema
+mc.registerType('Contact', `
+#Contact
+* name: full name
+* email: email address
+* phone: phone number
+`);
+
+// Assign type to a key
+mc.set_value('contact_alice', JSON.stringify({ name: 'Alice' }));
+mc.setType('contact_alice', 'Contact');
 ```
 
 See the [root README](../../README.md) for more details.

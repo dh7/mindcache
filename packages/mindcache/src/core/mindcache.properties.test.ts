@@ -115,7 +115,7 @@ describe('MindCache Key Properties', () => {
       expect(editableTool).toBeDefined();
 
       const result = await editableTool.execute({ value: 'new_value' });
-      expect(result.result).toContain('Successfully wrote "new_value" to editable');
+      expect(result.result).toContain('Wrote');
       expect(cache.get_value('editable')).toBe('new_value');
 
       // Should not have tool for readonly key

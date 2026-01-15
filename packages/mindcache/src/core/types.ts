@@ -34,6 +34,28 @@ export type SystemTag = 'SystemPrompt' | 'LLMRead' | 'LLMWrite' | 'ApplyTemplate
 export type KeyType = 'text' | 'image' | 'file' | 'json' | 'document';
 
 /**
+ * A field in a custom type definition
+ */
+export interface CustomTypeField {
+  /** Field name */
+  name: string;
+  /** Human-readable description of the field */
+  description: string;
+}
+
+/**
+ * A parsed custom type definition
+ */
+export interface CustomTypeDefinition {
+  /** Type name (e.g., 'Contact') */
+  name: string;
+  /** Fields that make up this type */
+  fields: CustomTypeField[];
+  /** Original markdown schema */
+  rawSchema: string;
+}
+
+/**
  * Attributes that can be set on a MindCache key
  */
 export interface KeyAttributes {
@@ -47,6 +69,8 @@ export interface KeyAttributes {
   systemTags: SystemTag[];
   /** Z-index for ordering keys (lower values appear first) */
   zIndex: number;
+  /** Custom type name (registered via registerType) */
+  customType?: string;
 }
 
 /**
