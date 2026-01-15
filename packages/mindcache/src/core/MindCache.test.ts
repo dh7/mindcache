@@ -475,7 +475,7 @@ describe('MindCache', () => {
       const tools = mc.get_aisdk_tools();
       const result = await tools['write_test'].execute({ value: 'new_value' });
 
-      expect(result.result).toContain('Successfully wrote');
+      expect(result.result).toContain('Wrote');
       expect(mc.get_value('test')).toBe('new_value');
     });
 
@@ -655,6 +655,84 @@ describe('MindCache', () => {
       const prompt = mc.get_system_prompt();
       expect(prompt).toContain('john (type: Contact)');
       expect(prompt).toContain('name: full name');
+    });
+
+    it('should include create_key tool in generated tools', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: full name');
+
+      const tools = mc.create_vercel_ai_tools();
+      expect(tools['create_key']).toBeDefined();
+      expect(tools['create_key'].description).toContain('Contact');
+    });
+
+    it('create_key tool should create a new key', async () => {
+      const mc = new MindCache();
+      const tools = mc.create_vercel_ai_tools();
+
+      const result = await tools['create_key'].execute({
+        key: 'test_key',
+        value: 'test value'
+      });
+
+      expect(result.result).toContain('Created');
+      expect(mc.get_value('test_key')).toBe('test value');
+      expect(mc.get_attributes('test_key')?.systemTags).toContain('LLMWrite');
+    });
+
+    it('create_key tool should support optional type parameter', async () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: full name');
+
+      const tools = mc.create_vercel_ai_tools();
+      const result = await tools['create_key'].execute({
+        key: 'contact_john',
+        value: '{"name": "John"}',
+        type: 'Contact'
+      });
+
+      expect(result.result).toContain('Created');
+      expect(result.result).toContain('Contact');
+      expect(mc.getKeyType('contact_john')).toBe('Contact');
+    });
+
+    it('create_key tool should fail if key already exists', async () => {
+      const mc = new MindCache();
+      mc.set_value('existing', 'value');
+
+      const tools = mc.create_vercel_ai_tools();
+      const result = await tools['create_key'].execute({
+        key: 'existing',
+        value: 'new value'
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.result).toContain('exists');
+    });
+
+    it('create_key tool should fail for unregistered type', async () => {
+      const mc = new MindCache();
+
+      const tools = mc.create_vercel_ai_tools();
+      const result = await tools['create_key'].execute({
+        key: 'test',
+        value: 'value',
+        type: 'UnknownType'
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.result).toContain('not registered');
+    });
+
+    it('system prompt should mention registered types for create_key', () => {
+      const mc = new MindCache();
+      mc.registerType('Contact', '#Contact\n* name: name');
+      mc.registerType('Note', '#Note\n* content: content');
+
+      const prompt = mc.get_system_prompt();
+      expect(prompt).toContain('create_key');
+      expect(prompt).toContain('Contact');
+      expect(prompt).toContain('Note');
     });
   });
 });

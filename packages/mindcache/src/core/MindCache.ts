@@ -1772,8 +1772,28 @@ export class MindCache {
   }
 
   /**
+   * Generate framework-agnostic tools with raw JSON Schema.
+   * Works with: OpenAI SDK, Anthropic SDK, LangChain, and other frameworks.
+   *
+   * Tool format:
+   * {
+   *   description: string,
+   *   parameters: { type: 'object', properties: {...}, required: [...] },
+   *   execute: async (args) => result
+   * }
+   *
+   * Security: All tools use llm_set_key internally which:
+   * - Only modifies VALUES, never attributes/systemTags
+   * - Prevents LLMs from escalating privileges
+   */
+  create_tools(): Record<string, any> {
+    return AIToolBuilder.createTools(this);
+  }
+
+  /**
    * Generate Vercel AI SDK compatible tools for writable keys.
-   * For document type keys, generates additional tools: append_, insert_, edit_
+   * Wraps parameters with jsonSchema() for AI SDK v5 compatibility.
+   * Use this with: generateText(), streamText() from 'ai' package.
    *
    * Security: All tools use llm_set_key internally which:
    * - Only modifies VALUES, never attributes/systemTags

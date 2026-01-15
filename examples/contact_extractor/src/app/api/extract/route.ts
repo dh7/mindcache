@@ -1,62 +1,97 @@
 import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
-import { z } from 'zod';
+import { generateText } from 'ai';
+import { MindCache } from 'mindcache/server';
 
-// Contact schema matching our MindCache custom type
-const ContactSchema = z.object({
-  name: z.string().describe('Full name of the contact'),
-  email: z.string().optional().describe('Email address (primary)'),
-  phone: z.string().optional().describe('Phone number (mobile preferred)'),
-  company: z.string().optional().describe('Company or organization name'),
-  role: z.string().optional().describe('Job title or role'),
-  address: z.string().optional().describe('Physical address'),
-  linkedin: z.string().optional().describe('LinkedIn profile URL'),
-  twitter: z.string().optional().describe('Twitter/X handle'),
-  birthday: z.string().optional().describe('Birthday in YYYY-MM-DD format'),
-  notes: z.string().optional().describe('Any additional notes or context about this person'),
-});
-
-const ExtractedContactsSchema = z.object({
-  contacts: z.array(ContactSchema).describe('List of extracted contacts'),
-});
+// Contact type schema
+const CONTACT_SCHEMA = `
+#Contact
+* name: full name of the contact
+* email: email address (primary)
+* phone: phone number (mobile preferred)
+* company: company or organization name
+* role: job title or role
+* address: physical address
+* linkedin: LinkedIn profile URL
+* twitter: Twitter/X handle
+* birthday: birthday in YYYY-MM-DD format
+* notes: any additional notes or context about this person
+`;
 
 export async function POST(request: Request) {
   try {
-    const { content } = await request.json();
+    const { content, existingContacts } = await request.json();
 
     if (!content || typeof content !== 'string') {
       return Response.json({ error: 'Content is required' }, { status: 400 });
     }
 
-    const { object } = await generateObject({
+    // Create a temporary MindCache with existing contacts
+    const mc = new MindCache();
+    mc.registerType('Contact', CONTACT_SCHEMA);
+
+    // Hydrate with existing contacts
+    if (existingContacts) {
+      for (const [key, contact] of Object.entries(existingContacts)) {
+        mc.set_value(key, JSON.stringify(contact), {
+          systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite']
+        });
+        mc.setType(key, 'Contact');
+      }
+    }
+
+    // Get system prompt and tools from MindCache
+    const systemPrompt = mc.get_system_prompt();
+    const tools = mc.create_vercel_ai_tools();
+
+    // Run agent with tools
+    const result = await generateText({
       model: openai('gpt-4o-mini'),
-      schema: ExtractedContactsSchema,
-      prompt: `Extract all contact information from the following content.
+      tools,
+      toolChoice: 'required' as const,
+      system: `You are a contact management assistant. You manage contacts using MindCache tools.
 
-Look for:
-- Names (full name)
-- Email addresses
-- Phone numbers (mobile preferred)
-- Company/organization names
-- Job titles/roles
-- Physical addresses
-- LinkedIn profile URLs
-- Twitter/X handles
-- Birthdays (format as YYYY-MM-DD)
-- Any additional notes or context about the person
+EXISTING DATA:
+${systemPrompt || '(no contacts yet)'}
 
-If information is missing, omit that field rather than guessing.
-Extract as many contacts as you can find.
+TOOLS:
+- create_key: Create a NEW contact. Use key like "contact_john_doe", value is JSON string, type is "Contact"
+- write_<key>: Update an existing contact (rewrite with FULL merged JSON)
 
-Content:
-${content}`,
+RULES:
+1. ALWAYS prefer UPDATING existing contacts over creating new ones
+2. If a person already exists, use write_<key> to UPDATE with merged data
+3. Only use create_key for people NOT already in the database
+4. When updating, MERGE new info with existing - don't lose existing fields!
+5. Value must be a JSON string with fields: name, email, phone, company, role, address, linkedin, twitter, birthday, notes
+6. When creating, always set type to "Contact"`,
+      prompt: content,
     });
 
-    return Response.json({ contacts: object.contacts });
+    // Collect all the contacts that were modified
+    const updatedContacts: Array<{ key: string; contact: any }> = [];
+    
+    for (const key of mc.keys()) {
+      if (mc.getKeyType(key) === 'Contact') {
+        const value = mc.get_value(key);
+        if (value) {
+          try {
+            const contact = typeof value === 'string' ? JSON.parse(value) : value;
+            updatedContacts.push({ key, contact });
+          } catch {
+            // Skip invalid
+          }
+        }
+      }
+    }
+
+    return Response.json({ 
+      contacts: updatedContacts,
+      message: result.text 
+    });
   } catch (error) {
-    console.error('Extraction error:', error);
+    console.error('Agent error:', error);
     return Response.json(
-      { error: 'Failed to extract contacts' },
+      { error: 'Failed to process contacts' },
       { status: 500 }
     );
   }

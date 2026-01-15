@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as Y from 'yjs';
+import { tool } from 'ai';
+import { z } from 'zod';
 import type { KeyAttributes, CustomTypeDefinition } from './types';
 import { SchemaParser } from './SchemaParser';
 
@@ -11,6 +13,7 @@ export interface IAIToolBuildable {
     // Key enumeration and context filtering
     keys(): string[];
     keyMatchesContext(key: string): boolean;
+    has(key: string): boolean;
 
     // Value access
     get_value(key: string): any;
@@ -26,22 +29,24 @@ export interface IAIToolBuildable {
     // Custom type operations
     getTypeSchema(typeName: string): CustomTypeDefinition | undefined;
     getKeyType(key: string): string | undefined;
+    getRegisteredTypes(): string[];
+    setType(key: string, typeName: string): void;
 }
 
 /**
- * Builds Vercel AI SDK compatible tools and system prompts from MindCache data.
+ * Builds AI SDK compatible tools and system prompts from MindCache data.
  */
 export class AIToolBuilder {
   /**
-     * Sanitize key name for use in tool names
-     */
+   * Sanitize key name for use in tool names
+   */
   static sanitizeKeyForTool(key: string): string {
     return key.replace(/[^a-zA-Z0-9_-]/g, '_');
   }
 
   /**
-     * Find original key from sanitized tool name
-     */
+   * Find original key from sanitized tool name
+   */
   static findKeyFromSanitizedTool(mc: IAIToolBuildable, sanitizedKey: string): string | undefined {
     for (const key of mc.keys()) {
       if (AIToolBuilder.sanitizeKeyForTool(key) === sanitizedKey) {
@@ -52,15 +57,206 @@ export class AIToolBuilder {
   }
 
   /**
-     * Generate Vercel AI SDK compatible tools for writable keys.
-     * For document type keys, generates additional tools: append_, insert_, edit_
-     *
-     * Security: All tools use llm_set_key internally which:
-     * - Only modifies VALUES, never attributes/systemTags
-     * - Prevents LLMs from escalating privileges
-     */
+   * Generate framework-agnostic tools with raw JSON Schema.
+   * Works with: OpenAI SDK, Anthropic SDK, LangChain, etc.
+   *
+   * Tool format:
+   * {
+   *   description: string,
+   *   parameters: { type: 'object', properties: {...}, required: [...] },
+   *   execute: async (args) => result
+   * }
+   */
+  static createTools(mc: IAIToolBuildable): Record<string, any> {
+    return AIToolBuilder._buildTools(mc);
+  }
+
+  /**
+   * Generate Vercel AI SDK v5 compatible tools using Zod schemas.
+   * Uses tool() helper with Zod for full AI SDK v5 compatibility.
+   *
+   * Use this with: generateText(), streamText() from 'ai' package
+   */
   static createVercelAITools(mc: IAIToolBuildable): Record<string, any> {
     const tools: Record<string, any> = {};
+    const registeredTypes = mc.getRegisteredTypes();
+    const typeDesc = registeredTypes.length > 0
+      ? `Optional type: ${registeredTypes.join(' | ')}`
+      : 'No types registered';
+
+    // create_key tool with Zod schema
+    tools['create_key'] = tool({
+      description: `Create a new key in MindCache. ${registeredTypes.length > 0 ? `Available types: ${registeredTypes.join(', ')}` : ''}`,
+      inputSchema: z.object({
+        key: z.string().describe('The key name (e.g., "contact_john_doe")'),
+        value: z.string().describe('The value (JSON string for structured data)'),
+        type: z.string().optional().describe(typeDesc)
+      }),
+      execute: async ({ key, value, type }: { key: string; value: string; type?: string }) => {
+        if (mc.has(key)) {
+          return { result: `Key "${key}" exists. Use write_${AIToolBuilder.sanitizeKeyForTool(key)}`, error: true };
+        }
+        if (type && !mc.getTypeSchema(type)) {
+          return { result: `Type "${type}" not registered`, error: true };
+        }
+        mc.set_value(key, value, { systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] });
+        if (type) {
+          mc.setType(key, type);
+        }
+        return { result: `Created "${key}"${type ? ` (${type})` : ''}`, key, value };
+      }
+    });
+
+    // Add write_ tools for existing writable keys
+    for (const key of mc.keys()) {
+      if (key.startsWith('$') || !mc.keyMatchesContext(key)) {
+        continue;
+      }
+      const attrs = mc.get_attributes(key);
+      if (!attrs?.systemTags?.includes('LLMWrite')) {
+        continue;
+      }
+
+      const sanitized = AIToolBuilder.sanitizeKeyForTool(key);
+      const customTypeName = mc.getKeyType(key);
+      const customType = customTypeName ? mc.getTypeSchema(customTypeName) : undefined;
+
+      let desc = `Write to "${key}"`;
+      if (customType) {
+        desc = `Write to "${key}" (${customTypeName}). ${SchemaParser.toPromptDescription(customType)}`;
+      }
+
+      tools[`write_${sanitized}`] = tool({
+        description: desc,
+        inputSchema: z.object({
+          value: z.string().describe(customType ? `JSON following ${customTypeName} schema` : 'Value to write')
+        }),
+        execute: async ({ value }: { value: string }) => {
+          const success = mc.llm_set_key(key, value);
+          return success
+            ? { result: `Wrote to ${key}`, key, value }
+            : { result: `Failed to write to ${key}`, error: true };
+        }
+      });
+
+      // Document tools
+      if (attrs?.type === 'document') {
+        tools[`append_${sanitized}`] = tool({
+          description: `Append to "${key}" document`,
+          inputSchema: z.object({ text: z.string().describe('Text to append') }),
+          execute: async ({ text }: { text: string }) => {
+            const yText = mc.get_document(key);
+            if (yText) {
+              yText.insert(yText.length, text); return { result: 'Appended', key };
+            }
+            return { result: 'Not found', error: true };
+          }
+        });
+
+        tools[`insert_${sanitized}`] = tool({
+          description: `Insert text at position in "${key}" document`,
+          inputSchema: z.object({
+            index: z.number().describe('Position (0 = start)'),
+            text: z.string().describe('Text to insert')
+          }),
+          execute: async ({ index, text }: { index: number; text: string }) => {
+            mc.insert_text(key, index, text);
+            return { result: `Inserted at ${index}`, key };
+          }
+        });
+
+        tools[`edit_${sanitized}`] = tool({
+          description: `Find and replace in "${key}" document`,
+          inputSchema: z.object({
+            find: z.string().describe('Text to find'),
+            replace: z.string().describe('Replacement')
+          }),
+          execute: async ({ find, replace }: { find: string; replace: string }) => {
+            const yText = mc.get_document(key);
+            if (yText) {
+              const text = yText.toString();
+              const idx = text.indexOf(find);
+              if (idx !== -1) {
+                yText.delete(idx, find.length);
+                yText.insert(idx, replace);
+                return { result: `Replaced "${find}"`, key };
+              }
+              return { result: `"${find}" not found`, error: true };
+            }
+            return { result: 'Document not found', error: true };
+          }
+        });
+      }
+    }
+
+    return tools;
+  }
+
+  /**
+   * Internal: Build tools with raw JSON Schema (framework-agnostic).
+   */
+  private static _buildTools(mc: IAIToolBuildable): Record<string, any> {
+    const tools: Record<string, any> = {};
+
+    // Add create_key tool for creating new keys
+    const registeredTypes = mc.getRegisteredTypes();
+    const typeInfo = registeredTypes.length > 0
+      ? `Available types: ${registeredTypes.join(', ')}`
+      : 'No custom types registered';
+
+    tools['create_key'] = {
+      description: `Create a new key in MindCache. ${typeInfo}. The new key will be readable and writable by the LLM.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'The key name to create (e.g., "contact_john_doe")' },
+          value: { type: 'string', description: 'The value to store (use JSON string for structured data)' },
+          type: {
+            type: 'string',
+            description: registeredTypes.length > 0
+              ? `Optional: custom type name (${registeredTypes.join(' | ')})`
+              : 'Optional: custom type name (none registered)'
+          }
+        },
+        required: ['key', 'value']
+      },
+      execute: async ({ key, value, type }: { key: string; value: string; type?: string }) => {
+        // Check if key already exists
+        if (mc.has(key)) {
+          return {
+            result: `Key "${key}" already exists. Use write_${AIToolBuilder.sanitizeKeyForTool(key)} to update it.`,
+            key,
+            error: true
+          };
+        }
+
+        // Validate type if provided
+        if (type && !mc.getTypeSchema(type)) {
+          return {
+            result: `Type "${type}" is not registered. Available types: ${registeredTypes.join(', ') || 'none'}`,
+            key,
+            error: true
+          };
+        }
+
+        // Create the key with LLM permissions
+        mc.set_value(key, value, {
+          systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite']
+        });
+
+        // Set type if provided
+        if (type) {
+          mc.setType(key, type);
+        }
+
+        return {
+          result: `Successfully created key "${key}"${type ? ` with type "${type}"` : ''}`,
+          key,
+          value,
+          type
+        };
+      }
+    };
 
     for (const key of mc.keys()) {
       // Skip system keys
@@ -104,7 +300,7 @@ export class AIToolBuilder {
       // 1. write_ tool (for all writable keys)
       tools[`write_${sanitizedKey}`] = {
         description: writeDescription,
-        inputSchema: {
+        parameters: {
           type: 'object',
           properties: {
             value: { type: 'string', description: customType ? `Value following ${customTypeName} schema` : (isDocument ? 'New document content' : 'The value to write') }
@@ -134,7 +330,7 @@ export class AIToolBuilder {
         // 2. append_ tool
         tools[`append_${sanitizedKey}`] = {
           description: `Append text to the end of "${key}" document`,
-          inputSchema: {
+          parameters: {
             type: 'object',
             properties: {
               text: { type: 'string', description: 'Text to append' }
@@ -162,7 +358,7 @@ export class AIToolBuilder {
         // 3. insert_ tool
         tools[`insert_${sanitizedKey}`] = {
           description: `Insert text at a position in "${key}" document`,
-          inputSchema: {
+          parameters: {
             type: 'object',
             properties: {
               index: { type: 'number', description: 'Position to insert at (0 = start)' },
@@ -188,7 +384,7 @@ export class AIToolBuilder {
         // 4. edit_ tool (find and replace)
         tools[`edit_${sanitizedKey}`] = {
           description: `Find and replace text in "${key}" document`,
-          inputSchema: {
+          parameters: {
             type: 'object',
             properties: {
               find: { type: 'string', description: 'Text to find' },
@@ -228,11 +424,18 @@ export class AIToolBuilder {
   }
 
   /**
-     * Generate a system prompt containing all visible STM keys and their values.
-     * Indicates which tools can be used to modify writable keys.
-     */
+   * Generate a system prompt containing all visible STM keys and their values.
+   * Indicates which tools can be used to modify writable keys.
+   */
   static getSystemPrompt(mc: IAIToolBuildable): string {
     const lines: string[] = [];
+
+    // Add info about create_key tool and registered types
+    const registeredTypes = mc.getRegisteredTypes();
+    if (registeredTypes.length > 0) {
+      lines.push(`[create_key tool available - registered types: ${registeredTypes.join(', ')}]`);
+      lines.push('');
+    }
 
     for (const key of mc.keys()) {
       // Skip system keys for now
@@ -305,9 +508,9 @@ export class AIToolBuilder {
   }
 
   /**
-     * Execute a tool call by name with the given value.
-     * Returns the result or null if tool not found.
-     */
+   * Execute a tool call by name with the given value.
+   * Returns the result or null if tool not found.
+   */
   static executeToolCall(
     mc: IAIToolBuildable,
     toolName: string,

@@ -67,36 +67,53 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  const extractContacts = async (content: string) => {
+  const processContent = async (content: string) => {
     if (!content.trim()) return;
 
     setIsProcessing(true);
     try {
+      const mc = mindCacheRef.current;
+      if (!mc) return;
+
+      // Collect existing contacts to send to the agent
+      const existingContacts: Record<string, Contact> = {};
+      for (const key of mc.keys()) {
+        if (mc.getKeyType(key) === 'Contact') {
+          const value = mc.get_value(key);
+          if (value) {
+            try {
+              existingContacts[key] = typeof value === 'string' ? JSON.parse(value) : value;
+            } catch {
+              // Skip invalid entries
+            }
+          }
+        }
+      }
+
       const response = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, existingContacts }),
       });
 
-      if (!response.ok) throw new Error('Extraction failed');
+      if (!response.ok) throw new Error('Processing failed');
 
-      const { contacts: extracted } = await response.json();
-      const mc = mindCacheRef.current;
-      if (!mc || !extracted?.length) return;
-
-      // Add each extracted contact to MindCache (readable + writable by LLM)
-      for (const contact of extracted) {
-        const key = `contact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        mc.set_value(key, JSON.stringify(contact), { 
-          systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] 
-        });
-        mc.setType(key, 'Contact');
+      const { contacts: updatedContacts } = await response.json();
+      
+      // Agent has already processed - sync results to local MindCache
+      if (updatedContacts?.length) {
+        for (const { key, contact } of updatedContacts) {
+          mc.set_value(key, JSON.stringify(contact), { 
+            systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] 
+          });
+          mc.setType(key, 'Contact');
+        }
       }
 
       setInputText('');
     } catch (error) {
-      console.error('Failed to extract contacts:', error);
-      alert('Failed to extract contacts. Make sure OPENAI_API_KEY is set.');
+      console.error('Failed to process:', error);
+      alert('Failed to process. Check console for details.');
     } finally {
       setIsProcessing(false);
     }
@@ -111,9 +128,9 @@ export default function Home() {
 
     if (textFile) {
       const text = await textFile.text();
-      extractContacts(text);
+      processContent(text);
     } else if (e.dataTransfer.getData('text')) {
-      extractContacts(e.dataTransfer.getData('text'));
+      processContent(e.dataTransfer.getData('text'));
     }
   }, []);
 
@@ -131,11 +148,8 @@ export default function Home() {
   const clearAll = () => {
     const mc = mindCacheRef.current;
     if (!mc) return;
-    for (const key of mc.keys()) {
-      if (mc.getKeyType(key) === 'Contact') {
-        mc.delete_key(key);
-      }
-    }
+    const keysToDelete = mc.keys().filter(key => mc.getKeyType(key) === 'Contact');
+    keysToDelete.forEach(key => mc.delete_key(key));
   };
 
   return (
@@ -163,7 +177,7 @@ export default function Home() {
           {isProcessing ? (
             <div className="text-center">
               <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-[var(--text-secondary)]">Extracting contacts...</p>
+              <p className="text-[var(--text-secondary)]">Agent processing...</p>
             </div>
           ) : (
             <>
@@ -185,12 +199,12 @@ export default function Home() {
             onPaste={handlePaste}
           />
           <button
-            onClick={() => extractContacts(inputText)}
+            onClick={() => processContent(inputText)}
             disabled={!inputText.trim() || isProcessing}
             className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
           >
             <Sparkles className="w-4 h-4" />
-            Extract Contacts
+            Process
           </button>
         </div>
       </div>
