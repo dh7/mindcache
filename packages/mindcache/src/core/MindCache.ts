@@ -1405,6 +1405,7 @@ export class MindCache {
   /**
    * Assign a custom type to a key.
    * The key must exist and the type must be registered.
+   * Also sets the underlying type to 'json' since custom types are structured JSON data.
    *
    * @param key - Key to assign type to
    * @param typeName - Registered type name
@@ -1417,7 +1418,8 @@ export class MindCache {
     if (!this._typeRegistry.has(typeName)) {
       throw new Error(`Type "${typeName}" is not registered. Use registerType() first.`);
     }
-    this.set_attributes(key, { customType: typeName });
+    // Custom types are JSON data, so set both type and customType
+    this.set_attributes(key, { type: 'json', customType: typeName });
   }
 
   /**

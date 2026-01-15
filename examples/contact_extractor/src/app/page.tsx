@@ -107,6 +107,7 @@ export default function Home() {
       if (updatedContacts?.length) {
         for (const { key, contact } of updatedContacts) {
           mc.set_value(key, JSON.stringify(contact), { 
+            type: 'json',
             systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] 
           });
           mc.setType(key, 'Contact');
