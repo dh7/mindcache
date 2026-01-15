@@ -5,11 +5,15 @@ import { z } from 'zod';
 // Contact schema matching our MindCache custom type
 const ContactSchema = z.object({
   name: z.string().describe('Full name of the contact'),
-  email: z.string().optional().describe('Email address'),
-  phone: z.string().optional().describe('Phone number'),
-  company: z.string().optional().describe('Company or organization'),
+  email: z.string().optional().describe('Email address (primary)'),
+  phone: z.string().optional().describe('Phone number (mobile preferred)'),
+  company: z.string().optional().describe('Company or organization name'),
   role: z.string().optional().describe('Job title or role'),
-  notes: z.string().optional().describe('Any additional notes or context'),
+  address: z.string().optional().describe('Physical address'),
+  linkedin: z.string().optional().describe('LinkedIn profile URL'),
+  twitter: z.string().optional().describe('Twitter/X handle'),
+  birthday: z.string().optional().describe('Birthday in YYYY-MM-DD format'),
+  notes: z.string().optional().describe('Any additional notes or context about this person'),
 });
 
 const ExtractedContactsSchema = z.object({
@@ -27,8 +31,20 @@ export async function POST(request: Request) {
     const { object } = await generateObject({
       model: openai('gpt-4o-mini'),
       schema: ExtractedContactsSchema,
-      prompt: `Extract all contact information from the following content. 
-Look for names, email addresses, phone numbers, company names, job titles, and any relevant notes.
+      prompt: `Extract all contact information from the following content.
+
+Look for:
+- Names (full name)
+- Email addresses
+- Phone numbers (mobile preferred)
+- Company/organization names
+- Job titles/roles
+- Physical addresses
+- LinkedIn profile URLs
+- Twitter/X handles
+- Birthdays (format as YYYY-MM-DD)
+- Any additional notes or context about the person
+
 If information is missing, omit that field rather than guessing.
 Extract as many contacts as you can find.
 

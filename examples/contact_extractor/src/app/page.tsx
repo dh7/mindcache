@@ -2,17 +2,21 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MindCache } from 'mindcache';
-import { Upload, User, Mail, Phone, Building, Briefcase, FileText, Trash2, Sparkles } from 'lucide-react';
+import { Upload, User, Mail, Phone, Building, FileText, Trash2, Sparkles, MapPin, Linkedin, Twitter, Calendar } from 'lucide-react';
 
 // Contact type schema (matching our MindCache custom type)
 const CONTACT_SCHEMA = `
 #Contact
 * name: full name of the contact
-* email: email address
-* phone: phone number
-* company: company or organization
+* email: email address (primary)
+* phone: phone number (mobile preferred)
+* company: company or organization name
 * role: job title or role
-* notes: any additional notes
+* address: physical address
+* linkedin: LinkedIn profile URL
+* twitter: Twitter/X handle
+* birthday: birthday in YYYY-MM-DD format
+* notes: any additional notes or context about this person
 `;
 
 interface Contact {
@@ -21,6 +25,10 @@ interface Contact {
   phone?: string;
   company?: string;
   role?: string;
+  address?: string;
+  linkedin?: string;
+  twitter?: string;
+  birthday?: string;
   notes?: string;
 }
 
@@ -76,10 +84,12 @@ export default function Home() {
       const mc = mindCacheRef.current;
       if (!mc || !extracted?.length) return;
 
-      // Add each extracted contact to MindCache
+      // Add each extracted contact to MindCache (readable + writable by LLM)
       for (const contact of extracted) {
         const key = `contact_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        mc.set_value(key, JSON.stringify(contact), { systemTags: ['LLMWrite'] });
+        mc.set_value(key, JSON.stringify(contact), { 
+          systemTags: ['SystemPrompt', 'LLMRead', 'LLMWrite'] 
+        });
         mc.setType(key, 'Contact');
       }
 
@@ -240,15 +250,15 @@ export default function Home() {
                 <div className="space-y-2 text-sm">
                   {contact.email && (
                     <div className="flex items-center gap-2 text-[var(--text-secondary)]">
-                      <Mail className="w-4 h-4" />
-                      <a href={`mailto:${contact.email}`} className="hover:text-indigo-400 transition-colors">
+                      <Mail className="w-4 h-4 flex-shrink-0" />
+                      <a href={`mailto:${contact.email}`} className="hover:text-indigo-400 transition-colors truncate">
                         {contact.email}
                       </a>
                     </div>
                   )}
                   {contact.phone && (
                     <div className="flex items-center gap-2 text-[var(--text-secondary)]">
-                      <Phone className="w-4 h-4" />
+                      <Phone className="w-4 h-4 flex-shrink-0" />
                       <a href={`tel:${contact.phone}`} className="hover:text-indigo-400 transition-colors">
                         {contact.phone}
                       </a>
@@ -256,16 +266,52 @@ export default function Home() {
                   )}
                   {contact.company && (
                     <div className="flex items-center gap-2 text-[var(--text-secondary)]">
-                      <Building className="w-4 h-4" />
+                      <Building className="w-4 h-4 flex-shrink-0" />
                       <span>{contact.company}</span>
                     </div>
                   )}
+                  {contact.address && (
+                    <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+                      <MapPin className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{contact.address}</span>
+                    </div>
+                  )}
+                  {contact.birthday && (
+                    <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+                      <Calendar className="w-4 h-4 flex-shrink-0" />
+                      <span>{contact.birthday}</span>
+                    </div>
+                  )}
+                  
+                  {/* Social links */}
+                  {(contact.linkedin || contact.twitter) && (
+                    <div className="flex items-center gap-3 pt-2">
+                      {contact.linkedin && (
+                        <a href={contact.linkedin} target="_blank" rel="noopener noreferrer" 
+                           className="text-[var(--text-secondary)] hover:text-indigo-400 transition-colors">
+                          <Linkedin className="w-4 h-4" />
+                        </a>
+                      )}
+                      {contact.twitter && (
+                        <a href={`https://twitter.com/${contact.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer"
+                           className="text-[var(--text-secondary)] hover:text-indigo-400 transition-colors">
+                          <Twitter className="w-4 h-4" />
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  
                   {contact.notes && (
                     <div className="flex items-start gap-2 text-[var(--text-secondary)] mt-3 pt-3 border-t border-[var(--border)]">
                       <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                      <span className="text-xs">{contact.notes}</span>
+                      <span className="text-xs leading-relaxed">{contact.notes}</span>
                     </div>
                   )}
+                </div>
+                
+                {/* Key indicator for developers */}
+                <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                  <code className="text-[10px] text-[var(--text-secondary)] opacity-50 font-mono">{key}</code>
                 </div>
               </div>
             ))
