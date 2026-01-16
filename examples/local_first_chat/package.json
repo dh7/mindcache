@@ -8,8 +8,6 @@
     "start": "next start"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.0",
-    "ai": "^5.0.121",
     "mindcache": "file:../../packages/mindcache",
     "next": "^15.0.0",
     "react": "^19.0.0",

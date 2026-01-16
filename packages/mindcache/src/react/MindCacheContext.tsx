@@ -1,7 +1,27 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react';
+import { createOpenAI } from '@ai-sdk/openai';
 import { MindCache, type MindCacheOptions } from '../core/MindCache';
+
+/** Supported AI providers */
+export type AIProvider = 'openai' | 'anthropic' | 'custom';
+
+/**
+ * Create a model from provider config
+ */
+function createModel(provider: AIProvider, model: string, apiKey: string) {
+  switch (provider) {
+    case 'openai': {
+      const openai = createOpenAI({ apiKey });
+      return openai(model);
+    }
+    case 'anthropic':
+      throw new Error('Anthropic provider not yet implemented. Use modelProvider for custom providers.');
+    default:
+      throw new Error(`Unknown provider: ${provider}. Use modelProvider for custom providers.`);
+  }
+}
 
 /**
  * Configuration for local-first sync
@@ -27,6 +47,17 @@ export interface LocalFirstSyncConfig {
  * AI configuration for client-side chat
  */
 export interface AIConfig {
+  /**
+   * AI provider: 'openai' | 'anthropic' | 'custom'
+   * If using 'custom', you must provide modelProvider
+   * @default 'openai'
+   */
+  provider?: AIProvider;
+  /**
+   * Model name (e.g., 'gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet')
+   * @default 'gpt-4o'
+   */
+  model?: string;
   /** API key - stored in localStorage if keyStorage is 'localStorage' */
   apiKey?: string;
   /** Where to store the API key: 'localStorage' | 'memory' | 'prompt' */
@@ -34,26 +65,16 @@ export interface AIConfig {
   /** localStorage key for API key (default: 'ai_api_key') */
   storageKey?: string;
   /**
-   * Model provider function - receives API key and returns a LanguageModel
+   * Custom model provider function (advanced usage)
+   * Use this for providers not built-in or custom configurations
    * @example
    * ```ts
    * import { createOpenAI } from '@ai-sdk/openai';
-   * modelProvider: (apiKey) => createOpenAI({ apiKey })('gpt-4o')
+   * modelProvider: (apiKey) => createOpenAI({ apiKey, baseURL: '...' })('gpt-4o')
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   modelProvider?: (apiKey: string) => any;
-  /**
-   * The streamText function from the 'ai' package
-   * Must be passed from the consuming app to avoid import resolution issues
-   * @example
-   * ```ts
-   * import { streamText } from 'ai';
-   * streamText: streamText
-   * ```
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  streamText?: any;
 }
 
 /**
@@ -90,6 +111,9 @@ export interface MindCacheContextValue {
   setApiKey: (key: string) => void;
   /** Whether API key is configured */
   hasApiKey: boolean;
+  /** Get the AI model (uses API key from storage) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getModel: () => any;
   /** Trigger a manual sync to GitStore */
   syncToGitStore: () => Promise<void>;
   /** Last sync timestamp */
@@ -141,6 +165,8 @@ export function MindCacheProvider({
 
   // Default AI config
   const resolvedAiConfig: AIConfig = {
+    provider: 'openai',
+    model: 'gpt-4o',
     keyStorage: 'localStorage',
     storageKey: 'ai_api_key',
     ...aiConfig
@@ -210,6 +236,25 @@ export function MindCacheProvider({
     }
   };
 
+  // Get AI model
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getModel = (): any => {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      throw new Error('API key not configured. Call setApiKey() first or configure ai.apiKey.');
+    }
+
+    // Use custom modelProvider if provided
+    if (resolvedAiConfig.modelProvider) {
+      return resolvedAiConfig.modelProvider(apiKey);
+    }
+
+    // Use built-in provider
+    const provider = resolvedAiConfig.provider || 'openai';
+    const model = resolvedAiConfig.model || 'gpt-4o';
+    return createModel(provider, model, apiKey);
+  };
+
   // Sync to GitStore
   const syncToGitStore = async () => {
     if (!mindcache || !syncConfig?.gitstore) {
@@ -263,6 +308,7 @@ export function MindCacheProvider({
     getApiKey,
     setApiKey,
     hasApiKey,
+    getModel,
     syncToGitStore,
     lastSyncAt,
     isSyncing

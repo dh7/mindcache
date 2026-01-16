@@ -10,7 +10,8 @@ export type {
   MindCacheProviderConfig,
   MindCacheContextValue,
   LocalFirstSyncConfig,
-  AIConfig
+  AIConfig,
+  AIProvider
 } from './MindCacheContext';
 
 export { MindCacheChat } from './MindCacheChat';

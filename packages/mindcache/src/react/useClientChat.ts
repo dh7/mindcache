@@ -136,9 +136,8 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
     maxToolCalls = 5
   } = options;
 
-  // Get API key and model provider from context
+  // Get API key from context
   const apiKey = context.getApiKey();
-  const modelProvider = context.aiConfig.modelProvider;
 
   // Add message helper
   const addMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'createdAt'>) => {
@@ -180,13 +179,6 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
       return;
     }
 
-    if (!modelProvider) {
-      const err = new Error('Model provider not configured. Please set ai.modelProvider in MindCacheProvider.');
-      setError(err);
-      onError?.(err);
-      return;
-    }
-
     // Cancel any ongoing request
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
@@ -198,12 +190,8 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
     setStreamingContent('');
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/53f2c4ff-7d8b-4b0f-b204-15b41b8c8c71',{ method:'POST',headers:{ 'Content-Type':'application/json' },body:JSON.stringify({ location:'useClientChat.ts:202',message:'Starting streamText call',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix' }) }).catch(()=>{});
-      // #endregion
-
-      // Get model from provider
-      const model = modelProvider(apiKey);
+      // Get model from context (handles provider config automatically)
+      const model = context.getModel();
 
       // Get system prompt and tools from MindCache
       const finalSystemPrompt = systemPrompt || mc.get_system_prompt();
@@ -296,9 +284,6 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
       onFinish?.(assistantMessage);
 
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/53f2c4ff-7d8b-4b0f-b204-15b41b8c8c71',{ method:'POST',headers:{ 'Content-Type':'application/json' },body:JSON.stringify({ location:'useClientChat.ts:299',message:'Caught error in sendMessage',data:{ error:String(err),errorName:(err as Error)?.name,stack:(err as Error)?.stack?.slice(0,500) },timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix' }) }).catch(()=>{});
-      // #endregion
       if ((err as Error).name === 'AbortError') {
         // If we have partial content, save it
         if (streamingContent) {
@@ -322,7 +307,7 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
       onError?.(error);
     }
   }, [
-    mc, apiKey, modelProvider, messages, systemPrompt,
+    mc, apiKey, context, messages, systemPrompt,
     maxToolCalls, addMessage, onMindCacheChange, onFinish, onError, streamingContent
   ]);
 

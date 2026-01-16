@@ -25,12 +25,12 @@ Open [http://localhost:3000](http://localhost:3000) and enter your OpenAI API ke
 ## How It Works
 
 ```tsx
-// layout.tsx - Configure the provider
+// layout.tsx - Configure the provider (just 3 lines of config!)
 <MindCacheProvider
-  mindcache={{ indexedDB: { dbName: 'my-app' } }}
   ai={{
-    keyStorage: 'localStorage',
-    modelProvider: (apiKey) => createOpenAI({ apiKey })('gpt-4o')
+    provider: 'openai',
+    model: 'gpt-4o',
+    keyStorage: 'localStorage'
   }}
 >
   {children}
@@ -43,7 +43,7 @@ Open [http://localhost:3000](http://localhost:3000) and enter your OpenAI API ke
 />
 ```
 
-That's it! ~20 lines of code for a full AI chat app.
+That's it! ~15 lines of code for a full AI chat app.
 
 ## Architecture
 
