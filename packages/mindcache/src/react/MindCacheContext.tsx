@@ -37,12 +37,23 @@ export interface AIConfig {
    * Model provider function - receives API key and returns a LanguageModel
    * @example
    * ```ts
-   * import { openai } from '@ai-sdk/openai';
-   * modelProvider: (apiKey) => openai('gpt-4o', { apiKey })
+   * import { createOpenAI } from '@ai-sdk/openai';
+   * modelProvider: (apiKey) => createOpenAI({ apiKey })('gpt-4o')
    * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   modelProvider?: (apiKey: string) => any;
+  /**
+   * The streamText function from the 'ai' package
+   * Must be passed from the consuming app to avoid import resolution issues
+   * @example
+   * ```ts
+   * import { streamText } from 'ai';
+   * streamText: streamText
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  streamText?: any;
 }
 
 /**

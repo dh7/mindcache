@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { streamText, stepCountIs } from 'ai';
 import type { MindCache } from '../core/MindCache';
 import { useMindCacheContext } from './MindCacheContext';
 
@@ -197,17 +198,9 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
     setStreamingContent('');
 
     try {
-      // Dynamic import of AI SDK
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let aiModule: any;
-
-      try {
-        aiModule = await (Function('return import("ai")')() as Promise<any>);
-      } catch {
-        throw new Error('ai package is not installed. Run: npm install ai');
-      }
-
-      const { streamText } = aiModule;
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/53f2c4ff-7d8b-4b0f-b204-15b41b8c8c71',{ method:'POST',headers:{ 'Content-Type':'application/json' },body:JSON.stringify({ location:'useClientChat.ts:202',message:'Starting streamText call',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix' }) }).catch(()=>{});
+      // #endregion
 
       // Get model from provider
       const model = modelProvider(apiKey);
@@ -234,7 +227,7 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
         system: finalSystemPrompt,
         messages: apiMessages,
         tools,
-        maxSteps: maxToolCalls,
+        stopWhen: stepCountIs(maxToolCalls),
         abortSignal: abortControllerRef.current.signal,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onStepFinish: async (step: any) => {
@@ -303,6 +296,9 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
       onFinish?.(assistantMessage);
 
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/53f2c4ff-7d8b-4b0f-b204-15b41b8c8c71',{ method:'POST',headers:{ 'Content-Type':'application/json' },body:JSON.stringify({ location:'useClientChat.ts:299',message:'Caught error in sendMessage',data:{ error:String(err),errorName:(err as Error)?.name,stack:(err as Error)?.stack?.slice(0,500) },timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix' }) }).catch(()=>{});
+      // #endregion
       if ((err as Error).name === 'AbortError') {
         // If we have partial content, save it
         if (streamingContent) {
