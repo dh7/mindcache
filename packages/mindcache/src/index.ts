@@ -40,3 +40,33 @@ export type { IndexedDBConfig } from './local';
 // React exports
 export { useMindCache } from './react';
 export type { UseMindCacheResult } from './react';
+
+// Local-first React components and hooks
+export {
+  MindCacheProvider,
+  useMindCacheContext,
+  MindCacheChat,
+  useClientChat,
+  useLocalFirstSync
+} from './react';
+
+export type {
+  // Provider types
+  MindCacheProviderConfig,
+  MindCacheContextValue,
+  LocalFirstSyncConfig,
+  AIConfig,
+  // Chat types
+  MindCacheChatProps,
+  ChatTheme,
+  UseClientChatOptions,
+  UseClientChatReturn,
+  ChatMessage,
+  ChatStatus,
+  // Sync types
+  UseLocalFirstSyncOptions,
+  UseLocalFirstSyncReturn,
+  GitStoreSyncConfig,
+  ServerSyncConfig,
+  SyncStatus
+} from './react';

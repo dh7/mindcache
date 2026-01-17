@@ -2,6 +2,24 @@
 
 Git repository abstraction for MindCache - list files, read/write with automatic commits.
 
+## 30-Second Start
+
+```typescript
+import { GitStore } from '@mindcache/gitstore';
+
+const store = new GitStore({
+  owner: 'your-username',
+  repo: 'your-repo',
+  tokenProvider: async () => 'ghp_your_token'
+});
+
+// Read
+const content = await store.readFile('notes.md');
+
+// Write (creates commit)
+await store.writeFile('notes.md', '# Updated!', { message: 'Update notes' });
+```
+
 ## Installation
 
 ```bash

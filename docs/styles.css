@@ -438,6 +438,20 @@ section {
     text-align: center;
 }
 
+/* Local-First Section */
+.local-first-section {
+    background: linear-gradient(135deg, #0c1220 0%, #1a2744 50%, #0d3b66 100%);
+    padding: var(--space-3xl) 0;
+}
+
+.local-first-section .section-header h2 {
+    color: white;
+}
+
+.local-first-section .section-header p {
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .btn-cloud {
     background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
     text-decoration: none;
