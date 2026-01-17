@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MindCache - AI Agent Memory Management</title>
     <meta name="description"
-        content="MindCache 2.0 - A TypeScript library for AI agent memory with cloud persistence, real-time sync, and collaboration. Try the hosted cloud version or use the npm package locally.">
+        content="MindCache - TypeScript library for AI agent memory. Local-first React components, cloud sync, GitHub persistence with GitStore. Build AI chat apps in 15 lines of code.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -26,8 +26,8 @@
                 <span class="nav-title">MindCache</span>
             </div>
             <div class="nav-links">
-                <a href="#cloud">Cloud</a>
                 <a href="#local-first">Local-First</a>
+                <a href="#cloud">Cloud</a>
                 <a href="#features">Features</a>
                 <a href="#examples">Examples</a>
                 <a href="#docs">Docs</a>
@@ -48,15 +48,15 @@
         <div class="container">
             <div class="hero-content">
                 <div class="hero-badge">
-                    <span>🚀 MindCache 3.2 — Real-Time Collaborative Documents!</span>
+                    <span>🚀 MindCache 3.7 — React Components & Local-First AI Chat!</span>
                 </div>
                 <h1 class="hero-title">
                     AI Agent Memory<br>
                     <span class="gradient-text">Made Simple</span>
                 </h1>
                 <p class="hero-description">
-                    MindCache is a TypeScript library for managing short-term memory in AI agents through a simple,
-                    LLM-friendly key-value repository. Now with cloud persistence, real-time sync, and collaboration.
+                    MindCache is a TypeScript library for managing short-term memory in AI agents. 
+                    Drop-in React components for local-first AI chat, cloud persistence, real-time sync, and GitHub storage.
                 </p>
                 <div class="hero-actions">
                     <a href="https://app.mindcache.dev" target="_blank" class="btn-primary btn-cloud">
@@ -71,58 +71,6 @@
                         </svg>
                     </button>
                 </div>
-                <div class="hero-stats">
-                    <div class="stat">
-                        <span class="stat-number">3.3</span>
-                        <span class="stat-label">Version</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-number">Real-time</span>
-                        <span class="stat-label">Sync</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-number">TypeScript</span>
-                        <span class="stat-label">First</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Cloud Section -->
-    <section id="cloud" class="cloud-section">
-        <div class="container">
-            <div class="section-header">
-                <h2>MindCache 2.0 <span class="gradient-text">Cloud</span></h2>
-                <p>A hosted, collaborative key-value store for AI agents</p>
-            </div>
-            <div class="cloud-features">
-                <div class="cloud-feature">
-                    <div class="cloud-icon">☁️</div>
-                    <h3>Cloud Persistence</h3>
-                    <p>All key-value data stored securely in the cloud with automatic sync between clients.</p>
-                </div>
-                <div class="cloud-feature">
-                    <div class="cloud-icon">⚡</div>
-                    <h3>Real-Time Sync</h3>
-                    <p>WebSocket-based live updates. Subscribe to specific keys or entire instances.</p>
-                </div>
-                <div class="cloud-feature">
-                    <div class="cloud-icon">👥</div>
-                    <h3>Collaboration</h3>
-                    <p>Share projects and instances with teams. Granular permissions for read/write/admin access.</p>
-                </div>
-                <div class="cloud-feature">
-                    <div class="cloud-icon">🤖</div>
-                    <h3>Built-in AI APIs</h3>
-                    <p>Chat API, image generation, web search, and transform APIs — all reading from MindCache.</p>
-                </div>
-            </div>
-            <div class="cloud-cta">
-                <a href="https://app.mindcache.dev" target="_blank" class="btn-primary btn-cloud-large">
-                    <span>☁️ Start Using MindCache Cloud</span>
-                </a>
-                <p class="cloud-note">Free tier available • No credit card required</p>
             </div>
         </div>
     </section>
@@ -170,13 +118,43 @@ function App() {
   );
 }</code></pre>
             </div>
-            <div class="cloud-cta" style="margin-top: 2rem;">
-                <a href="https://www.npmjs.com/package/@mindcache/gitstore" target="_blank" class="btn-secondary" style="margin-right: 1rem;">
-                    <span>📦 @mindcache/gitstore</span>
+        </div>
+    </section>
+
+    <!-- Cloud Section -->
+    <section id="cloud" class="cloud-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>MindCache <span class="gradient-text">Cloud</span></h2>
+                <p>A hosted, collaborative key-value store for AI agents</p>
+            </div>
+            <div class="cloud-features">
+                <div class="cloud-feature">
+                    <div class="cloud-icon">☁️</div>
+                    <h3>Cloud Persistence</h3>
+                    <p>All key-value data stored securely in the cloud with automatic sync between clients.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">⚡</div>
+                    <h3>Real-Time Sync</h3>
+                    <p>WebSocket-based live updates. Subscribe to specific keys or entire instances.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">👥</div>
+                    <h3>Collaboration</h3>
+                    <p>Share projects and instances with teams. Granular permissions for read/write/admin access.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">🤖</div>
+                    <h3>Built-in AI APIs</h3>
+                    <p>Chat API, image generation, web search, and transform APIs — all reading from MindCache.</p>
+                </div>
+            </div>
+            <div class="cloud-cta">
+                <a href="https://app.mindcache.dev" target="_blank" class="btn-primary btn-cloud-large">
+                    <span>☁️ Start Using MindCache Cloud</span>
                 </a>
-                <a href="https://github.com/dh7/mindcache/tree/main/examples/local_first_chat" target="_blank" class="btn-secondary">
-                    <span>💡 Example App</span>
-                </a>
+                <p class="cloud-note">Free tier available • No credit card required</p>
             </div>
         </div>
     </section>
@@ -227,8 +205,8 @@ function App() {
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⚛️</div>
-                    <h3>React Hook</h3>
-                    <p>useMindCache hook handles async init, loading state, and cleanup automatically</p>
+                    <h3>React Components</h3>
+                    <p>Drop-in &lt;MindCacheChat&gt; component and hooks for building AI apps in minutes</p>
                 </div>
             </div>
         </div>
@@ -242,12 +220,54 @@ function App() {
                 <p>Real-world use cases for AI agents</p>
             </div>
             <div class="examples-tabs">
-                <button class="tab-btn active" onclick="showExample('tools')">LLM Tools</button>
+                <button class="tab-btn active" onclick="showExample('react')">React Components</button>
+                <button class="tab-btn" onclick="showExample('tools')">LLM Tools</button>
                 <button class="tab-btn" onclick="showExample('context')">Context Management</button>
                 <button class="tab-btn" onclick="showExample('cloud')">Cloud Sync</button>
             </div>
             <div class="example-content">
-                <div id="example-tools" class="example active">
+                <div id="example-react" class="example active">
+                    <div class="example-code">
+                        <pre><code>// Full AI Chat App in ~15 Lines
+import { MindCacheProvider, MindCacheChat } from 'mindcache';
+
+function App() {
+  return (
+    &lt;MindCacheProvider
+      ai={{
+        provider: 'openai',       // or 'anthropic'
+        model: 'gpt-4o',
+        keyStorage: 'localStorage' // API key stored locally
+      }}
+      mindcache={{
+        indexedDB: { dbName: 'my-app' } // Local persistence
+      }}
+    &gt;
+      &lt;MindCacheChat 
+        welcomeMessage="Hello! I'm your AI assistant."
+        placeholder="Type a message..."
+      /&gt;
+    &lt;/MindCacheProvider&gt;
+  );
+}
+
+// That's it! No server, no API routes, no backend.</code></pre>
+                    </div>
+                    <div class="example-description">
+                        <h4>Local-First React Components</h4>
+                        <p>Drop-in AI chat with streaming responses, tool integration, and MindCache memory. 
+                           API keys stay in the browser. Works offline with IndexedDB persistence.</p>
+                        <div style="margin-top: 1rem;">
+                            <strong>Hooks available:</strong>
+                            <ul style="margin: 0.5rem 0; padding-left: 1.5rem; color: var(--text-muted);">
+                                <li><code>useMindCacheContext()</code> - Access MindCache instance & AI config</li>
+                                <li><code>useClientChat()</code> - Build custom chat UIs</li>
+                                <li><code>useLocalFirstSync()</code> - Sync to GitHub</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div id="example-tools" class="example">
                     <div class="example-code">
                         <pre><code>// Auto Tool Generation for AI Agents
 import { mindcache } from 'mindcache';
@@ -334,7 +354,7 @@ const contextKeys = allKeys.filter(key =>
                 </div>
                 <div id="example-cloud" class="example">
                     <div class="example-code">
-                        <pre><code>// MindCache 2.0 Cloud Sync
+                        <pre><code>// MindCache Cloud Sync
 import { MindCache } from 'mindcache';
 
 // Connect to MindCache Cloud with built-in sync
@@ -368,7 +388,7 @@ mc.disconnect();</code></pre>
                     </div>
                     <div class="example-description">
                         <h4>Cloud Sync & Real-Time Collaboration</h4>
-                        <p>MindCache 2.0 adds seamless cloud persistence. Same simple API — data automatically syncs
+                        <p>Seamless cloud persistence with the same simple API — data automatically syncs
                             across all clients in real-time. Share instances with your team, connect AI agents, and
                             build collaborative workflows.</p>
                         <a href="https://app.mindcache.dev" target="_blank" class="btn-secondary"
@@ -392,6 +412,11 @@ mc.disconnect();</code></pre>
                     <h3>Full LLM friendly Documentation</h3>
                     <p>Comprehensive llms-full.md for LLMs, AI agents, and vibe coding — copy the entire file into your
                         context</p>
+                </a>
+                <a href="https://github.com/dh7/mindcache/blob/main/packages/mindcache/src/react/README.md" class="doc-card">
+                    <div class="doc-icon">⚛️</div>
+                    <h3>React Components</h3>
+                    <p>MindCacheProvider, MindCacheChat, and hooks for local-first AI apps</p>
                 </a>
                 <a href="https://github.com/dh7/mindcache#api" class="doc-card">
                     <div class="doc-icon">📚</div>
@@ -424,7 +449,7 @@ mc.disconnect();</code></pre>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 MindCache. Released under the MIT License. Made with ❤️ by <a
+                <p>&copy; 2026 MindCache. Released under the MIT License. Made with ❤️ by <a
                         href="https://damien-henry.com" target="_blank"
                         style="color: inherit; text-decoration: underline;">Damien Henry</a></p>
             </div>
