@@ -27,6 +27,7 @@
             </div>
             <div class="nav-links">
                 <a href="#cloud">Cloud</a>
+                <a href="#local-first">Local-First</a>
                 <a href="#features">Features</a>
                 <a href="#examples">Examples</a>
                 <a href="#docs">Docs</a>
@@ -122,6 +123,60 @@
                     <span>☁️ Start Using MindCache Cloud</span>
                 </a>
                 <p class="cloud-note">Free tier available • No credit card required</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Local-First Section -->
+    <section id="local-first" class="local-first-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Local-First with <span class="gradient-text">GitStore</span></h2>
+                <p>100% client-side apps with GitHub as your database</p>
+            </div>
+            <div class="cloud-features">
+                <div class="cloud-feature">
+                    <div class="cloud-icon">💻</div>
+                    <h3>No Server Required</h3>
+                    <p>Run AI entirely in the browser. API keys stay in localStorage, never touch a server.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">📂</div>
+                    <h3>GitHub as Database</h3>
+                    <p>Sync MindCache to any GitHub repo. Version history, branching, and collaboration built-in.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">📱</div>
+                    <h3>Cross-Platform</h3>
+                    <p>Web, Mac, Android — all apps sync through GitHub. Works offline, syncs when online.</p>
+                </div>
+                <div class="cloud-feature">
+                    <div class="cloud-icon">⚛️</div>
+                    <h3>React Components</h3>
+                    <p>Drop-in &lt;MindCacheChat&gt; component. Full AI chat in ~15 lines of code.</p>
+                </div>
+            </div>
+            <div class="example-code" style="margin-top: 2rem; max-width: 700px; margin-left: auto; margin-right: auto;">
+                <pre><code>// Local-first AI chat in 15 lines
+import { MindCacheProvider, MindCacheChat } from 'mindcache';
+
+function App() {
+  return (
+    &lt;MindCacheProvider
+      ai={{ provider: 'openai', model: 'gpt-4o', keyStorage: 'localStorage' }}
+    &gt;
+      &lt;MindCacheChat welcomeMessage="Hello! I run in your browser." /&gt;
+    &lt;/MindCacheProvider&gt;
+  );
+}</code></pre>
+            </div>
+            <div class="cloud-cta" style="margin-top: 2rem;">
+                <a href="https://www.npmjs.com/package/@mindcache/gitstore" target="_blank" class="btn-secondary" style="margin-right: 1rem;">
+                    <span>📦 @mindcache/gitstore</span>
+                </a>
+                <a href="https://github.com/dh7/mindcache/tree/main/examples/local_first_chat" target="_blank" class="btn-secondary">
+                    <span>💡 Example App</span>
+                </a>
             </div>
         </div>
     </section>
