@@ -18,15 +18,16 @@
 12. [Image & File Support](#image--file-support)
 13. [Cloud Sync](#cloud-sync)
 14. [Local Persistence (IndexedDB)](#local-persistence-indexeddb)
-15. [React Hook - useMindCache](#react-hook---usemindcache)
-16. [Server-Side Usage](#server-side-usage)
-17. [Integration Patterns](#integration-patterns)
-18. [Common Use Cases](#common-use-cases)
-19. [Error Handling](#error-handling)
-20. [TypeScript Types](#typescript-types)
-21. [Quick Reference](#quick-reference)
-22. [Complete App Examples](#complete-app-examples)
-23. [Best Practices Summary](#best-practices-summary)
+15. [React Components (v3.7+)](#react-components-v37)
+16. [React Hook - useMindCache](#react-hook---usemindcache)
+17. [Server-Side Usage](#server-side-usage)
+18. [Integration Patterns](#integration-patterns)
+19. [Common Use Cases](#common-use-cases)
+20. [Error Handling](#error-handling)
+21. [TypeScript Types](#typescript-types)
+22. [Quick Reference](#quick-reference)
+23. [Complete App Examples](#complete-app-examples)
+24. [Best Practices Summary](#best-practices-summary)
 
 ---
 
@@ -34,6 +35,9 @@
 
 MindCache is a TypeScript library for managing short-term memory in AI agents. It provides:
 
+- **React Components** - Drop-in `<MindCacheChat>` for AI chat in ~15 lines (v3.7+)
+- **Local-first architecture** - API keys in browser, no server required (v3.7+)
+- **GitHub persistence** - Sync to any repo via `@mindcache/gitstore` (v3.7+)
 - **Key-value storage** optimized for LLM consumption
 - **Document type** for collaborative Markdown editing (v3.1+)
 - **Automatic tool generation** for Vercel AI SDK integration
@@ -1106,7 +1110,7 @@ mindcache.add_image('screenshot', screenshotBase64, 'image/png');
 
 ## Cloud Sync
 
-MindCache 2.0+ supports cloud persistence and real-time sync via WebSockets.
+MindCache supports cloud persistence and real-time sync via WebSockets.
 
 ### Authentication Patterns
 
@@ -1426,6 +1430,168 @@ const mc = new MindCache({
 });
 // Error: Cannot use both cloud and indexedDB together
 ```
+
+---
+
+## React Components (v3.7+)
+
+MindCache 3.7 introduces drop-in React components for building local-first AI chat applications with zero server setup.
+
+### Quick Start
+
+```tsx
+import { MindCacheProvider, MindCacheChat } from 'mindcache';
+
+function App() {
+  return (
+    <MindCacheProvider
+      ai={{
+        provider: 'openai',       // Built-in: 'openai' | 'anthropic'
+        model: 'gpt-4o',
+        keyStorage: 'localStorage' // API key stored in browser
+      }}
+    >
+      <MindCacheChat />
+    </MindCacheProvider>
+  );
+}
+```
+
+That's it! Full AI chat with streaming, MindCache tools, and mobile-friendly UI.
+
+### MindCacheProvider
+
+Wraps your app and provides MindCache + AI configuration.
+
+```tsx
+<MindCacheProvider
+  mindcache={{
+    indexedDB: {
+      dbName: 'my-app',
+      storeName: 'mindcache'
+    }
+  }}
+  ai={{
+    provider: 'openai',           // Built-in: 'openai' | 'anthropic'
+    model: 'gpt-4o',              // Any model supported by provider
+    keyStorage: 'localStorage',   // 'localStorage' | 'memory' | 'prompt'
+    storageKey: 'my_api_key'      // Optional custom key name
+  }}
+  sync={{
+    gitstore: {
+      owner: 'username',
+      repo: 'my-data',
+      token: 'ghp_...'
+    }
+  }}
+>
+  {children}
+</MindCacheProvider>
+```
+
+### MindCacheChat
+
+Pre-built chat UI component with streaming and tool support.
+
+```tsx
+<MindCacheChat
+  welcomeMessage="Hello! How can I help?"
+  placeholder="Type a message..."
+  theme={{
+    background: '#000',
+    textColor: '#fff',
+    primaryColor: '#22c55e'
+  }}
+/>
+```
+
+### useMindCacheContext()
+
+Access MindCache and AI configuration from any component.
+
+```tsx
+const { 
+  mindcache,       // MindCache instance
+  isLoaded,        // Ready to use?
+  hasApiKey,       // API key configured?
+  setApiKey,       // Set API key
+  getModel,        // Get AI model instance
+  syncToGitStore   // Manual sync to GitHub
+} = useMindCacheContext();
+```
+
+### useClientChat()
+
+Build custom chat UI with full control.
+
+```tsx
+const {
+  messages,
+  sendMessage,
+  isLoading,
+  error,
+  streamingContent,
+  stop
+} = useClientChat({
+  systemPrompt: 'You are a helpful assistant.',
+  maxToolCalls: 5,
+  onFinish: (message) => console.log('Done:', message),
+  onMindCacheChange: () => console.log('MindCache updated')
+});
+```
+
+### useLocalFirstSync()
+
+Sync MindCache to GitHub via `@mindcache/gitstore`.
+
+```tsx
+const { 
+  status,           // 'idle' | 'loading' | 'saving' | 'error'
+  lastSyncAt,
+  hasLocalChanges,
+  save,             // Manual save
+  load,             // Manual load
+  sync              // Load then save
+} = useLocalFirstSync({
+  mindcache,
+  gitstore: {
+    owner: 'me',
+    repo: 'data',
+    token: async () => getToken()
+  },
+  autoSyncInterval: 30000,
+  saveDebounceMs: 5000
+});
+```
+
+### Custom AI Provider
+
+For providers not built-in, use `modelProvider`:
+
+```tsx
+import { createAnthropic } from '@ai-sdk/anthropic';
+
+<MindCacheProvider
+  ai={{
+    keyStorage: 'localStorage',
+    modelProvider: (apiKey) => {
+      const anthropic = createAnthropic({ apiKey });
+      return anthropic('claude-3-5-sonnet-20241022');
+    }
+  }}
+>
+```
+
+### Architecture
+
+```
+Browser
+├── MindCache (IndexedDB)     ← Local persistence
+├── AI SDK (streamText)       ← Streaming responses
+└── OpenAI/Anthropic API      ← Direct API calls (no server)
+```
+
+No server required. API keys stored in browser localStorage.
 
 ---
 

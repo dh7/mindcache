@@ -1,8 +1,8 @@
 # MindCache
 
-> AI Agent Memory Management - Collaborative key-value store for AI agents with real-time sync.
+> AI Agent Memory Management - Local-first AI apps with React components, cloud sync, and GitHub persistence.
 
-MindCache 3.4 provides persistent, collaborative memory for AI agents with automatic tool generation, document editing, and real-time sync.
+MindCache 3.7 provides persistent memory for AI agents with drop-in React components, automatic tool generation, and local-first architecture.
 
 ## Quick Links
 
@@ -79,13 +79,36 @@ mc.undoAll();       // Global undo
 mc.getGlobalHistory(); // Get history
 ```
 
-## React Hooks
+## React Components (v3.7+)
 
 ```tsx
-import { useMindCache, useMindCacheDocument } from 'mindcache/react';
+import { MindCacheProvider, MindCacheChat } from 'mindcache';
 
-const { mindcache, isLoaded } = useMindCache({ indexedDB: { dbName: 'app' } });
-const { text, yText, replaceText } = useMindCacheDocument(mc, 'notes');
+// Full AI chat app in ~15 lines
+function App() {
+  return (
+    <MindCacheProvider
+      ai={{ provider: 'openai', model: 'gpt-4o', keyStorage: 'localStorage' }}
+    >
+      <MindCacheChat />
+    </MindCacheProvider>
+  );
+}
+```
+
+### Hooks
+
+```tsx
+import { useMindCacheContext, useClientChat, useLocalFirstSync } from 'mindcache';
+
+// Access MindCache instance
+const { mindcache, isLoaded, hasApiKey, setApiKey, getModel } = useMindCacheContext();
+
+// Build custom chat UI
+const { messages, sendMessage, isLoading, streamingContent } = useClientChat();
+
+// Sync to GitHub
+const { status, save, load } = useLocalFirstSync({ mindcache, gitstore: { owner, repo, token } });
 ```
 
 ## Core Methods

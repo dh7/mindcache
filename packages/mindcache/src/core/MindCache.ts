@@ -4,6 +4,9 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import diff from 'fast-diff';
 import type { KeyAttributes, STM, Listener, GlobalListener, AccessLevel, SystemTag, HistoryEntry, HistoryOptions, ContextRules, CustomTypeDefinition } from './types';
 import { DEFAULT_KEY_ATTRIBUTES } from './types';
+
+// Re-export SystemTag for convenience
+export type { SystemTag } from './types';
 import { SchemaParser } from './SchemaParser';
 import { MarkdownSerializer } from './MarkdownSerializer';
 import { AIToolBuilder } from './AIToolBuilder';
