@@ -15,13 +15,23 @@ export interface IMarkdownSerializable {
 }
 
 /**
+ * Options for markdown export
+ */
+export interface MarkdownExportOptions {
+  /** Name/title for the export (defaults to 'MindCache Export') */
+  name?: string;
+  /** Description to include below the title */
+  description?: string;
+}
+
+/**
  * Serializes and deserializes MindCache data to/from Markdown format.
  */
 export class MarkdownSerializer {
   /**
      * Export MindCache data to Markdown format.
      */
-  static toMarkdown(mc: IMarkdownSerializable): string {
+  static toMarkdown(mc: IMarkdownSerializable, options?: MarkdownExportOptions): string {
     const now = new Date();
     const lines: string[] = [];
     const appendixEntries: Array<{
@@ -33,13 +43,18 @@ export class MarkdownSerializer {
         }> = [];
     let appendixCounter = 0;
 
-    lines.push('# MindCache STM Export');
+    const name = options?.name || 'MindCache Export';
+    lines.push(`# ${name}`);
     lines.push('');
+    if (options?.description) {
+      lines.push(options.description);
+      lines.push('');
+    }
     lines.push(`Export Date: ${now.toISOString().split('T')[0]}`);
     lines.push('');
     lines.push('---');
     lines.push('');
-    lines.push('## STM Entries');
+    lines.push('## Keys & Values');
     lines.push('');
 
     const sortedKeys = mc.getSortedKeys();
@@ -49,9 +64,20 @@ export class MarkdownSerializer {
 
       lines.push(`### ${key}`);
       const entryType = attributes?.type || 'text';
-      lines.push(`- **Type**: \`${entryType}\``);
-      lines.push(`- **System Tags**: \`${attributes?.systemTags?.join(', ') || 'none'}\``);
-      lines.push(`- **Z-Index**: \`${attributes?.zIndex ?? 0}\``);
+      // Only show type if not 'text' (the default)
+      if (entryType !== 'text') {
+        lines.push(`- **Type**: \`${entryType}\``);
+      }
+      // Only show system tags if there are any
+      const systemTags = attributes?.systemTags;
+      if (systemTags && systemTags.length > 0) {
+        lines.push(`- **System Tags**: \`${systemTags.join(', ')}\``);
+      }
+      // Only show z-index if non-zero
+      const zIndex = attributes?.zIndex ?? 0;
+      if (zIndex !== 0) {
+        lines.push(`- **Z-Index**: \`${zIndex}\``);
+      }
 
       if (attributes?.contentTags && attributes.contentTags.length > 0) {
         lines.push(`- **Tags**: \`${attributes.contentTags.join('`, `')}\``);
@@ -278,7 +304,10 @@ export class MarkdownSerializer {
 
     // Check if we parsed any keys
     const hasParsedKeys = lines.some(line => line.startsWith('### ') && !line.startsWith('### Appendix'));
-    const isSTMExport = markdown.includes('# MindCache STM Export') || markdown.includes('## STM Entries');
+    const isSTMExport = markdown.includes('# MindCache STM Export') ||
+                        markdown.includes('## STM Entries') ||
+                        markdown.includes('## Keys & Values') ||
+                        markdown.includes('# MindCache Export');
 
     if (!hasParsedKeys && !isSTMExport && markdown.trim().length > 0) {
       mc.set_value('imported_content', markdown.trim(), {
@@ -416,7 +445,10 @@ export class MarkdownSerializer {
 
     // Handle unstructured content
     const hasParsedKeys = lines.some(line => line.startsWith('### ') && !line.startsWith('### Appendix'));
-    const isSTMExport = markdown.includes('# MindCache STM Export') || markdown.includes('## STM Entries');
+    const isSTMExport = markdown.includes('# MindCache STM Export') ||
+                        markdown.includes('## STM Entries') ||
+                        markdown.includes('## Keys & Values') ||
+                        markdown.includes('# MindCache Export');
 
     if (!hasParsedKeys && !isSTMExport && markdown.trim().length > 0) {
       result['imported_content'] = {

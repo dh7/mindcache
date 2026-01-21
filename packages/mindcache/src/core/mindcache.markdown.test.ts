@@ -12,22 +12,47 @@ describe('MindCache Markdown Serialization', () => {
     test('should export empty STM to markdown', () => {
       const markdown = cache.toMarkdown();
 
-      expect(markdown).toContain('# MindCache STM Export');
-      expect(markdown).toContain('## STM Entries');
+      expect(markdown).toContain('# MindCache Export');
+      expect(markdown).toContain('## Keys & Values');
       // No entries when empty
     });
 
-    test('should export text values to markdown', () => {
+    test('should export with custom name and description', () => {
+      cache.set_value('test', 'value');
+      const markdown = cache.toMarkdown({
+        name: 'My Project',
+        description: 'This is my project description.'
+      });
+
+      expect(markdown).toContain('# My Project');
+      expect(markdown).toContain('This is my project description.');
+      expect(markdown).toContain('## Keys & Values');
+    });
+
+    test('should export text values to markdown without type line (default)', () => {
       cache.set_value('username', 'john_doe');
       cache.set_value('email', 'john@example.com');
 
       const markdown = cache.toMarkdown();
 
       expect(markdown).toContain('### username');
-      expect(markdown).toContain('- **Type**: `text`');
+      // Type 'text' should NOT be shown (it's the default)
+      expect(markdown).not.toContain('- **Type**: `text`');
       expect(markdown).toContain('```\njohn_doe\n```');
       expect(markdown).toContain('### email');
       expect(markdown).toContain('```\njohn@example.com\n```');
+    });
+
+    test('should skip default values (z-index 0, no system tags)', () => {
+      cache.set_value('simple', 'value');
+
+      const markdown = cache.toMarkdown();
+
+      expect(markdown).toContain('### simple');
+      // These defaults should NOT appear
+      expect(markdown).not.toContain('- **Type**: `text`');
+      expect(markdown).not.toContain('- **System Tags**: `none`');
+      expect(markdown).not.toContain('- **Z-Index**: `0`');
     });
 
     test('should export multiline text with code blocks', () => {
@@ -53,16 +78,18 @@ describe('MindCache Markdown Serialization', () => {
       expect(markdown).toContain('"dark"');
     });
 
-    test('should export all attributes', () => {
+    test('should export non-default attributes', () => {
       cache.set_value('test_key', 'value', {
         systemTags: ['ApplyTemplate'],
-        contentTags: ['tag1', 'tag2', 'tag3']
+        contentTags: ['tag1', 'tag2', 'tag3'],
+        zIndex: 5
       });
 
       const markdown = cache.toMarkdown();
 
       expect(markdown).toContain('- **System Tags**: `ApplyTemplate`');
       expect(markdown).toContain('- **Tags**: `tag1`, `tag2`, `tag3`');
+      expect(markdown).toContain('- **Z-Index**: `5`');
     });
 
     test('should export image to appendix', () => {
@@ -148,6 +175,32 @@ Export Date: 2025-10-01
 
       // Should have no keys (empty)
       expect(cache.size()).toBe(0);
+    });
+
+    test('should import new format (Keys & Values)', () => {
+      const markdown = `# My Project
+
+This is my project.
+
+Export Date: 2025-10-01
+
+---
+
+## Keys & Values
+
+### username
+- **Value**:
+\`\`\`
+john_doe
+\`\`\`
+
+`;
+
+      cache.fromMarkdown(markdown);
+
+      expect(cache.get_value('username')).toBe('john_doe');
+      // Should default to type 'text'
+      expect(cache.get_attributes('username')?.type).toBe('text');
     });
 
     test('should import text values', () => {

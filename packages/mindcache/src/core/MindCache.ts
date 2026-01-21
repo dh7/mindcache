@@ -1495,9 +1495,10 @@ export class MindCache {
 
   /**
    * Export to Markdown format.
+   * @param options Optional name and description for the export
    */
-  toMarkdown(): string {
-    return MarkdownSerializer.toMarkdown(this);
+  toMarkdown(options?: { name?: string; description?: string }): string {
+    return MarkdownSerializer.toMarkdown(this, options);
   }
 
   /**
