@@ -119,3 +119,22 @@ jobs:
       run: |
         cd packages/mindcache && pnpm pack && ls -lh *.tgz && rm *.tgz
         echo "✅ Package size check complete!"
+
+  docs-check:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 📄 Build GitHub Pages (Jekyll)
+      uses: actions/jekyll-build-pages@v1
+      with:
+        source: ./docs
+        destination: ./_site
+    
+    - name: ✅ Docs build passed
+      run: |
+        echo "🎉 GitHub Pages build successful!"
+        echo "No Liquid syntax errors found."
