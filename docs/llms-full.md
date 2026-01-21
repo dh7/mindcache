@@ -1,7 +1,4 @@
----
-render_with_liquid: false
----
-
+{% raw %}
 # MindCache - Complete LLM Documentation
 
 > This document is optimized for LLMs to understand and work with MindCache. It contains comprehensive API documentation with extensive code examples.
@@ -2483,4 +2480,5 @@ NEXT_PUBLIC_INSTANCE_ID=your-instance-id
 ---
 
 *This documentation is optimized for LLM consumption. For human-readable documentation with interactive examples, visit [mindcache.dev](https://mindcache.dev).*
+{% endraw %}
 

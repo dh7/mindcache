@@ -3,8 +3,22 @@ name: CI
 on:
   push:
     branches: [ main, develop ]
+    paths:
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'turbo.json'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, develop ]
+    paths:
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'turbo.json'
+      - '.github/workflows/ci.yml'
 
 jobs:
   test:
