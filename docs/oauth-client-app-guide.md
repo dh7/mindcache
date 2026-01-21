@@ -1,3 +1,7 @@
+---
+render_with_liquid: false
+---
+
 # Building Apps with MindCache OAuth
 
 Create apps where users can "Sign in with MindCache" to get automatic cloud storage and sync.

@@ -1,3 +1,7 @@
+---
+render_with_liquid: false
+---
+
 # MindCache - Complete LLM Documentation
 
 > This document is optimized for LLMs to understand and work with MindCache. It contains comprehensive API documentation with extensive code examples.
