@@ -1,3 +1,4 @@
+{% raw %}
 # Building Apps with MindCache OAuth
 
 Create apps where users can "Sign in with MindCache" to get automatic cloud storage and sync.
@@ -257,3 +258,4 @@ oauth.tokenProvider        // Token function for MindCache
 **"CORS error"**: Check that you're using the correct API URLs for your environment.
 
 **"Session expired"**: The refresh token (30 days) expired. User needs to sign in again.
+{% endraw %}
