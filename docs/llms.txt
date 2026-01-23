@@ -7,7 +7,7 @@ MindCache 3.7 provides persistent memory for AI agents with drop-in React compon
 ## Quick Links
 
 - Documentation: https://mindcache.dev
-- Full LLM Documentation: https://mindcache.dev/llms-full.md
+- Full LLM Documentation: https://mindcache.dev/llms-full.txt
 - GitHub: https://github.com/dh7/mindcache
 - npm: https://www.npmjs.com/package/mindcache
 
@@ -139,5 +139,5 @@ const { status, save, load } = useLocalFirstSync({ mindcache, gitstore: { owner,
 
 ## Full Documentation
 
-See https://mindcache.dev/llms-full.md
+See https://mindcache.dev/llms-full.txt
 
