@@ -681,7 +681,8 @@ export class MindCache {
       if (!this._idbProvider) {
         return resolve();
       }
-      this._idbProvider.on('synced', () => {
+      // Cast needed: IndexeddbPersistence extends Observable which has 'on' method
+      (this._idbProvider as unknown as { on: (event: string, cb: () => void) => void }).on('synced', () => {
         this._isLoaded = true;
         resolve();
       });
