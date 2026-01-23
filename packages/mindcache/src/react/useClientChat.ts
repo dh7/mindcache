@@ -189,6 +189,9 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
     setError(null);
     setStreamingContent('');
 
+    // Track accumulated text for abort handling
+    let accumulatedText = '';
+
     try {
       // Get model from context (handles provider config automatically)
       const model = context.getModel();
@@ -207,7 +210,6 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
 
       // Accumulated parts for the final message
       const parts: MessagePart[] = [];
-      let accumulatedText = '';
 
       // Stream the response with real-time updates
       const result = await streamText({
@@ -250,11 +252,7 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
               }
             }
           }
-
-          // Add text from this step if any
-          if (step.text) {
-            accumulatedText += step.text;
-          }
+          // Note: Don't accumulate step.text here - it's already in textStream
         }
       });
 
@@ -264,16 +262,19 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
         setStreamingContent(accumulatedText);
       }
 
+      // Get final text from result (authoritative, avoids any streaming duplication)
+      const finalText = await result.text;
+
       // Build final message with parts
-      if (accumulatedText) {
-        parts.unshift({ type: 'text', text: accumulatedText });
+      if (finalText) {
+        parts.unshift({ type: 'text', text: finalText });
       }
 
       // Add assistant message with all parts
       const assistantMessage: ChatMessage = {
         id: generateId(),
         role: 'assistant',
-        content: accumulatedText,
+        content: finalText,
         parts: parts.length > 0 ? parts : undefined,
         createdAt: new Date()
       };
@@ -284,13 +285,18 @@ export function useClientChat(options: UseClientChatOptions = {}): UseClientChat
       onFinish?.(assistantMessage);
 
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        // If we have partial content, save it
-        if (streamingContent) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const isAborted = (err as Error).name === 'AbortError' ||
+                        errorMessage.includes('aborted') ||
+                        errorMessage.includes('No output generated');
+
+      if (isAborted) {
+        // If we have partial content from streaming, save it
+        if (accumulatedText) {
           const partialMessage: ChatMessage = {
             id: generateId(),
             role: 'assistant',
-            content: streamingContent + ' [stopped]',
+            content: accumulatedText + ' [stopped]',
             createdAt: new Date()
           };
           setMessages(prev => [...prev, partialMessage]);
