@@ -17,7 +17,7 @@
     "ai": "^5.0.45",
     "lib0": "^0.2.115",
     "mindcache": "workspace:*",
-    "next": "^15.5.8",
+    "next": "^15.5.12",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "y-indexeddb": "^9.0.12",
