@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -11,13 +11,8 @@
     "allowSyntheticDefaultImports": true,
     "declaration": true,
     "declarationMap": true,
-    "emitDeclarationOnly": true,
+    "noEmit": true,
     "types": ["node"],
-    "baseUrl": "../..",
-    "paths": {
-      "mindcache": ["./packages/mindcache/src/index.ts"],
-      "mindcache/server": ["./packages/mindcache/src/server.ts"]
-    },
     "rootDir": "./src",
     "outDir": "./dist"
   },

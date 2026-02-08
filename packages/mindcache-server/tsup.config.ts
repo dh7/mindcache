@@ -6,7 +6,7 @@ export default defineConfig({
     cli: 'src/cli.ts'
   },
   format: ['cjs', 'esm'],
-  dts: false,
+  dts: true,
   splitting: false,
   sourcemap: true,
   clean: true,
