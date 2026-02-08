@@ -269,6 +269,19 @@ export class GitStore {
       });
       if (!Array.isArray(data) && 'sha' in data) {
         sha = data.sha;
+
+        // Compare blob SHA to skip commit when content is identical.
+        // GitHub blob SHA = SHA1("blob <size>\0<content>")
+        const { createHash } = await import('crypto');
+        const blobData = Buffer.from(content, 'utf-8');
+        const blobHeader = `blob ${blobData.length}\0`;
+        const newSha = createHash('sha1')
+          .update(Buffer.concat([Buffer.from(blobHeader), blobData]))
+          .digest('hex');
+
+        if (newSha === sha) {
+          return { sha: '', url: '', message: `${message} (skipped, no changes)` };
+        }
       }
     } catch (error: unknown) {
       const err = error as { status?: number };
