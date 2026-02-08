@@ -1,0 +1,15 @@
+{
+  "name": "mindcache-server-local-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "tsx src/seed.ts",
+    "server": "tsx src/server.ts",
+    "client": "tsx src/client.ts",
+    "dev": "tsx src/dev.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
+  }
+}

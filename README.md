@@ -353,6 +353,7 @@ export class MyDurableObject {
 
 See the [examples directory](./examples) for complete implementations:
 - **[Contact Extractor](./examples/contact_extractor)** - AI-powered contact extraction using custom types
+- **[MindCache Server Local](./examples/mindcache_server_local)** - local API + browser client for tag-based key discovery
 - Form management with AI assistant
 - Image processing workflows
 - Multi-step workflows with memory persistence

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MindCache Server Local Client</title>
+    <style>
+      :root {
+        --bg: #f7f3ea;
+        --card: #fffdf7;
+        --ink: #1d1a17;
+        --ink-soft: #60594f;
+        --line: #d8cec0;
+        --accent: #145f55;
+        --accent-soft: #d5efe9;
+        --chip: #efe6d9;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at 0% 0%, #efe0ca 0%, transparent 36%),
+          radial-gradient(circle at 100% 0%, #d9eee7 0%, transparent 36%),
+          var(--bg);
+        min-height: 100vh;
+      }
+
+      main {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.9rem;
+      }
+
+      .sub {
+        margin-top: 8px;
+        color: var(--ink-soft);
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px;
+        margin-top: 16px;
+      }
+
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      input,
+      select,
+      button {
+        font: inherit;
+      }
+
+      input[type="text"],
+      select {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 9px 12px;
+        cursor: pointer;
+        background: var(--accent);
+        color: #f6fffd;
+      }
+
+      button.secondary {
+        background: #1f1c18;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .tag {
+        border: 1px solid var(--line);
+        background: var(--chip);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 6px 10px;
+      }
+
+      .tag.active {
+        border-color: #0f7667;
+        background: var(--accent-soft);
+        color: #08423a;
+      }
+
+      .list {
+        margin-top: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .item {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px;
+        background: #fff;
+      }
+
+      .key {
+        font-family: "IBM Plex Mono", "SF Mono", monospace;
+        font-size: 0.9rem;
+      }
+
+      .hint {
+        color: var(--ink-soft);
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 760px) {
+        h1 {
+          font-size: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>MindCache Server Tag Explorer</h1>
+      <p class="sub">Select one or more tags to see matching keys from the local API.</p>
+
+      <section class="card">
+        <div class="row">
+          <label for="apiBase">API URL</label>
+          <input id="apiBase" type="text" value="http://127.0.0.1:4040" size="35" />
+          <label for="matchMode">Match</label>
+          <select id="matchMode">
+            <option value="all">all tags</option>
+            <option value="any">any tag</option>
+          </select>
+          <button id="refreshBtn">Refresh</button>
+          <button id="clearBtn" class="secondary">Clear tags</button>
+        </div>
+
+        <div id="status" class="hint" style="margin-top: 12px;">Loading tags...</div>
+        <div id="tags" class="tags"></div>
+      </section>
+
+      <section class="card">
+        <h2 style="margin-top: 0; font-size: 1.2rem;">Matching Keys</h2>
+        <div id="summary" class="hint">No data yet.</div>
+        <div id="entries" class="list"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
