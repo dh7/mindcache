@@ -98,6 +98,7 @@ Create `.env.local`:
 | Package | Port | Description |
 |---------|------|-------------|
 | `@mindcache/server` | 8787 | Cloudflare Workers + Durable Objects API |
+| `@mindcache/mindcache-server` | 4040 | Local filesystem-backed MindCache API server |
 | `@mindcache/web` | 3000 | Next.js dashboard |
 | `@mindcache/shared` | - | Shared types and utilities |
 | `mindcache` | - | Client SDK |
@@ -129,4 +130,3 @@ cd packages/web
 pnpm dev              # Next.js dev server
 pnpm build            # Production build
 ```
-

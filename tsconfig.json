@@ -21,6 +21,9 @@
     "paths": {
       "mindcache": [
         "./packages/mindcache/src/index.ts"
+      ],
+      "mindcache/server": [
+        "./packages/mindcache/src/server.ts"
       ]
     }
   },
@@ -28,6 +31,9 @@
   "references": [
     {
       "path": "./packages/mindcache"
+    },
+    {
+      "path": "./packages/mindcache-server"
     },
     {
       "path": "./packages/server"
